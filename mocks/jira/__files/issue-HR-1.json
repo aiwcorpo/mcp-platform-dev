@@ -1,0 +1,42 @@
+{
+  "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+  "id": "10300",
+  "self": "http://jira.internal:8080/rest/api/2/issue/10300",
+  "key": "HR-1",
+  "fields": {
+    "summary": "Salary review 2026",
+    "project": {
+      "self": "http://jira.internal:8080/rest/api/2/project/10002",
+      "id": "10002",
+      "key": "HR",
+      "name": "Human Resources",
+      "projectTypeKey": "software",
+      "projectCategory": {
+        "self": "http://jira.internal:8080/rest/api/2/projectCategory/10001",
+        "id": "10001",
+        "name": "Restricted",
+        "description": "HR and other restricted data"
+      }
+    },
+    "issuetype": {
+      "id": "10002",
+      "name": "Task",
+      "subtask": false
+    },
+    "status": {
+      "name": "To Do",
+      "statusCategory": {
+        "key": "new"
+      }
+    },
+    "assignee": null,
+    "reporter": {
+      "name": "alice",
+      "displayName": "Alice Tester"
+    },
+    "created": "2026-10-01T09:00:00.000+0000",
+    "updated": "2026-10-20T12:00:00.000+0000",
+    "description": "Test issue HR-1 (mcp-platform-dev mock data).",
+    "issuelinks": []
+  }
+}

@@ -1,0 +1,6 @@
+# Generated on first run by scripts/init-secrets.sh and scripts/gen-certs.sh; never commit.
+/.secrets/
+/certs/
+/out/
+__pycache__/
+.DS_Store

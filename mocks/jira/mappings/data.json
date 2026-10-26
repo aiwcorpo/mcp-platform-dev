@@ -1,0 +1,1287 @@
+{
+  "mappings": [
+    {
+      "name": "401 without credentials /rest/api/2/project.*",
+      "priority": 1,
+      "request": {
+        "urlPattern": "/rest/api/2/project.*",
+        "headers": {
+          "Authorization": {
+            "absent": true
+          }
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "errorMessages": [
+            "You are not authenticated. Authentication required to perform this operation."
+          ],
+          "errors": {}
+        }
+      }
+    },
+    {
+      "name": "401 without credentials /rest/api/2/issue/.*",
+      "priority": 1,
+      "request": {
+        "urlPattern": "/rest/api/2/issue/.*",
+        "headers": {
+          "Authorization": {
+            "absent": true
+          }
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "errorMessages": [
+            "You are not authenticated. Authentication required to perform this operation."
+          ],
+          "errors": {}
+        }
+      }
+    },
+    {
+      "name": "401 without credentials /rest/api/2/search.*",
+      "priority": 1,
+      "request": {
+        "urlPattern": "/rest/api/2/search.*",
+        "headers": {
+          "Authorization": {
+            "absent": true
+          }
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "errorMessages": [
+            "You are not authenticated. Authentication required to perform this operation."
+          ],
+          "errors": {}
+        }
+      }
+    },
+    {
+      "name": "list projects",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/project",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": [
+          {
+            "self": "http://jira.internal:8080/rest/api/2/project/10000",
+            "id": "10000",
+            "key": "ABC",
+            "name": "Alpha Team",
+            "projectTypeKey": "software"
+          },
+          {
+            "self": "http://jira.internal:8080/rest/api/2/project/10001",
+            "id": "10001",
+            "key": "DEF",
+            "name": "Delta Team",
+            "projectTypeKey": "software"
+          },
+          {
+            "self": "http://jira.internal:8080/rest/api/2/project/10002",
+            "id": "10002",
+            "key": "HR",
+            "name": "Human Resources",
+            "projectTypeKey": "software",
+            "projectCategory": {
+              "self": "http://jira.internal:8080/rest/api/2/projectCategory/10001",
+              "id": "10001",
+              "name": "Restricted",
+              "description": "HR and other restricted data"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "project ABC",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/project/ABC",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/project/10000",
+          "id": "10000",
+          "key": "ABC",
+          "name": "Alpha Team",
+          "projectTypeKey": "software"
+        }
+      }
+    },
+    {
+      "name": "project 10000",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/project/10000",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/project/10000",
+          "id": "10000",
+          "key": "ABC",
+          "name": "Alpha Team",
+          "projectTypeKey": "software"
+        }
+      }
+    },
+    {
+      "name": "project DEF",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/project/DEF",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/project/10001",
+          "id": "10001",
+          "key": "DEF",
+          "name": "Delta Team",
+          "projectTypeKey": "software"
+        }
+      }
+    },
+    {
+      "name": "project 10001",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/project/10001",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/project/10001",
+          "id": "10001",
+          "key": "DEF",
+          "name": "Delta Team",
+          "projectTypeKey": "software"
+        }
+      }
+    },
+    {
+      "name": "project HR",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/project/HR",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/project/10002",
+          "id": "10002",
+          "key": "HR",
+          "name": "Human Resources",
+          "projectTypeKey": "software",
+          "projectCategory": {
+            "self": "http://jira.internal:8080/rest/api/2/projectCategory/10001",
+            "id": "10001",
+            "name": "Restricted",
+            "description": "HR and other restricted data"
+          }
+        }
+      }
+    },
+    {
+      "name": "project 10002",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/project/10002",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/project/10002",
+          "id": "10002",
+          "key": "HR",
+          "name": "Human Resources",
+          "projectTypeKey": "software",
+          "projectCategory": {
+            "self": "http://jira.internal:8080/rest/api/2/projectCategory/10001",
+            "id": "10001",
+            "name": "Restricted",
+            "description": "HR and other restricted data"
+          }
+        }
+      }
+    },
+    {
+      "name": "project not found",
+      "priority": 9,
+      "request": {
+        "method": "GET",
+        "urlPathPattern": "/rest/api/2/project/[^/]+",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "errorMessages": [
+            "No project could be found with key 'unknown'."
+          ],
+          "errors": {}
+        }
+      }
+    },
+    {
+      "name": "issue ABC-1",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/issue/ABC-1",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "bodyFileName": "issue-ABC-1.json"
+      }
+    },
+    {
+      "name": "issue 10100",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/issue/10100",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "bodyFileName": "issue-ABC-1.json"
+      }
+    },
+    {
+      "name": "issue ABC-2",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/issue/ABC-2",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "bodyFileName": "issue-ABC-2.json"
+      }
+    },
+    {
+      "name": "issue 10101",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/issue/10101",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "bodyFileName": "issue-ABC-2.json"
+      }
+    },
+    {
+      "name": "issue DEF-1",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/issue/DEF-1",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "bodyFileName": "issue-DEF-1.json"
+      }
+    },
+    {
+      "name": "issue 10200",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/issue/10200",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "bodyFileName": "issue-DEF-1.json"
+      }
+    },
+    {
+      "name": "issue DEF-5",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/issue/DEF-5",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "bodyFileName": "issue-DEF-5.json"
+      }
+    },
+    {
+      "name": "issue 10205",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/issue/10205",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "bodyFileName": "issue-DEF-5.json"
+      }
+    },
+    {
+      "name": "issue HR-1",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/issue/HR-1",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "bodyFileName": "issue-HR-1.json"
+      }
+    },
+    {
+      "name": "issue 10300",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/issue/10300",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "bodyFileName": "issue-HR-1.json"
+      }
+    },
+    {
+      "name": "moved issue ABC-3 -> DEF-5",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/issue/ABC-3",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "bodyFileName": "issue-DEF-5.json"
+      }
+    },
+    {
+      "name": "issue not found",
+      "priority": 9,
+      "request": {
+        "method": "GET",
+        "urlPathPattern": "/rest/api/2/issue/[^/]+",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "errorMessages": [
+            "Issue Does Not Exist"
+          ],
+          "errors": {}
+        }
+      }
+    },
+    {
+      "name": "search project ABC (GET)",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/search",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        },
+        "queryParameters": {
+          "jql": {
+            "matches": "(?i).*project\\s*(=|in\\s*\\()\\s*\"?ABC\"?\\b.*"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "expand": "names,schema",
+          "startAt": 0,
+          "maxResults": 50,
+          "total": 2,
+          "issues": [
+            {
+              "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+              "id": "10100",
+              "self": "http://jira.internal:8080/rest/api/2/issue/10100",
+              "key": "ABC-1",
+              "fields": {
+                "summary": "Login page returns 500",
+                "project": {
+                  "self": "http://jira.internal:8080/rest/api/2/project/10000",
+                  "id": "10000",
+                  "key": "ABC",
+                  "name": "Alpha Team",
+                  "projectTypeKey": "software"
+                },
+                "issuetype": {
+                  "id": "10002",
+                  "name": "Task",
+                  "subtask": false
+                },
+                "status": {
+                  "name": "To Do",
+                  "statusCategory": {
+                    "key": "new"
+                  }
+                },
+                "assignee": null,
+                "reporter": {
+                  "name": "alice",
+                  "displayName": "Alice Tester"
+                },
+                "created": "2026-10-01T09:00:00.000+0000",
+                "updated": "2026-10-20T12:00:00.000+0000",
+                "description": "Test issue ABC-1 (mcp-platform-dev mock data).",
+                "issuelinks": [
+                  {
+                    "id": "90000",
+                    "type": {
+                      "name": "Relates",
+                      "inward": "relates to",
+                      "outward": "relates to"
+                    },
+                    "outwardIssue": {
+                      "id": "10300",
+                      "key": "HR-1",
+                      "self": "http://jira.internal:8080/rest/api/2/issue/10300",
+                      "fields": {
+                        "summary": "Salary review 2026"
+                      }
+                    }
+                  },
+                  {
+                    "id": "90001",
+                    "type": {
+                      "name": "Relates",
+                      "inward": "relates to",
+                      "outward": "relates to"
+                    },
+                    "outwardIssue": {
+                      "id": "10200",
+                      "key": "DEF-1",
+                      "self": "http://jira.internal:8080/rest/api/2/issue/10200",
+                      "fields": {
+                        "summary": "Shared CI runner"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+              "id": "10101",
+              "self": "http://jira.internal:8080/rest/api/2/issue/10101",
+              "key": "ABC-2",
+              "fields": {
+                "summary": "Update onboarding docs",
+                "project": {
+                  "self": "http://jira.internal:8080/rest/api/2/project/10000",
+                  "id": "10000",
+                  "key": "ABC",
+                  "name": "Alpha Team",
+                  "projectTypeKey": "software"
+                },
+                "issuetype": {
+                  "id": "10002",
+                  "name": "Task",
+                  "subtask": false
+                },
+                "status": {
+                  "name": "Done",
+                  "statusCategory": {
+                    "key": "done"
+                  }
+                },
+                "assignee": null,
+                "reporter": {
+                  "name": "alice",
+                  "displayName": "Alice Tester"
+                },
+                "created": "2026-10-01T09:00:00.000+0000",
+                "updated": "2026-10-20T12:00:00.000+0000",
+                "description": "Test issue ABC-2 (mcp-platform-dev mock data).",
+                "issuelinks": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "search project ABC (POST)",
+      "priority": 5,
+      "request": {
+        "method": "POST",
+        "urlPath": "/rest/api/2/search",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        },
+        "bodyPatterns": [
+          {
+            "matchesJsonPath": {
+              "expression": "$.jql",
+              "matches": "(?i).*project\\s*(=|in\\s*\\()\\s*\"?ABC\"?\\b.*"
+            }
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "expand": "names,schema",
+          "startAt": 0,
+          "maxResults": 50,
+          "total": 2,
+          "issues": [
+            {
+              "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+              "id": "10100",
+              "self": "http://jira.internal:8080/rest/api/2/issue/10100",
+              "key": "ABC-1",
+              "fields": {
+                "summary": "Login page returns 500",
+                "project": {
+                  "self": "http://jira.internal:8080/rest/api/2/project/10000",
+                  "id": "10000",
+                  "key": "ABC",
+                  "name": "Alpha Team",
+                  "projectTypeKey": "software"
+                },
+                "issuetype": {
+                  "id": "10002",
+                  "name": "Task",
+                  "subtask": false
+                },
+                "status": {
+                  "name": "To Do",
+                  "statusCategory": {
+                    "key": "new"
+                  }
+                },
+                "assignee": null,
+                "reporter": {
+                  "name": "alice",
+                  "displayName": "Alice Tester"
+                },
+                "created": "2026-10-01T09:00:00.000+0000",
+                "updated": "2026-10-20T12:00:00.000+0000",
+                "description": "Test issue ABC-1 (mcp-platform-dev mock data).",
+                "issuelinks": [
+                  {
+                    "id": "90000",
+                    "type": {
+                      "name": "Relates",
+                      "inward": "relates to",
+                      "outward": "relates to"
+                    },
+                    "outwardIssue": {
+                      "id": "10300",
+                      "key": "HR-1",
+                      "self": "http://jira.internal:8080/rest/api/2/issue/10300",
+                      "fields": {
+                        "summary": "Salary review 2026"
+                      }
+                    }
+                  },
+                  {
+                    "id": "90001",
+                    "type": {
+                      "name": "Relates",
+                      "inward": "relates to",
+                      "outward": "relates to"
+                    },
+                    "outwardIssue": {
+                      "id": "10200",
+                      "key": "DEF-1",
+                      "self": "http://jira.internal:8080/rest/api/2/issue/10200",
+                      "fields": {
+                        "summary": "Shared CI runner"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+              "id": "10101",
+              "self": "http://jira.internal:8080/rest/api/2/issue/10101",
+              "key": "ABC-2",
+              "fields": {
+                "summary": "Update onboarding docs",
+                "project": {
+                  "self": "http://jira.internal:8080/rest/api/2/project/10000",
+                  "id": "10000",
+                  "key": "ABC",
+                  "name": "Alpha Team",
+                  "projectTypeKey": "software"
+                },
+                "issuetype": {
+                  "id": "10002",
+                  "name": "Task",
+                  "subtask": false
+                },
+                "status": {
+                  "name": "Done",
+                  "statusCategory": {
+                    "key": "done"
+                  }
+                },
+                "assignee": null,
+                "reporter": {
+                  "name": "alice",
+                  "displayName": "Alice Tester"
+                },
+                "created": "2026-10-01T09:00:00.000+0000",
+                "updated": "2026-10-20T12:00:00.000+0000",
+                "description": "Test issue ABC-2 (mcp-platform-dev mock data).",
+                "issuelinks": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "search project DEF (GET)",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/search",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        },
+        "queryParameters": {
+          "jql": {
+            "matches": "(?i).*project\\s*(=|in\\s*\\()\\s*\"?DEF\"?\\b.*"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "expand": "names,schema",
+          "startAt": 0,
+          "maxResults": 50,
+          "total": 2,
+          "issues": [
+            {
+              "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+              "id": "10200",
+              "self": "http://jira.internal:8080/rest/api/2/issue/10200",
+              "key": "DEF-1",
+              "fields": {
+                "summary": "Shared CI runner",
+                "project": {
+                  "self": "http://jira.internal:8080/rest/api/2/project/10001",
+                  "id": "10001",
+                  "key": "DEF",
+                  "name": "Delta Team",
+                  "projectTypeKey": "software"
+                },
+                "issuetype": {
+                  "id": "10002",
+                  "name": "Task",
+                  "subtask": false
+                },
+                "status": {
+                  "name": "To Do",
+                  "statusCategory": {
+                    "key": "new"
+                  }
+                },
+                "assignee": null,
+                "reporter": {
+                  "name": "alice",
+                  "displayName": "Alice Tester"
+                },
+                "created": "2026-10-01T09:00:00.000+0000",
+                "updated": "2026-10-20T12:00:00.000+0000",
+                "description": "Test issue DEF-1 (mcp-platform-dev mock data).",
+                "issuelinks": [
+                  {
+                    "id": "90000",
+                    "type": {
+                      "name": "Relates",
+                      "inward": "relates to",
+                      "outward": "relates to"
+                    },
+                    "outwardIssue": {
+                      "id": "10100",
+                      "key": "ABC-1",
+                      "self": "http://jira.internal:8080/rest/api/2/issue/10100",
+                      "fields": {
+                        "summary": "Login page returns 500"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+              "id": "10205",
+              "self": "http://jira.internal:8080/rest/api/2/issue/10205",
+              "key": "DEF-5",
+              "fields": {
+                "summary": "Migrate build cache (moved from ABC-3)",
+                "project": {
+                  "self": "http://jira.internal:8080/rest/api/2/project/10001",
+                  "id": "10001",
+                  "key": "DEF",
+                  "name": "Delta Team",
+                  "projectTypeKey": "software"
+                },
+                "issuetype": {
+                  "id": "10002",
+                  "name": "Task",
+                  "subtask": false
+                },
+                "status": {
+                  "name": "To Do",
+                  "statusCategory": {
+                    "key": "new"
+                  }
+                },
+                "assignee": null,
+                "reporter": {
+                  "name": "alice",
+                  "displayName": "Alice Tester"
+                },
+                "created": "2026-10-01T09:00:00.000+0000",
+                "updated": "2026-10-20T12:00:00.000+0000",
+                "description": "Test issue DEF-5 (mcp-platform-dev mock data).",
+                "issuelinks": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "search project DEF (POST)",
+      "priority": 5,
+      "request": {
+        "method": "POST",
+        "urlPath": "/rest/api/2/search",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        },
+        "bodyPatterns": [
+          {
+            "matchesJsonPath": {
+              "expression": "$.jql",
+              "matches": "(?i).*project\\s*(=|in\\s*\\()\\s*\"?DEF\"?\\b.*"
+            }
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "expand": "names,schema",
+          "startAt": 0,
+          "maxResults": 50,
+          "total": 2,
+          "issues": [
+            {
+              "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+              "id": "10200",
+              "self": "http://jira.internal:8080/rest/api/2/issue/10200",
+              "key": "DEF-1",
+              "fields": {
+                "summary": "Shared CI runner",
+                "project": {
+                  "self": "http://jira.internal:8080/rest/api/2/project/10001",
+                  "id": "10001",
+                  "key": "DEF",
+                  "name": "Delta Team",
+                  "projectTypeKey": "software"
+                },
+                "issuetype": {
+                  "id": "10002",
+                  "name": "Task",
+                  "subtask": false
+                },
+                "status": {
+                  "name": "To Do",
+                  "statusCategory": {
+                    "key": "new"
+                  }
+                },
+                "assignee": null,
+                "reporter": {
+                  "name": "alice",
+                  "displayName": "Alice Tester"
+                },
+                "created": "2026-10-01T09:00:00.000+0000",
+                "updated": "2026-10-20T12:00:00.000+0000",
+                "description": "Test issue DEF-1 (mcp-platform-dev mock data).",
+                "issuelinks": [
+                  {
+                    "id": "90000",
+                    "type": {
+                      "name": "Relates",
+                      "inward": "relates to",
+                      "outward": "relates to"
+                    },
+                    "outwardIssue": {
+                      "id": "10100",
+                      "key": "ABC-1",
+                      "self": "http://jira.internal:8080/rest/api/2/issue/10100",
+                      "fields": {
+                        "summary": "Login page returns 500"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+              "id": "10205",
+              "self": "http://jira.internal:8080/rest/api/2/issue/10205",
+              "key": "DEF-5",
+              "fields": {
+                "summary": "Migrate build cache (moved from ABC-3)",
+                "project": {
+                  "self": "http://jira.internal:8080/rest/api/2/project/10001",
+                  "id": "10001",
+                  "key": "DEF",
+                  "name": "Delta Team",
+                  "projectTypeKey": "software"
+                },
+                "issuetype": {
+                  "id": "10002",
+                  "name": "Task",
+                  "subtask": false
+                },
+                "status": {
+                  "name": "To Do",
+                  "statusCategory": {
+                    "key": "new"
+                  }
+                },
+                "assignee": null,
+                "reporter": {
+                  "name": "alice",
+                  "displayName": "Alice Tester"
+                },
+                "created": "2026-10-01T09:00:00.000+0000",
+                "updated": "2026-10-20T12:00:00.000+0000",
+                "description": "Test issue DEF-5 (mcp-platform-dev mock data).",
+                "issuelinks": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "search project HR (GET)",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/search",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        },
+        "queryParameters": {
+          "jql": {
+            "matches": "(?i).*project\\s*(=|in\\s*\\()\\s*\"?HR\"?\\b.*"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "expand": "names,schema",
+          "startAt": 0,
+          "maxResults": 50,
+          "total": 1,
+          "issues": [
+            {
+              "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+              "id": "10300",
+              "self": "http://jira.internal:8080/rest/api/2/issue/10300",
+              "key": "HR-1",
+              "fields": {
+                "summary": "Salary review 2026",
+                "project": {
+                  "self": "http://jira.internal:8080/rest/api/2/project/10002",
+                  "id": "10002",
+                  "key": "HR",
+                  "name": "Human Resources",
+                  "projectTypeKey": "software",
+                  "projectCategory": {
+                    "self": "http://jira.internal:8080/rest/api/2/projectCategory/10001",
+                    "id": "10001",
+                    "name": "Restricted",
+                    "description": "HR and other restricted data"
+                  }
+                },
+                "issuetype": {
+                  "id": "10002",
+                  "name": "Task",
+                  "subtask": false
+                },
+                "status": {
+                  "name": "To Do",
+                  "statusCategory": {
+                    "key": "new"
+                  }
+                },
+                "assignee": null,
+                "reporter": {
+                  "name": "alice",
+                  "displayName": "Alice Tester"
+                },
+                "created": "2026-10-01T09:00:00.000+0000",
+                "updated": "2026-10-20T12:00:00.000+0000",
+                "description": "Test issue HR-1 (mcp-platform-dev mock data).",
+                "issuelinks": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "search project HR (POST)",
+      "priority": 5,
+      "request": {
+        "method": "POST",
+        "urlPath": "/rest/api/2/search",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        },
+        "bodyPatterns": [
+          {
+            "matchesJsonPath": {
+              "expression": "$.jql",
+              "matches": "(?i).*project\\s*(=|in\\s*\\()\\s*\"?HR\"?\\b.*"
+            }
+          }
+        ]
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "expand": "names,schema",
+          "startAt": 0,
+          "maxResults": 50,
+          "total": 1,
+          "issues": [
+            {
+              "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+              "id": "10300",
+              "self": "http://jira.internal:8080/rest/api/2/issue/10300",
+              "key": "HR-1",
+              "fields": {
+                "summary": "Salary review 2026",
+                "project": {
+                  "self": "http://jira.internal:8080/rest/api/2/project/10002",
+                  "id": "10002",
+                  "key": "HR",
+                  "name": "Human Resources",
+                  "projectTypeKey": "software",
+                  "projectCategory": {
+                    "self": "http://jira.internal:8080/rest/api/2/projectCategory/10001",
+                    "id": "10001",
+                    "name": "Restricted",
+                    "description": "HR and other restricted data"
+                  }
+                },
+                "issuetype": {
+                  "id": "10002",
+                  "name": "Task",
+                  "subtask": false
+                },
+                "status": {
+                  "name": "To Do",
+                  "statusCategory": {
+                    "key": "new"
+                  }
+                },
+                "assignee": null,
+                "reporter": {
+                  "name": "alice",
+                  "displayName": "Alice Tester"
+                },
+                "created": "2026-10-01T09:00:00.000+0000",
+                "updated": "2026-10-20T12:00:00.000+0000",
+                "description": "Test issue HR-1 (mcp-platform-dev mock data).",
+                "issuelinks": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "search without match (GET)",
+      "priority": 9,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/search",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "expand": "names,schema",
+          "startAt": 0,
+          "maxResults": 50,
+          "total": 0,
+          "issues": []
+        }
+      }
+    },
+    {
+      "name": "search without match (POST)",
+      "priority": 9,
+      "request": {
+        "method": "POST",
+        "urlPath": "/rest/api/2/search",
+        "headers": {
+          "Authorization": {
+            "matches": "^(Bearer|Basic) .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "expand": "names,schema",
+          "startAt": 0,
+          "maxResults": 50,
+          "total": 0,
+          "issues": []
+        }
+      }
+    }
+  ]
+}

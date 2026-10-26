@@ -1,0 +1,229 @@
+{
+  "mappings": [
+    {
+      "name": "myself without credentials",
+      "priority": 1,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/myself",
+        "headers": {
+          "Authorization": {
+            "absent": true
+          }
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "errorMessages": [
+            "You are not authenticated. Authentication required to perform this operation."
+          ],
+          "errors": {}
+        }
+      }
+    },
+    {
+      "name": "myself as alice",
+      "priority": 2,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/myself",
+        "headers": {
+          "Authorization": {
+            "equalTo": "Bearer alice-pat"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/user?username=alice",
+          "key": "JIRAUSER-alice",
+          "name": "alice",
+          "emailAddress": "alice@corp.test",
+          "displayName": "Alice Tester",
+          "active": true,
+          "deleted": false,
+          "timeZone": "Europe/Warsaw",
+          "locale": "pl_PL"
+        }
+      }
+    },
+    {
+      "name": "myself as bob",
+      "priority": 2,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/myself",
+        "headers": {
+          "Authorization": {
+            "equalTo": "Bearer bob-pat"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/user?username=bob",
+          "key": "JIRAUSER-bob",
+          "name": "bob",
+          "emailAddress": "bob@corp.test",
+          "displayName": "Bob Reader",
+          "active": true,
+          "deleted": false,
+          "timeZone": "Europe/Warsaw",
+          "locale": "pl_PL"
+        }
+      }
+    },
+    {
+      "name": "myself as carol",
+      "priority": 2,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/myself",
+        "headers": {
+          "Authorization": {
+            "equalTo": "Bearer carol-pat"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/user?username=carol",
+          "key": "JIRAUSER-carol",
+          "name": "carol",
+          "emailAddress": "carol@corp.test",
+          "displayName": "Carol Admin",
+          "active": true,
+          "deleted": false,
+          "timeZone": "Europe/Warsaw",
+          "locale": "pl_PL"
+        }
+      }
+    },
+    {
+      "name": "myself as mallory",
+      "priority": 2,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/myself",
+        "headers": {
+          "Authorization": {
+            "equalTo": "Bearer mallory-pat"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/user?username=mallory",
+          "key": "JIRAUSER-mallory",
+          "name": "mallory",
+          "emailAddress": "mallory@corp.test",
+          "displayName": "Mallory Nogroups",
+          "active": true,
+          "deleted": false,
+          "timeZone": "Europe/Warsaw",
+          "locale": "pl_PL"
+        }
+      }
+    },
+    {
+      "name": "myself as jkowalski",
+      "priority": 2,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/myself",
+        "headers": {
+          "Authorization": {
+            "equalTo": "Bearer test-only-jira-pat-0000000000000000"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/user?username=jkowalski",
+          "key": "JIRAUSER-jkowalski",
+          "name": "jkowalski",
+          "emailAddress": "jkowalski@corp.test",
+          "displayName": "Jan Kowalski",
+          "active": true,
+          "deleted": false,
+          "timeZone": "Europe/Warsaw",
+          "locale": "pl_PL"
+        }
+      }
+    },
+    {
+      "name": "myself for any other bearer token",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/myself",
+        "headers": {
+          "Authorization": {
+            "matches": "^Bearer .+$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/user?username=someone-else",
+          "key": "JIRAUSER-someone-else",
+          "name": "someone-else",
+          "emailAddress": "someone-else@corp.test",
+          "displayName": "Someone Else",
+          "active": true,
+          "deleted": false,
+          "timeZone": "Europe/Warsaw",
+          "locale": "pl_PL"
+        }
+      }
+    },
+    {
+      "name": "myself for non-bearer credentials",
+      "priority": 6,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/myself"
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "errorMessages": [
+            "You are not authenticated. Authentication required to perform this operation."
+          ],
+          "errors": {}
+        }
+      }
+    }
+  ]
+}
