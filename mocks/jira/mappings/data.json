@@ -1,15 +1,10 @@
 {
   "mappings": [
     {
-      "name": "401 without credentials /rest/api/2/project.*",
-      "priority": 1,
+      "name": "401 for unknown or missing credentials /rest/api/2/project.*",
+      "priority": 20,
       "request": {
-        "urlPattern": "/rest/api/2/project.*",
-        "headers": {
-          "Authorization": {
-            "absent": true
-          }
-        }
+        "urlPattern": "/rest/api/2/project.*"
       },
       "response": {
         "status": 401,
@@ -25,15 +20,10 @@
       }
     },
     {
-      "name": "401 without credentials /rest/api/2/issue/.*",
-      "priority": 1,
+      "name": "401 for unknown or missing credentials /rest/api/2/issue/.*",
+      "priority": 20,
       "request": {
-        "urlPattern": "/rest/api/2/issue/.*",
-        "headers": {
-          "Authorization": {
-            "absent": true
-          }
-        }
+        "urlPattern": "/rest/api/2/issue/.*"
       },
       "response": {
         "status": 401,
@@ -49,15 +39,10 @@
       }
     },
     {
-      "name": "401 without credentials /rest/api/2/search.*",
-      "priority": 1,
+      "name": "401 for unknown or missing credentials /rest/api/2/search.*",
+      "priority": 20,
       "request": {
-        "urlPattern": "/rest/api/2/search.*",
-        "headers": {
-          "Authorization": {
-            "absent": true
-          }
-        }
+        "urlPattern": "/rest/api/2/search.*"
       },
       "response": {
         "status": 401,
@@ -80,7 +65,7 @@
         "urlPath": "/rest/api/2/project",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -128,7 +113,7 @@
         "urlPath": "/rest/api/2/project/ABC",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -154,7 +139,7 @@
         "urlPath": "/rest/api/2/project/10000",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -180,7 +165,7 @@
         "urlPath": "/rest/api/2/project/DEF",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -206,7 +191,7 @@
         "urlPath": "/rest/api/2/project/10001",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -232,7 +217,7 @@
         "urlPath": "/rest/api/2/project/HR",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -264,7 +249,7 @@
         "urlPath": "/rest/api/2/project/10002",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -296,7 +281,7 @@
         "urlPathPattern": "/rest/api/2/project/[^/]+",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -321,7 +306,7 @@
         "urlPath": "/rest/api/2/issue/ABC-1",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -341,7 +326,7 @@
         "urlPath": "/rest/api/2/issue/10100",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -361,7 +346,7 @@
         "urlPath": "/rest/api/2/issue/ABC-2",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -381,7 +366,7 @@
         "urlPath": "/rest/api/2/issue/10101",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -401,7 +386,7 @@
         "urlPath": "/rest/api/2/issue/DEF-1",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -421,7 +406,7 @@
         "urlPath": "/rest/api/2/issue/10200",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -441,7 +426,7 @@
         "urlPath": "/rest/api/2/issue/DEF-5",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -461,7 +446,7 @@
         "urlPath": "/rest/api/2/issue/10205",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -481,7 +466,7 @@
         "urlPath": "/rest/api/2/issue/HR-1",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -501,7 +486,7 @@
         "urlPath": "/rest/api/2/issue/10300",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -521,7 +506,7 @@
         "urlPath": "/rest/api/2/issue/ABC-3",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -541,7 +526,7 @@
         "urlPathPattern": "/rest/api/2/issue/[^/]+",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -566,7 +551,7 @@
         "urlPath": "/rest/api/2/search",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         },
         "queryParameters": {
@@ -703,7 +688,7 @@
         "urlPath": "/rest/api/2/search",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         },
         "bodyPatterns": [
@@ -843,7 +828,7 @@
         "urlPath": "/rest/api/2/search",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         },
         "queryParameters": {
@@ -964,7 +949,7 @@
         "urlPath": "/rest/api/2/search",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         },
         "bodyPatterns": [
@@ -1088,7 +1073,7 @@
         "urlPath": "/rest/api/2/search",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         },
         "queryParameters": {
@@ -1162,7 +1147,7 @@
         "urlPath": "/rest/api/2/search",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         },
         "bodyPatterns": [
@@ -1239,7 +1224,7 @@
         "urlPath": "/rest/api/2/search",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },
@@ -1265,7 +1250,7 @@
         "urlPath": "/rest/api/2/search",
         "headers": {
           "Authorization": {
-            "matches": "^(Bearer|Basic) .+$"
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
           }
         }
       },

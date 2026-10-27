@@ -24,9 +24,9 @@ Claim `groups` zawiera nazwy bez ścieżki (`mcp-jira-read`, nie `/mcp-jira-read
 | Klient | Typ | Przepływy | Uwagi |
 | --- | --- | --- | --- |
 | `claude-code` | public | authorization code + PKCE S256 (wymuszone) | redirect `http://localhost:33418/callback` i `http://127.0.0.1:33418/callback`; zawsze `aud=mcp-gateway`; bez ROPC |
-| `mcp-gateway` | confidential | tylko token exchange | może wymienić token z `aud=mcp-gateway` na `mcp-credential-broker` albo `opensearch` |
+| `mcp-gateway` | confidential | tylko token exchange | wymienia token z `aud=mcp-gateway` wyłącznie na `mcp-credential-broker` (`subjectToken` dla `resolve`, C4) |
 | `mcp-portal-bff` | confidential | authorization code (+PKCE), token exchange | redirect `http://localhost:18090/login/oauth2/code/*`, `.../api/v1/oauth/callback`; wymiana na `mcp-credential-broker` albo `mcp-gateway-admin` |
-| `mcp-credential-broker` | confidential | brak | tylko jako `aud` |
+| `mcp-credential-broker` | confidential | tylko token exchange | `aud` tokenów C4; wymienia `subjectToken` (aud brokera) na `opensearch` dla systemów typu `token-exchange` |
 | `mcp-gateway-admin` | confidential | brak | tylko jako `aud` |
 | `opensearch` | confidential | brak | tylko jako `aud` (typ poświadczenia `token-exchange`) |
 
@@ -37,6 +37,16 @@ Token `claude-code` zawiera `iss`, `sub`, `aud`, `exp`, `iat`, `azp`, `preferred
 `realm_access` ani `aud=account`.
 
 ## Token exchange (standard, RFC 8693)
+
+Łańcuch wymian zgodny z C4: gateway wymienia token klienta AI na `aud=mcp-credential-broker` i przekazuje go
+w `resolve` jako `subjectToken`; dopiero broker wymienia go na audience systemu docelowego (`opensearch`).
+BFF wymienia swój token sesji na `mcp-credential-broker` albo `mcp-gateway-admin`.
+
+| Wymieniający | Token wejściowy | Dozwolone `audience` |
+| --- | --- | --- |
+| `mcp-gateway` | `claude-code` (`aud=mcp-gateway`) | `mcp-credential-broker` |
+| `mcp-portal-bff` | własny token sesji | `mcp-credential-broker`, `mcp-gateway-admin` |
+| `mcp-credential-broker` | `aud=mcp-credential-broker` | `opensearch` |
 
 Audience docelowe są w opcjonalnych client scope'ach (`mcp-credential-broker-audience`,
 `mcp-gateway-admin-audience`, `opensearch-audience`). Zwykły token logowania ich nie ma; wymiana musi podać
@@ -52,8 +62,16 @@ curl -s http://localhost:18080/realms/corp/protocol/openid-connect/token \
 ```
 
 Bez `scope` Keycloak 26.8 odpowiada `Requested audience not available`. Wynik: `aud=mcp-credential-broker`,
-ten sam `sub`, `azp` = klient wymieniający. Sprawdzane w `make smoke`: wymiana przez gateway i BFF działa,
-gateway nie dostanie `aud=mcp-gateway-admin`, a `claude-code` nie może poprosić o scope brokera przy logowaniu.
+ten sam `sub`, `azp` = klient wymieniający. Sprawdzane w `make smoke`:
+
+- działa: gateway -> broker, BFF -> broker, broker (token od gateway'a) -> `opensearch`;
+- odmowa: gateway -> `opensearch`, gateway -> `mcp-gateway-admin`, gateway z tokenem brokera -> `opensearch`,
+  `claude-code` (klient publiczny) -> cokolwiek, BFF z tokenem `claude-code`, BFF z tokenem wydanym gateway'owi,
+  `claude-code` proszący o scope brokera przy logowaniu;
+- wymiana przez gateway bez `audience` daje token bez żadnego audience komponentu (bezużyteczny dla odbiorców).
+
+Anonimowa dynamiczna rejestracja klientów jest zablokowana jawnie: realm deklaruje politykę "Trusted Hosts"
+z pustą listą hostów (`components` w `realm-corp.json`).
 
 ## Mock Jiry: PAT i tożsamości (C4.1)
 
@@ -67,4 +85,7 @@ gateway nie dostanie `aud=mcp-gateway-admin`, a `claude-code` nie może poprosi�
 Dane: projekty `ABC`, `DEF`, `HR` (kategoria `Restricted`); zgłoszenia `ABC-1` (linki do `HR-1` i `DEF-1`),
 `ABC-2`, `DEF-1`, `DEF-5`, `HR-1`; `ABC-3` przeniesione do `DEF` (odpowiedź z kluczem `DEF-5`);
 `/rest/api/2/search` (GET i POST) rozpoznaje `project = ABC|DEF|HR` w JQL. Endpointy danych wymagają
-dowolnego `Bearer`/`Basic`; mock nie sprawdza uprawnień per użytkownik.
+jednego ze znanych PAT z tabeli. Każde inne poświadczenie, w tym token z Keycloaka (token passthrough,
+niezmiennik 2), cudzy PAT i `Basic`, dostaje `401`. `make jira-auth` pokazuje z dziennika żądań mocka, jakie
+poświadczenie dotarło do Jiry (nazwa znanego PAT, oznaczony JWT z `iss`/`aud`, inne tylko długością).
+Mock nie sprawdza uprawnień per użytkownik.

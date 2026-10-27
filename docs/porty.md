@@ -1,20 +1,25 @@
 # Porty i adresy
 
-Porty hosta są w `.env` i wiążą się tylko z `127.0.0.1`. W sieci compose (`mcp-dev`) usługi mają nazwy
-usług i aliasy `*.internal`.
+Porty hosta są w `.env` i wiążą się tylko z `127.0.0.1`. W compose są dwie sieci:
+
+- `mcp-dev-core`: Keycloak, OpenBao, PostgreSQL, Redis, mock Jiry, stuby C4/C5, broker, gateway;
+- `mcp-dev-servers`: gateway, serwery MCP, Redis, mock Jiry. Serwer MCP nie widzi Keycloaka, OpenBao,
+  PostgreSQL ani brokera (sprawdza `make smoke`).
+
+Usługi mają nazwy usług i aliasy `*.internal`.
 
 | Usługa | Z hosta | Z sieci compose | Uwagi |
 | --- | --- | --- | --- |
 | Keycloak (realm `corp`) | `http://localhost:18080` | `http://keycloak:8080` | `iss` zawsze `http://localhost:18080/realms/corp` (patrz niżej) |
 | Konsola admina Keycloak | `http://localhost:18080/admin` | | login z `make users` |
-| OpenBao (dev) | `http://localhost:18200` | `http://openbao:8200` | root token: `BAO_ROOT_TOKEN` w `.secrets/dev.env` |
-| Redis | `localhost:16379` | `redis:6379` | hasło `REDIS_PASSWORD` |
+| OpenBao (dev) | `http://localhost:18200` | `http://openbao:8200` | root token: `BAO_ROOT_TOKEN` w `.secrets/dev.env`; audyt na stdout kontenera |
+| Redis | `localhost:16379` | `redis:6379` | ACL per komponent, patrz [integracja.md](integracja.md#redis-użytkownicy-i-prefiksy-propozycja-ws-01-dla-ws-02-ws-05-ws-06) |
 | PostgreSQL | `localhost:15432` | `postgres:5432` | bazy `gateway` i `broker`, użytkownicy o tych samych nazwach |
-| Mock Jiry (HTTP) | `http://localhost:18081` | `http://jira.internal:8080` | PAT jako `Authorization: Bearer <pat>` |
-| Stub brokera C4 (mTLS) | `https://localhost:18443` | `https://mcp-credential-broker.internal:8443` | profil `infra` |
-| Stub admina gateway'a C5 (mTLS) | `https://localhost:18444` | `https://mcp-gateway.internal:8443` | profil `infra` |
-| Gateway | `http://localhost:18000` | `mcp-gateway.internal` | profil `full`, port w kontenerze 8080 |
-| Broker | `https://localhost:18100` | `https://mcp-credential-broker.internal:8443` | profil `full` |
+| Mock Jiry (HTTP) | `http://localhost:18081` | `http://jira.internal:8080` | PAT jako `Authorization: Bearer <pat>`; `/__admin` otwarte (dziennik żądań do testów) |
+| Stub brokera C4 (mTLS) | `https://localhost:18443` | `https://${MCP_BROKER_TLS_NAME}:8443` | `make up`; kontrakty z `MCP_CONTRACTS_REF` |
+| Stub admina gateway'a C5 (mTLS) | `https://localhost:18444` | `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443` | `make up` |
+| Gateway | `http://localhost:18000` | `${MCP_GATEWAY_INTERNAL_TLS_NAME}` | `make up-full`, port w kontenerze 8080 |
+| Broker | `https://localhost:18100` | `https://${MCP_BROKER_TLS_NAME}:8443` | `make up-full` (stuby wtedy są usuwane) |
 | `mcp-jira` | | `https://mcp-jira.internal:8443` | profil `full` |
 | Portal (zarezerwowany) | `http://localhost:18090` | | redirect URI klienta `mcp-portal-bff` |
 | Callback Claude Code | `http://localhost:33418/callback` | | redirect URI klienta `claude-code` |
@@ -46,8 +51,15 @@ Metadane serwera autoryzacji (RFC 8414) są pod
 | `certs/<nazwa>/keystore.p12` | klucz + łańcuch dla Javy; hasło `TLS_STORE_PASSWORD` |
 | `certs/untrusted/mcp-gateway/` | CN `mcp-gateway` podpisany innym CA, do testów negatywnych |
 
-Nazwy: `mcp-gateway`, `mcp-credential-broker`, `mcp-portal-bff`, `mcp-registry-ci`, `mcp-offboarding`,
-`mcp-jira`, `mcp-confluence`, `mcp-gitlab`, `mcp-servicedesk`, `mcp-opensearch`. Każdy certyfikat ma
-`CN=<nazwa>`, SAN `DNS:<nazwa>.internal`, `DNS:<nazwa>`, `DNS:localhost`, `IP:127.0.0.1` oraz EKU
-`serverAuth` i `clientAuth`. `localhost` w SAN jest wygodą dev (komponent na hoście); produkcyjne
-certyfikaty go nie mają.
+| Nazwa | EKU | SAN |
+| --- | --- | --- |
+| `mcp-gateway` | serverAuth, clientAuth | `${MCP_GATEWAY_INTERNAL_TLS_NAME}`, `mcp-gateway`, `localhost`, `127.0.0.1` |
+| `mcp-credential-broker` | serverAuth | `${MCP_BROKER_TLS_NAME}`, `mcp-credential-broker`, `localhost`, `127.0.0.1` |
+| `mcp-jira`, `mcp-confluence`, `mcp-gitlab`, `mcp-servicedesk`, `mcp-opensearch` | serverAuth | `<serverId>.internal`, `<serverId>`, `localhost`, `127.0.0.1` |
+| `mcp-portal-bff`, `mcp-registry-ci`, `mcp-offboarding` | clientAuth | `<nazwa>` |
+
+Wszystkie mają `CN=<nazwa>`. `localhost` w SAN dostają tylko certyfikaty serwerowe, dla komponentów
+uruchomionych na hoście; produkcyjne certyfikaty go nie mają. Klient i tak powinien weryfikować nazwę
+z konfiguracji (`MCP_BROKER_TLS_NAME`, `MCP_GATEWAY_INTERNAL_TLS_NAME`), nie adres, pod który się łączy.
+Kontenery stubów montują tylko swój keystore, CA (`ca.crt`, `truststore.p12`) i certyfikat klienta do
+healthchecku; klucz CA i klucze innych tożsamości zostają na hoście.

@@ -3,22 +3,28 @@
 #   (none)  infrastructure: Keycloak, OpenBao, Redis, PostgreSQL, Jira mock
 #   infra   + contract stubs (WireMock) of the credential broker (C4) and gateway admin API (C5)
 #   full    + platform components built by other streams (images from .env); replaces the stubs
-# Secrets come from .secrets/dev.env (scripts/init-secrets.sh), certificates from certs/ (scripts/gen-certs.sh).
-# Run through `make` or scripts/compose.sh, which pass both .env and .secrets/dev.env as --env-file,
-# so that each service gets only the secrets listed in its environment.
+# Run through `make` or scripts/compose.sh: they pass .env and .secrets/dev.env as --env-file, so each
+# service gets only the secrets listed in its environment. Stubs come from out/contracts
+# (scripts/fetch-contracts.sh, ref MCP_CONTRACTS_REF), certificates from certs/ (scripts/gen-certs.sh).
+#
+# Networks: "core" holds the IdP, secret store, databases, broker and gateway; "servers" holds the gateway,
+# MCP servers and what they need (Redis, target systems). MCP servers cannot reach Keycloak, OpenBao,
+# PostgreSQL or the broker.
 
 name: ${COMPOSE_PROJECT_NAME:-mcp-dev}
 
 networks:
-  mcp:
-    name: ${COMPOSE_PROJECT_NAME:-mcp-dev}
+  core:
+    name: ${COMPOSE_PROJECT_NAME:-mcp-dev}-core
+  servers:
+    name: ${COMPOSE_PROJECT_NAME:-mcp-dev}-servers
 
 volumes:
   postgres-data:
 
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:26.8.1
+    image: quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b
     command: ["start-dev", "--import-realm"]
     environment:
       # Fixed frontend URL: `iss` is the same for tokens obtained from the host and from containers.
@@ -45,7 +51,7 @@ services:
     ports:
       - 127.0.0.1:${KEYCLOAK_PORT}:8080
     networks:
-      mcp:
+      core:
         aliases: [keycloak.internal]
     healthcheck:
       # The image has no curl; bash /dev/tcp is enough for the management health endpoint.
@@ -56,17 +62,18 @@ services:
       start_period: 10s
 
   openbao:
-    image: openbao/openbao:2.7.2
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["exec bao server -dev -dev-listen-address=0.0.0.0:8200 -dev-root-token-id=\"$$BAO_ROOT_TOKEN\""]
+    image: openbao/openbao:2.7.2@sha256:5046911075e137e154ce49ab051502f4ec7cf367d484ae4a4dce665d9b90561f
+    command: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200", "-config=/openbao/audit.hcl"]
     cap_add: [IPC_LOCK]
     environment:
       BAO_ADDR: http://127.0.0.1:8200
-      BAO_ROOT_TOKEN: ${BAO_ROOT_TOKEN:?run make secrets}
+      BAO_DEV_ROOT_TOKEN_ID: ${BAO_ROOT_TOKEN:?run make secrets}
+    volumes:
+      - ./openbao/audit.hcl:/openbao/audit.hcl:ro
     ports:
       - 127.0.0.1:${OPENBAO_PORT}:8200
     networks:
-      mcp:
+      core:
         aliases: [openbao.internal]
     healthcheck:
       test: ["CMD", "bao", "status"]
@@ -75,7 +82,7 @@ services:
       retries: 20
 
   openbao-init:
-    image: openbao/openbao:2.7.2
+    image: openbao/openbao:2.7.2@sha256:5046911075e137e154ce49ab051502f4ec7cf367d484ae4a4dce665d9b90561f
     entrypoint: ["/bin/sh", "/init.sh"]
     environment:
       BAO_ADDR: http://openbao:8200
@@ -84,30 +91,42 @@ services:
       BAO_BROKER_SECRET_ID: ${BAO_BROKER_SECRET_ID:?run make secrets}
     volumes:
       - ./openbao/init.sh:/init.sh:ro
-    networks: [mcp]
+    networks: [core]
     depends_on:
       openbao:
         condition: service_healthy
     restart: "no"
 
   redis:
-    image: redis:8.8.4-alpine
-    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly no"]
+    image: redis:8.8.4-alpine@sha256:be8dfdf58574d626e0abe03073ce9178509e0e9564a316e34e71d2289b8370e1
+    user: redis
+    entrypoint: ["/bin/sh", "/start.sh"]
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?run make secrets}
+      REDIS_ADMIN_PASSWORD: ${REDIS_ADMIN_PASSWORD:?run make secrets}
+      REDIS_GATEWAY_PASSWORD: ${REDIS_GATEWAY_PASSWORD:?run make secrets}
+      REDIS_BROKER_PASSWORD: ${REDIS_BROKER_PASSWORD:?run make secrets}
+      REDIS_MCP_JIRA_PASSWORD: ${REDIS_MCP_JIRA_PASSWORD:?run make secrets}
+      REDIS_MCP_CONFLUENCE_PASSWORD: ${REDIS_MCP_CONFLUENCE_PASSWORD:?run make secrets}
+      REDIS_MCP_GITLAB_PASSWORD: ${REDIS_MCP_GITLAB_PASSWORD:?run make secrets}
+      REDIS_MCP_SERVICEDESK_PASSWORD: ${REDIS_MCP_SERVICEDESK_PASSWORD:?run make secrets}
+      REDIS_MCP_OPENSEARCH_PASSWORD: ${REDIS_MCP_OPENSEARCH_PASSWORD:?run make secrets}
+    volumes:
+      - ./redis/start.sh:/start.sh:ro
     ports:
       - 127.0.0.1:${REDIS_PORT}:6379
     networks:
-      mcp:
+      core:
+        aliases: [redis.internal]
+      servers:
         aliases: [redis.internal]
     healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_ADMIN_PASSWORD\" redis-cli --user admin ping | grep -q PONG"]
       interval: 3s
       timeout: 3s
       retries: 20
 
   postgres:
-    image: postgres:18.6-alpine
+    image: postgres:18.6-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run make secrets}
@@ -119,7 +138,7 @@ services:
     ports:
       - 127.0.0.1:${POSTGRES_PORT}:5432
     networks:
-      mcp:
+      core:
         aliases: [postgres.internal]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d broker && pg_isready -U postgres -d gateway"]
@@ -127,15 +146,20 @@ services:
       timeout: 3s
       retries: 30
 
+  # Admin API (/__admin, request journal) is open on purpose: tests read the journal to check which
+  # credential reached Jira (invariant 2). It holds only the mock's fixed test PATs.
   jira-mock:
-    image: wiremock/wiremock:3.13.2
-    command: ["--port", "8080", "--disable-banner", "--async-response-enabled", "true"]
+    image: wiremock/wiremock:3.13.2@sha256:0d4ecb3e4dc8213fd7a4d37d6a78f6e6b553a6d2e15bd51b0999781282ac61b3
+    command: ["--port", "8080", "--disable-banner", "--async-response-enabled", "true",
+              "--root-dir", "/mocks/jira", "--max-request-journal-entries", "1000"]
     volumes:
-      - ./mocks/jira:/home/wiremock:ro
+      - ./mocks/jira:/mocks/jira:ro
     ports:
       - 127.0.0.1:${JIRA_MOCK_PORT}:8080
     networks:
-      mcp:
+      core:
+        aliases: [jira.internal]
+      servers:
         aliases: [jira.internal]
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/__admin/health"]
@@ -144,58 +168,70 @@ services:
       retries: 30
 
   # Contract stub of the credential broker (C4), served only over mTLS like the real broker.
-  # It does not check the client CN or token contents (see mcp-contracts README).
+  # It does not check the client CN or token contents (see mcp-contracts README). The request journal is
+  # off because PUT .../secret bodies carry PATs. `make up-full` stops it (same network alias as the broker).
   broker-mock:
     profiles: [infra]
-    image: wiremock/wiremock:3.13.2
+    image: wiremock/wiremock:3.13.2@sha256:0d4ecb3e4dc8213fd7a4d37d6a78f6e6b553a6d2e15bd51b0999781282ac61b3
     entrypoint: ["/bin/bash", "-c"]
+    # WireMock takes keystore passwords only as options; the password protects dev keys only.
     command:
       - >-
-        exec /docker-entrypoint.sh --disable-http --https-port 8443 --disable-banner
-        --https-keystore /certs/mcp-credential-broker/keystore.p12 --keystore-type PKCS12
+        exec /docker-entrypoint.sh --disable-http --https-port 8443 --disable-banner --no-request-journal
+        --root-dir /contracts/mocks/wiremock/credential-broker
+        --https-keystore /certs/server/keystore.p12 --keystore-type PKCS12
         --keystore-password "$$TLS_STORE_PASSWORD" --key-manager-password "$$TLS_STORE_PASSWORD"
         --https-require-client-cert --https-truststore /certs/ca/truststore.p12 --truststore-type PKCS12
         --truststore-password "$$TLS_STORE_PASSWORD"
     environment:
       TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
     volumes:
-      - ${MCP_CONTRACTS_DIR}/mocks/wiremock/credential-broker:/home/wiremock:ro
-      - ./certs:/certs:ro
+      - ./out/contracts:/contracts:ro
+      - ./certs/mcp-credential-broker/keystore.p12:/certs/server/keystore.p12:ro
+      - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
+      - ./certs/mcp-portal-bff/tls.crt:/certs/healthcheck/tls.crt:ro
+      - ./certs/mcp-portal-bff/tls.key:/certs/healthcheck/tls.key:ro
     ports:
       - 127.0.0.1:${BROKER_MOCK_PORT}:8443
     networks:
-      mcp:
-        aliases: [mcp-credential-broker.internal]
+      core:
+        aliases: ["${MCP_BROKER_TLS_NAME}"]
     healthcheck:
-      test: ["CMD", "curl", "-sf", "--cacert", "/certs/ca/ca.crt", "--cert", "/certs/mcp-portal-bff/tls.crt", "--key", "/certs/mcp-portal-bff/tls.key", "https://localhost:8443/__admin/health"]
+      test: ["CMD", "curl", "-sf", "--cacert", "/certs/ca/ca.crt", "--cert", "/certs/healthcheck/tls.crt", "--key", "/certs/healthcheck/tls.key", "https://localhost:8443/__admin/health"]
       interval: 3s
       timeout: 3s
       retries: 30
 
-  # Contract stub of the gateway admin API (C5), mTLS as well.
+  # Contract stub of the gateway admin API (C5), mTLS as well. Stopped by `make up-full`.
   gateway-admin-mock:
     profiles: [infra]
-    image: wiremock/wiremock:3.13.2
+    image: wiremock/wiremock:3.13.2@sha256:0d4ecb3e4dc8213fd7a4d37d6a78f6e6b553a6d2e15bd51b0999781282ac61b3
     entrypoint: ["/bin/bash", "-c"]
     command:
       - >-
-        exec /docker-entrypoint.sh --disable-http --https-port 8443 --disable-banner
-        --https-keystore /certs/mcp-gateway/keystore.p12 --keystore-type PKCS12
+        exec /docker-entrypoint.sh --disable-http --https-port 8443 --disable-banner --no-request-journal
+        --root-dir /contracts/mocks/wiremock/gateway-admin
+        --https-keystore /certs/server/keystore.p12 --keystore-type PKCS12
         --keystore-password "$$TLS_STORE_PASSWORD" --key-manager-password "$$TLS_STORE_PASSWORD"
         --https-require-client-cert --https-truststore /certs/ca/truststore.p12 --truststore-type PKCS12
         --truststore-password "$$TLS_STORE_PASSWORD"
     environment:
       TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
     volumes:
-      - ${MCP_CONTRACTS_DIR}/mocks/wiremock/gateway-admin:/home/wiremock:ro
-      - ./certs:/certs:ro
+      - ./out/contracts:/contracts:ro
+      - ./certs/mcp-gateway/keystore.p12:/certs/server/keystore.p12:ro
+      - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
+      - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
+      - ./certs/mcp-portal-bff/tls.crt:/certs/healthcheck/tls.crt:ro
+      - ./certs/mcp-portal-bff/tls.key:/certs/healthcheck/tls.key:ro
     ports:
       - 127.0.0.1:${GATEWAY_ADMIN_MOCK_PORT}:8443
     networks:
-      mcp:
-        aliases: [mcp-gateway.internal]
+      core:
+        aliases: ["${MCP_GATEWAY_INTERNAL_TLS_NAME}"]
     healthcheck:
-      test: ["CMD", "curl", "-sf", "--cacert", "/certs/ca/ca.crt", "--cert", "/certs/mcp-portal-bff/tls.crt", "--key", "/certs/mcp-portal-bff/tls.key", "https://localhost:8443/__admin/health"]
+      test: ["CMD", "curl", "-sf", "--cacert", "/certs/ca/ca.crt", "--cert", "/certs/healthcheck/tls.crt", "--key", "/certs/healthcheck/tls.key", "https://localhost:8443/__admin/health"]
       interval: 3s
       timeout: 3s
       retries: 30
@@ -215,14 +251,18 @@ services:
       MCP_OIDC_AUDIENCE: mcp-gateway
       MCP_OIDC_CLIENT_ID: mcp-gateway
       MCP_OIDC_CLIENT_SECRET: ${KC_CLIENT_MCP_GATEWAY_SECRET:?run make secrets}
-      MCP_BROKER_URL: https://mcp-credential-broker.internal:8443
+      MCP_INTERNAL_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
+      MCP_BROKER_URL: https://${MCP_BROKER_TLS_NAME}:8443
+      MCP_BROKER_TLS_NAME: ${MCP_BROKER_TLS_NAME}
       MCP_SERVER_JIRA_URL: https://mcp-jira.internal:8443
       MCP_REDIS_HOST: redis
       MCP_REDIS_PORT: "6379"
+      MCP_REDIS_USER: gateway
+      MCP_REDIS_PASSWORD: ${REDIS_GATEWAY_PASSWORD:?run make secrets}
+      MCP_REDIS_KEY_PREFIX: "gw:"
       MCP_DB_URL: jdbc:postgresql://postgres:5432/gateway
       MCP_DB_USER: gateway
       MCP_DB_PASSWORD: ${GATEWAY_DB_PASSWORD:?run make secrets}
-      MCP_REDIS_PASSWORD: ${REDIS_PASSWORD:?run make secrets}
       MCP_TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
       MCP_TLS_KEYSTORE: /certs/mcp-gateway/keystore.p12
       MCP_TLS_TRUSTSTORE: /certs/ca/truststore.p12
@@ -233,8 +273,10 @@ services:
     ports:
       - 127.0.0.1:${GATEWAY_PORT}:8080
     networks:
-      mcp:
-        aliases: [mcp-gateway.internal]
+      core:
+        aliases: ["${MCP_GATEWAY_INTERNAL_TLS_NAME}"]
+      servers:
+        aliases: ["${MCP_GATEWAY_INTERNAL_TLS_NAME}"]
     depends_on:
       keycloak: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -247,18 +289,24 @@ services:
     environment:
       MCP_OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/corp
       MCP_OIDC_JWKS_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/certs
+      MCP_OIDC_TOKEN_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/token
       MCP_OIDC_AUDIENCE: mcp-credential-broker
-      MCP_GATEWAY_JWKS_URI: https://mcp-gateway.internal:8443/.well-known/jwks.json
+      MCP_OIDC_CLIENT_ID: mcp-credential-broker
+      MCP_OIDC_CLIENT_SECRET: ${KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET:?run make secrets}
+      MCP_GATEWAY_JWKS_URI: https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json
+      MCP_GATEWAY_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
       MCP_BAO_ADDR: http://openbao:8200
+      MCP_BAO_ROLE_ID: ${BAO_BROKER_ROLE_ID:?run make secrets}
+      MCP_BAO_SECRET_ID: ${BAO_BROKER_SECRET_ID:?run make secrets}
       MCP_JIRA_URL: http://jira.internal:8080
       MCP_REDIS_HOST: redis
       MCP_REDIS_PORT: "6379"
+      MCP_REDIS_USER: broker
+      MCP_REDIS_PASSWORD: ${REDIS_BROKER_PASSWORD:?run make secrets}
+      MCP_REDIS_KEY_PREFIX: "broker:"
       MCP_DB_URL: jdbc:postgresql://postgres:5432/broker
       MCP_DB_USER: broker
       MCP_DB_PASSWORD: ${BROKER_DB_PASSWORD:?run make secrets}
-      MCP_REDIS_PASSWORD: ${REDIS_PASSWORD:?run make secrets}
-      MCP_BAO_ROLE_ID: ${BAO_BROKER_ROLE_ID:?run make secrets}
-      MCP_BAO_SECRET_ID: ${BAO_BROKER_SECRET_ID:?run make secrets}
       MCP_TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
       MCP_TLS_KEYSTORE: /certs/mcp-credential-broker/keystore.p12
       MCP_TLS_TRUSTSTORE: /certs/ca/truststore.p12
@@ -269,8 +317,8 @@ services:
     ports:
       - 127.0.0.1:${BROKER_PORT}:8443
     networks:
-      mcp:
-        aliases: [mcp-credential-broker.internal]
+      core:
+        aliases: ["${MCP_BROKER_TLS_NAME}"]
     depends_on:
       keycloak: {condition: service_healthy}
       openbao-init: {condition: service_completed_successfully}
@@ -282,12 +330,15 @@ services:
     image: ${MCP_JIRA_IMAGE}
     pull_policy: never
     environment:
-      MCP_GATEWAY_JWKS_URI: https://mcp-gateway.internal:8443/.well-known/jwks.json
+      MCP_GATEWAY_JWKS_URI: https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json
+      MCP_GATEWAY_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
       MCP_GATEWAY_ISSUER: https://mcp-gateway.internal
       MCP_JIRA_URL: http://jira.internal:8080
       MCP_REDIS_HOST: redis
       MCP_REDIS_PORT: "6379"
-      MCP_REDIS_PASSWORD: ${REDIS_PASSWORD:?run make secrets}
+      MCP_REDIS_USER: mcp-jira
+      MCP_REDIS_PASSWORD: ${REDIS_MCP_JIRA_PASSWORD:?run make secrets}
+      MCP_REDIS_KEY_PREFIX: "jti:mcp-jira:"
       MCP_TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
       MCP_TLS_KEYSTORE: /certs/mcp-jira/keystore.p12
       MCP_TLS_TRUSTSTORE: /certs/ca/truststore.p12
@@ -296,7 +347,7 @@ services:
       - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
     networks:
-      mcp:
+      servers:
         aliases: [mcp-jira.internal]
     depends_on:
       redis: {condition: service_healthy}

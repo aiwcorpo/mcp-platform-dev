@@ -3,23 +3,31 @@
 
   token USER [--client C] [--claims]         access token via authorization code + PKCE (headless login)
   exchange USER --audience A [--requester R] token exchange (RFC 8693) of USER's token to audience A
-  put-secret USER SYSTEM [--secret S]        store a PAT for USER through the broker API (C4 PUT .../secret)
+  put-secret USER SYSTEM                     store a PAT for USER through the broker API (C4 PUT .../secret);
+                                             the PAT comes from $MCP_PAT, default <user>-pat
+  audit REQUEST_ID [--logs FILE]             C8 audit events of one request from gateway, broker, mcp-jira logs
+  jira-auth                                  credentials that reached the Jira mock (from its request journal)
 
 Configuration comes from .env and .secrets/dev.env; environment variables override:
-  KEYCLOAK_URL   default http://localhost:$KEYCLOAK_PORT
-  BROKER_URL     default https://localhost:$BROKER_MOCK_PORT (contract stub); real broker: https://localhost:$BROKER_PORT
-  MCP_CERTS_DIR  default ./certs
+  KEYCLOAK_URL         default http://localhost:$KEYCLOAK_PORT
+  BROKER_URL           default https://localhost:$BROKER_MOCK_PORT (contract stub); real broker: https://localhost:$BROKER_PORT
+  MCP_BROKER_TLS_NAME  name verified in the broker certificate, whatever host BROKER_URL uses (CC-035)
+  MCP_CERTS_DIR        default ./certs
 """
 
 import argparse
 import base64
 import hashlib
 import html.parser
+import http.client
 import http.cookiejar
 import json
 import os
+import re
 import secrets
+import socket
 import ssl
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -66,6 +74,7 @@ CLIENTS = {
         "secret_key": "KC_CLIENT_MCP_PORTAL_BFF_SECRET",
     },
     "mcp-gateway": {"redirect_uri": None, "secret_key": "KC_CLIENT_MCP_GATEWAY_SECRET"},
+    "mcp-credential-broker": {"redirect_uri": None, "secret_key": "KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET"},
 }
 
 
@@ -191,17 +200,19 @@ def login(user, client_id="claude-code", scope="openid", password=None):
     })["access_token"]
 
 
-def exchange(subject_token, requester, audience):
-    return post_form(f"{OIDC}/token", {
+def exchange(subject_token, requester, audience=None):
+    form = {
         **client_auth(requester),
         "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
         "subject_token": subject_token,
         "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
         "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
-        "audience": audience,
+    }
+    if audience:
+        form["audience"] = audience
         # The audience mapper sits in an optional client scope, so a plain login token never carries it.
-        "scope": f"{audience}-audience",
-    })["access_token"]
+        form["scope"] = f"{audience}-audience"
+    return post_form(f"{OIDC}/token", form)["access_token"]
 
 
 def mtls_context(identity):
@@ -211,31 +222,115 @@ def mtls_context(identity):
     return ctx
 
 
-def put_secret(user, system, secret, expires_at=None, identity="mcp-portal-bff"):
+class PinnedNameHTTPSConnection(http.client.HTTPSConnection):
+    """Connects to host:port from the URL but verifies the certificate against tls_name, so a broker
+    reached as localhost from the host is still checked for its configured name (CC-035)."""
+
+    def __init__(self, host, port, tls_name, context):
+        super().__init__(host, port, context=context, timeout=30)
+        self.tls_name = tls_name
+
+    def connect(self):
+        sock = socket.create_connection((self.host, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.tls_name)
+
+
+def put_secret(user, system, secret, expires_at=None, identity="mcp-portal-bff", tls_name=None):
     """What the portal BFF does for "Dodaj PAT": its session token exchanged for aud=mcp-credential-broker,
     sent over mTLS with the BFF certificate (C4). Returns (HTTP status, JSON body)."""
     bff_token = login(user, "mcp-portal-bff")
     broker_token = exchange(bff_token, "mcp-portal-bff", "mcp-credential-broker")
     broker_url = cfg("BROKER_URL", f"https://localhost:{cfg('BROKER_MOCK_PORT', '18443')}").rstrip("/")
+    tls_name = tls_name or cfg("MCP_BROKER_TLS_NAME", "mcp-credential-broker.internal")
+    url = urllib.parse.urlparse(broker_url)
+    if url.scheme != "https":
+        raise Fail("BROKER_URL must be https (C4 requires mTLS)")
     body = {"secret": secret}
     if expires_at:
         body["expiresAt"] = expires_at
-    req = urllib.request.Request(
-        f"{broker_url}/v1/connections/{urllib.parse.quote(system)}/secret",
-        data=json.dumps(body).encode(), method="PUT")
-    req.add_header("Content-Type", "application/json; charset=utf-8")
-    req.add_header("Authorization", f"Bearer {broker_token}")
+    conn = PinnedNameHTTPSConnection(url.hostname, url.port or 443, tls_name, mtls_context(identity))
     try:
-        with urllib.request.urlopen(req, context=mtls_context(identity)) as resp:
-            return resp.status, json.load(resp)
-    except urllib.error.HTTPError as e:
-        raw = e.read().decode(errors="replace")
+        conn.request("PUT", f"{url.path}/v1/connections/{urllib.parse.quote(system)}/secret",
+                     body=json.dumps(body).encode(),
+                     headers={"Content-Type": "application/json; charset=utf-8",
+                              "Authorization": f"Bearer {broker_token}"})
+        resp = conn.getresponse()
+        raw = resp.read().decode(errors="replace")
+    except (OSError, ssl.SSLError, http.client.HTTPException) as e:
+        raise Fail(f"broker {broker_url} (TLS name {tls_name}) unreachable or rejected TLS: "
+                   f"{getattr(e, 'reason', None) or e}") from None
+    finally:
+        conn.close()
+    try:
+        return resp.status, json.loads(raw)
+    except ValueError:
+        return resp.status, {"raw": raw[:200]}
+
+
+AUDIT_COMPONENTS = {"gateway": "mcp-gateway", "broker": "mcp-credential-broker", "server": "mcp-jira"}
+AUDIT_REQUIRED = ("ts", "requestId", "component", "componentId", "event")
+
+
+def audit_events(lines, request_id):
+    """C8 events (one JSON object per line, possibly after a log prefix) carrying request_id."""
+    events = []
+    for line in lines:
+        if request_id not in line or "{" not in line:
+            continue
         try:
-            return e.code, json.loads(raw)
+            event = json.loads(line[line.index("{"):])
         except ValueError:
-            return e.code, {"raw": raw[:200]}
-    except (urllib.error.URLError, ssl.SSLError, ConnectionError) as e:
-        raise Fail(f"broker {broker_url} unreachable or rejected TLS: {getattr(e, 'reason', e)}") from None
+            continue
+        if isinstance(event, dict) and event.get("requestId") == request_id:
+            events.append(event)
+    return events
+
+
+def audit(request_id, logs_file=None):
+    if logs_file:
+        lines = Path(logs_file).read_text().splitlines()
+    else:
+        out = subprocess.run([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "logs", "--no-color",
+                              "--no-log-prefix", *AUDIT_COMPONENTS.values()], capture_output=True, text=True)
+        if out.returncode != 0:
+            raise Fail(f"compose logs failed: {out.stderr.strip()[-300:]}")
+        lines = out.stdout.splitlines()
+    events = audit_events(lines, request_id)
+    for e in sorted(events, key=lambda e: e.get("ts", "")):
+        missing = [k for k in AUDIT_REQUIRED if k not in e]
+        print(f"{e.get('ts', '?'):26} {e.get('component', '?'):8} {e.get('componentId', '?'):22} "
+              f"{e.get('event', '?'):20} {e.get('decision') or e.get('outcome') or ''}"
+              f"{'  MISSING ' + ','.join(missing) if missing else ''}")
+    seen = {e.get("component") for e in events}
+    absent = [c for c in AUDIT_COMPONENTS if c not in seen]
+    incomplete = [e for e in events if any(k not in e for k in AUDIT_REQUIRED)]
+    print(f"components with events: {sorted(seen) or 'none'}; missing: {absent or 'none'}")
+    return 0 if not absent and not incomplete else 1
+
+
+def jira_auth():
+    """Summary of the Authorization headers the Jira mock received, newest first. Known test PATs are
+    named, an IdP JWT is flagged (token passthrough, invariant 2), anything else is shown by length only."""
+    known = {"alice-pat", "bob-pat", "carol-pat", "mallory-pat", "test-only-jira-pat-0000000000000000"}
+    url = f"http://localhost:{cfg('JIRA_MOCK_PORT', '18081')}/__admin/requests?limit=50"
+    with urllib.request.urlopen(url) as resp:
+        journal = json.load(resp)
+    rows = []
+    for entry in journal.get("requests", []):
+        req = entry["request"]
+        auth = next((v for k, v in req.get("headers", {}).items() if k.lower() == "authorization"), None)
+        if auth is None:
+            kind = "none"
+        elif auth.startswith("Bearer ") and auth[7:] in known:
+            kind = f"PAT {auth[7:]}"
+        elif re.fullmatch(r"Bearer [\w-]+\.[\w-]+\.[\w-]*", auth):
+            claims = decode_jwt(auth[7:])
+            kind = f"JWT iss={claims.get('iss')} aud={claims.get('aud')} (passthrough!)"
+        else:
+            kind = f"{auth.split(' ')[0]} <{len(auth)} chars>"
+        rows.append({"method": req["method"], "url": req["url"], "status": entry["responseDefinition"]["status"],
+                     "credential": kind})
+    return rows
 
 
 def main():
@@ -256,9 +351,14 @@ def main():
     p = sub.add_parser("put-secret")
     p.add_argument("user")
     p.add_argument("system")
-    p.add_argument("--secret", help="default: <user>-pat (the PAT the Jira mock knows)")
     p.add_argument("--expires-at")
     p.add_argument("--identity", default="mcp-portal-bff", help="client certificate under certs/")
+
+    p = sub.add_parser("audit")
+    p.add_argument("request_id")
+    p.add_argument("--logs", help="read log lines from a file instead of docker compose logs")
+
+    sub.add_parser("jira-auth")
 
     args = parser.parse_args()
     try:
@@ -271,10 +371,15 @@ def main():
             token = exchange(login(args.user, subject_client), args.requester, args.audience)
             print(json.dumps(decode_jwt(token), indent=2) if args.claims else token)
         elif args.cmd == "put-secret":
-            status, body = put_secret(args.user, args.system, args.secret or f"{args.user}-pat",
-                                      args.expires_at, args.identity)
+            secret = os.environ.get("MCP_PAT") or f"{args.user}-pat"
+            status, body = put_secret(args.user, args.system, secret, args.expires_at, args.identity)
             print(json.dumps({"httpStatus": status, **body}))
             return 0 if status == 200 else 1
+        elif args.cmd == "audit":
+            return audit(args.request_id, args.logs)
+        elif args.cmd == "jira-auth":
+            for row in jira_auth():
+                print(f"{row['status']:4} {row['method']:6} {row['url'][:60]:60} {row['credential']}")
     except Fail as e:
         print(f"error: {e}", file=sys.stderr)
         return 2

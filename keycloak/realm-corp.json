@@ -1024,10 +1024,9 @@
         "groups"
       ],
       "optionalClientScopes": [
-        "mcp-credential-broker-audience",
-        "opensearch-audience"
+        "mcp-credential-broker-audience"
       ],
-      "description": "Gateway: exchanges user tokens (aud=mcp-gateway) for broker/OpenSearch audiences (C4)."
+      "description": "Gateway: exchanges user tokens (aud=mcp-gateway) for aud=mcp-credential-broker only (C4 resolve subjectToken)."
     },
     {
       "clientId": "mcp-portal-bff",
@@ -1080,7 +1079,9 @@
       "serviceAccountsEnabled": false,
       "frontchannelLogout": false,
       "fullScopeAllowed": false,
-      "attributes": {},
+      "attributes": {
+        "standard.token.exchange.enabled": "true"
+      },
       "defaultClientScopes": [
         "basic",
         "profile",
@@ -1088,8 +1089,10 @@
         "acr",
         "groups"
       ],
-      "optionalClientScopes": [],
-      "description": "Audience of tokens accepted by the credential broker (C4). No flows."
+      "optionalClientScopes": [
+        "opensearch-audience"
+      ],
+      "description": "Credential broker: audience of C4 tokens; exchanges them for target systems of type token-exchange (opensearch)."
     },
     {
       "clientId": "mcp-gateway-admin",
@@ -1141,5 +1144,121 @@
       "optionalClientScopes": [],
       "description": "Audience of tokens accepted by OpenSearch (token-exchange credential type). No flows."
     }
-  ]
+  ],
+  "components": {
+    "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy": [
+      {
+        "name": "Allowed Protocol Mapper Types",
+        "providerId": "allowed-protocol-mappers",
+        "subType": "anonymous",
+        "subComponents": {},
+        "config": {
+          "allowed-protocol-mapper-types": [
+            "oidc-full-name-mapper",
+            "oidc-sha256-pairwise-sub-mapper",
+            "saml-user-attribute-mapper",
+            "oidc-usermodel-property-mapper",
+            "saml-role-list-mapper",
+            "oidc-usermodel-attribute-mapper",
+            "saml-user-property-mapper",
+            "oidc-address-mapper"
+          ]
+        }
+      },
+      {
+        "name": "Allowed Registration Web Origins",
+        "providerId": "registration-web-origins",
+        "subType": "anonymous",
+        "subComponents": {},
+        "config": {}
+      },
+      {
+        "name": "Allowed Client Scopes",
+        "providerId": "allowed-client-templates",
+        "subType": "anonymous",
+        "subComponents": {},
+        "config": {
+          "allow-default-scopes": [
+            "true"
+          ]
+        }
+      },
+      {
+        "name": "Allowed Registration Web Origins",
+        "providerId": "registration-web-origins",
+        "subType": "authenticated",
+        "subComponents": {},
+        "config": {}
+      },
+      {
+        "name": "Max Clients Limit",
+        "providerId": "max-clients",
+        "subType": "anonymous",
+        "subComponents": {},
+        "config": {
+          "max-clients": [
+            "200"
+          ]
+        }
+      },
+      {
+        "name": "Allowed Client Scopes",
+        "providerId": "allowed-client-templates",
+        "subType": "authenticated",
+        "subComponents": {},
+        "config": {
+          "allow-default-scopes": [
+            "true"
+          ]
+        }
+      },
+      {
+        "name": "Allowed Protocol Mapper Types",
+        "providerId": "allowed-protocol-mappers",
+        "subType": "authenticated",
+        "subComponents": {},
+        "config": {
+          "allowed-protocol-mapper-types": [
+            "oidc-full-name-mapper",
+            "oidc-usermodel-attribute-mapper",
+            "oidc-usermodel-property-mapper",
+            "oidc-sha256-pairwise-sub-mapper",
+            "saml-user-attribute-mapper",
+            "saml-role-list-mapper",
+            "saml-user-property-mapper",
+            "oidc-address-mapper"
+          ]
+        }
+      },
+      {
+        "name": "Consent Required",
+        "providerId": "consent-required",
+        "subType": "anonymous",
+        "subComponents": {},
+        "config": {}
+      },
+      {
+        "name": "Trusted Hosts",
+        "providerId": "trusted-hosts",
+        "subType": "anonymous",
+        "subComponents": {},
+        "config": {
+          "host-sending-registration-request-must-match": [
+            "true"
+          ],
+          "client-uris-must-match": [
+            "true"
+          ],
+          "trusted-hosts": []
+        }
+      },
+      {
+        "name": "Full Scope Disabled",
+        "providerId": "scope",
+        "subType": "anonymous",
+        "subComponents": {},
+        "config": {}
+      }
+    ]
+  }
 }

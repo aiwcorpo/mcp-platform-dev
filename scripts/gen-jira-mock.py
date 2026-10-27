@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Generates mocks/jira (WireMock mappings and issue bodies). Edit this file, not the JSON:
 #   python3 scripts/gen-jira-mock.py mocks/jira
-import json, os, sys
+import json, os, re, sys
 
 out = sys.argv[1]
 maps = os.path.join(out, "mappings")
@@ -129,11 +129,14 @@ aliases = {"ABC-3": "DEF-5"}
 for i in issues:
     dump(os.path.join(files, f"issue-{i['key']}.json"), i)
 
-auth_required = {"Authorization": {"matches": "^(Bearer|Basic) .+$"}}
+# Data only for PATs the mock knows. Anything else (an IdP JWT passed through, a foreign PAT, Basic) gets 401,
+# so a demo cannot succeed by token passthrough (invariant 2).
+known_pat = "^Bearer (" + "|".join(re.escape(p) for p in pats) + ")$"
+auth_required = {"Authorization": {"matches": known_pat}}
 data = []
 for path in ("/rest/api/2/project.*", "/rest/api/2/issue/.*", "/rest/api/2/search.*"):
-    data.append({"name": f"401 without credentials {path}", "priority": 1,
-                 "request": {"urlPattern": path, "headers": {"Authorization": {"absent": True}}},
+    data.append({"name": f"401 for unknown or missing credentials {path}", "priority": 20,
+                 "request": {"urlPattern": path},
                  "response": unauth})
 
 data.append({"name": "list projects", "priority": 5,
