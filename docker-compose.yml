@@ -349,6 +349,10 @@ services:
       MCP_CONNECT_URL: http://localhost:${PORTAL_PORT}/connections?system={system}
       # System API address; the template calls this MCP_<SYSTEM>_URL (MCP_EXAMPLE_URL in the example).
       MCP_JIRA_URL: http://jira.internal:8080
+      # The Jira mock speaks plain http and exists only in this dev environment; servers built from the
+      # template (c1258c4+) refuse an http backend outside the 'dev' profile without this switch. Never set
+      # it against a real Jira (the PAT would travel in clear text).
+      MCP_JIRA_ALLOW_PLAIN_HTTP: "true"
       MCP_REDIS_HOST: redis
       MCP_REDIS_PORT: "6379"
       MCP_REDIS_USER: mcp-jira

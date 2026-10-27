@@ -166,6 +166,53 @@ data.append({"name": "issue not found", "priority": 9,
              "response": {"status": 404, "headers": JSON,
                           "jsonBody": {"errorMessages": ["Issue Does Not Exist"], "errors": {}}}})
 
+# Write operations are stateless: they answer like Jira DC but change nothing, so a rerun of a demo starts from
+# the same data. Unknown issue -> 404 (known PAT), unknown/missing PAT -> 401 (the catch-all above).
+# Project permissions (403) are not modelled by this mock.
+issue_idents = "|".join(re.escape(x) for i in issues for x in (i["key"], i["id"]))
+not_found = {"status": 404, "headers": JSON, "jsonBody": {"errorMessages": ["Issue Does Not Exist"], "errors": {}}}
+transitions = [("11", "To Do", "new"), ("21", "In Progress", "indeterminate"), ("31", "Done", "done")]
+comment_path = f"/rest/api/2/issue/({issue_idents})/comment"
+transitions_path = f"/rest/api/2/issue/({issue_idents})/transitions"
+
+for pat, u in pats.items():
+    pat_auth = {"Authorization": {"equalTo": "Bearer " + pat}}
+    data.append({"name": f"add comment as {u['name']}", "priority": 5,
+                 "request": {"method": "POST", "urlPathPattern": comment_path, "headers": pat_auth,
+                             "bodyPatterns": [{"matchesJsonPath": {"expression": "$.body", "matches": ".+"}}]},
+                 "response": {"status": 201, "headers": JSON, "jsonBody": {
+                     "self": f"{BASE}/rest/api/2/issue/10100/comment/10500", "id": "10500",
+                     "author": {k: u[k] for k in ("self", "name", "key", "emailAddress", "displayName", "active")},
+                     "body": "Comment accepted by the mcp-platform-dev mock (not stored).",
+                     "created": "2026-10-27T10:00:00.000+0000", "updated": "2026-10-27T10:00:00.000+0000"}}})
+data.append({"name": "add comment without body", "priority": 7,
+             "request": {"method": "POST", "urlPathPattern": comment_path, "headers": auth_required},
+             "response": {"status": 400, "headers": JSON,
+                          "jsonBody": {"errorMessages": [], "errors": {"comment": "Comment body can not be empty!"}}}})
+
+data.append({"name": "list transitions", "priority": 5,
+             "request": {"method": "GET", "urlPathPattern": transitions_path, "headers": auth_required},
+             "response": {"status": 200, "headers": JSON, "jsonBody": {"expand": "transitions", "transitions": [
+                 {"id": tid, "name": name, "to": {"name": name, "statusCategory": {"key": cat}}}
+                 for tid, name, cat in transitions]}}})
+for tid, name, _ in transitions:
+    if tid == "31":
+        response = {"status": 400, "headers": JSON,
+                    "jsonBody": {"errorMessages": [], "errors": {"resolution": "Resolution is required."}}}
+    else:
+        response = {"status": 204}
+    data.append({"name": f"transition {tid} ({name})", "priority": 5,
+                 "request": {"method": "POST", "urlPathPattern": transitions_path, "headers": auth_required,
+                             "bodyPatterns": [{"matchesJsonPath": {"expression": "$.transition.id", "equalTo": tid}}]},
+                 "response": response})
+data.append({"name": "transition not valid", "priority": 7,
+             "request": {"method": "POST", "urlPathPattern": transitions_path, "headers": auth_required},
+             "response": {"status": 400, "headers": JSON,
+                          "jsonBody": {"errorMessages": ["Transition id is not valid for this issue."], "errors": {}}}})
+data.append({"name": "comment or transitions of unknown issue", "priority": 9,
+             "request": {"urlPathPattern": "/rest/api/2/issue/[^/]+/(comment|transitions)", "headers": auth_required},
+             "response": not_found})
+
 def search_result(items):
     return {"expand": "names,schema", "startAt": 0, "maxResults": 50, "total": len(items), "issues": items}
 

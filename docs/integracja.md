@@ -101,6 +101,44 @@ Zmienne usługi `mcp-jira` w `docker-compose.yml` odpowiadają tabeli konfigurac
 `MCP_GATEWAY_TLS_NAME` i `MCP_REDIS_KEY_PREFIX` template nie czyta (nazwa TLS wynika z hosta w
 `MCP_GATEWAY_JWKS_URI`, prefiks `jti:<serverId>:` jest w starterze); zostają jako informacja.
 
+### Backend po http i obraz `mcp-jira`
+
+Mock Jiry słucha po http (`http://jira.internal:8080`), a serwery ze szkieletu `mcp-server-template` od c1258c4
+poza profilem `dev` odmawiają startu z backendem po http bez jawnej zgody. Wybrane rozwiązanie: usługa `mcp-jira`
+ma w `docker-compose.yml` `MCP_JIRA_ALLOW_PLAIN_HTTP: "true"` (z komentarzem, że to tylko dla mocka). Mock po TLS
+z certyfikatem wewnętrznego CA i `MCP_JIRA_SSL_BUNDLE` odrzucone: zmusiłoby do trzeciego certyfikatu serwerowego,
+SAN `jira.internal` i zmian w `make certs` bez zysku dla testów serwera, który i tak mówi z Jirą zwykłym klientem
+HTTP. Zmienna działa tylko jako zgoda: poświadczenie idzie wtedy otwartym tekstem i serwer loguje ostrzeżenie.
+Nie ustawia się jej wobec prawdziwej Jiry. Serwer `mcp-server-jira` w stanie 79ffecd (starter alpha-5) tej
+zmiennej jeszcze nie czyta i przyjmuje http bez niej; zmienna jest nieszkodliwa i zaczyna działać po rebase na
+szkielet od c1258c4.
+
+Mock obsługuje zapisy używane przez narzędzia `add_comment` i `transition_issue` (kształt jak w Jira DC REST API
+v2 i w `StubBackend` serwera `mcp-jira`): `POST /rest/api/2/issue/{key|id}/comment` (201; 400 bez pola `body`),
+`GET .../transitions` (11 To Do, 21 In Progress, 31 Done) i `POST .../transitions` (204 dla 11 i 21; 400 dla 31,
+bo wymaga `resolution`, i dla nieznanego id). Te same zasady co przy odczycie: 401 bez PAT albo z PAT spoza listy,
+404 dla nieznanego zgłoszenia. Zapisy niczego nie zmieniają (mock jest bez stanu, odczyt zgłoszenia po przejściu
+pokazuje stary status); uprawnień do projektów (403) mock nie modeluje. Mapowania są montowane z `mocks/jira` i
+WireMock czyta je przy starcie, a admin API jest zablokowane hasłem, więc po `python3 scripts/gen-jira-mock.py
+mocks/jira` kontener `jira-mock` trzeba zrestartować (`docker compose restart jira-mock`).
+
+Podmiana serwera testowego na prawdziwy `mcp-jira` w profilu `full`: usługa używa obrazu `${MCP_JIRA_IMAGE}`
+z `.env` (domyślnie `mcp-server-jira:dev`, `pull_policy: never`, więc obraz musi istnieć lokalnie). Budowa wg
+README `mcp-server-jira`:
+
+```bash
+cd ../mcp-server-jira
+export JAVA_HOME=<JDK 25>
+./mvnw -B verify                       # tworzy mcp-app/target/mcp-jira.jar
+docker build -t mcp-server-jira:dev .  # tag zgodny z MCP_JIRA_IMAGE (README serwera podaje mcp-jira:dev)
+cd ../mcp-platform-dev && make up-full
+```
+
+Zamiast przebudowywać tag można ustawić w `.env` `MCP_JIRA_IMAGE=mcp-jira:dev`. Alias DNS `mcp-jira.internal`,
+certyfikat `certs/mcp-jira`, Redis `mcp-jira` i adres Jiry są te same co przy serwerze testowym, więc gateway
+(`MCP_SERVER_JIRA_URL`) nie wymaga zmian.
+Na hoście prawdziwy serwer działa też bez obrazu (`scripts/run-dev-host.sh` w `mcp-server-jira`).
+
 ## Redis: użytkownicy i prefiksy (propozycja ws-01 dla ws-02, ws-05, ws-06)
 
 Klucze nie są w kontraktach. Środowisko zakłada poniższe prefiksy i egzekwuje je ACL-ami

@@ -24,6 +24,8 @@ przy pobranych obrazach.
 | Makefile | `up`, `up-core`, `up-full`, `down`, `reset`, `clean`, `certs`, `secrets`, `contracts`, `seed`, `token`, `claims`, `exchange`, `pat`, `audit`, `jira-auth`, `smoke`, `logs`, `ps`, `users` |
 | Profile compose | bez profilu (infrastruktura), `infra` (+ stuby), `full` (gateway, broker, `mcp-jira` z obrazów z `.env`; renderuje się, obrazów jeszcze nie ma); `up` i `up-full` wzajemnie usuwają stuby i komponenty o tych samych aliasach |
 | Obrazy | przypięte tagiem i digestem (`tag@sha256:...`) |
+| Mock Jiry: zapisy | `POST issue/{key}/comment`, `GET` i `POST issue/{key}/transitions` (generator `scripts/gen-jira-mock.py`), PAT jak przy odczycie (401/404), 400 jak w Jira DC; bez stanu i bez 403. Sprawdzone na osobnym WireMocku (port 18570); działający `jira-mock` wymaga restartu, żeby je załadować |
+| `mcp-jira` w `full` | `MCP_JIRA_ALLOW_PLAIN_HTTP: "true"` (mock po http, tylko dev); wybór i budowa obrazu w `docs/integracja.md`. Serwer `mcp-server-jira` 79ffecd zmiennej jeszcze nie czyta |
 
 DoD briefu, punkty dotyczące M1:
 

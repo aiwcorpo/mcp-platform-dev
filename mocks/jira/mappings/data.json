@@ -544,6 +544,425 @@
       }
     },
     {
+      "name": "add comment as alice",
+      "priority": 5,
+      "request": {
+        "method": "POST",
+        "urlPathPattern": "/rest/api/2/issue/(ABC\\-1|10100|ABC\\-2|10101|DEF\\-1|10200|DEF\\-5|10205|HR\\-1|10300)/comment",
+        "headers": {
+          "Authorization": {
+            "equalTo": "Bearer alice-pat"
+          }
+        },
+        "bodyPatterns": [
+          {
+            "matchesJsonPath": {
+              "expression": "$.body",
+              "matches": ".+"
+            }
+          }
+        ]
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/issue/10100/comment/10500",
+          "id": "10500",
+          "author": {
+            "self": "http://jira.internal:8080/rest/api/2/user?username=alice",
+            "name": "alice",
+            "key": "JIRAUSER-alice",
+            "emailAddress": "alice@corp.test",
+            "displayName": "Alice Tester",
+            "active": true
+          },
+          "body": "Comment accepted by the mcp-platform-dev mock (not stored).",
+          "created": "2026-10-27T10:00:00.000+0000",
+          "updated": "2026-10-27T10:00:00.000+0000"
+        }
+      }
+    },
+    {
+      "name": "add comment as bob",
+      "priority": 5,
+      "request": {
+        "method": "POST",
+        "urlPathPattern": "/rest/api/2/issue/(ABC\\-1|10100|ABC\\-2|10101|DEF\\-1|10200|DEF\\-5|10205|HR\\-1|10300)/comment",
+        "headers": {
+          "Authorization": {
+            "equalTo": "Bearer bob-pat"
+          }
+        },
+        "bodyPatterns": [
+          {
+            "matchesJsonPath": {
+              "expression": "$.body",
+              "matches": ".+"
+            }
+          }
+        ]
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/issue/10100/comment/10500",
+          "id": "10500",
+          "author": {
+            "self": "http://jira.internal:8080/rest/api/2/user?username=bob",
+            "name": "bob",
+            "key": "JIRAUSER-bob",
+            "emailAddress": "bob@corp.test",
+            "displayName": "Bob Reader",
+            "active": true
+          },
+          "body": "Comment accepted by the mcp-platform-dev mock (not stored).",
+          "created": "2026-10-27T10:00:00.000+0000",
+          "updated": "2026-10-27T10:00:00.000+0000"
+        }
+      }
+    },
+    {
+      "name": "add comment as carol",
+      "priority": 5,
+      "request": {
+        "method": "POST",
+        "urlPathPattern": "/rest/api/2/issue/(ABC\\-1|10100|ABC\\-2|10101|DEF\\-1|10200|DEF\\-5|10205|HR\\-1|10300)/comment",
+        "headers": {
+          "Authorization": {
+            "equalTo": "Bearer carol-pat"
+          }
+        },
+        "bodyPatterns": [
+          {
+            "matchesJsonPath": {
+              "expression": "$.body",
+              "matches": ".+"
+            }
+          }
+        ]
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/issue/10100/comment/10500",
+          "id": "10500",
+          "author": {
+            "self": "http://jira.internal:8080/rest/api/2/user?username=carol",
+            "name": "carol",
+            "key": "JIRAUSER-carol",
+            "emailAddress": "carol@corp.test",
+            "displayName": "Carol Admin",
+            "active": true
+          },
+          "body": "Comment accepted by the mcp-platform-dev mock (not stored).",
+          "created": "2026-10-27T10:00:00.000+0000",
+          "updated": "2026-10-27T10:00:00.000+0000"
+        }
+      }
+    },
+    {
+      "name": "add comment as mallory",
+      "priority": 5,
+      "request": {
+        "method": "POST",
+        "urlPathPattern": "/rest/api/2/issue/(ABC\\-1|10100|ABC\\-2|10101|DEF\\-1|10200|DEF\\-5|10205|HR\\-1|10300)/comment",
+        "headers": {
+          "Authorization": {
+            "equalTo": "Bearer mallory-pat"
+          }
+        },
+        "bodyPatterns": [
+          {
+            "matchesJsonPath": {
+              "expression": "$.body",
+              "matches": ".+"
+            }
+          }
+        ]
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/issue/10100/comment/10500",
+          "id": "10500",
+          "author": {
+            "self": "http://jira.internal:8080/rest/api/2/user?username=mallory",
+            "name": "mallory",
+            "key": "JIRAUSER-mallory",
+            "emailAddress": "mallory@corp.test",
+            "displayName": "Mallory Nogroups",
+            "active": true
+          },
+          "body": "Comment accepted by the mcp-platform-dev mock (not stored).",
+          "created": "2026-10-27T10:00:00.000+0000",
+          "updated": "2026-10-27T10:00:00.000+0000"
+        }
+      }
+    },
+    {
+      "name": "add comment as jkowalski",
+      "priority": 5,
+      "request": {
+        "method": "POST",
+        "urlPathPattern": "/rest/api/2/issue/(ABC\\-1|10100|ABC\\-2|10101|DEF\\-1|10200|DEF\\-5|10205|HR\\-1|10300)/comment",
+        "headers": {
+          "Authorization": {
+            "equalTo": "Bearer test-only-jira-pat-0000000000000000"
+          }
+        },
+        "bodyPatterns": [
+          {
+            "matchesJsonPath": {
+              "expression": "$.body",
+              "matches": ".+"
+            }
+          }
+        ]
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "self": "http://jira.internal:8080/rest/api/2/issue/10100/comment/10500",
+          "id": "10500",
+          "author": {
+            "self": "http://jira.internal:8080/rest/api/2/user?username=jkowalski",
+            "name": "jkowalski",
+            "key": "JIRAUSER-jkowalski",
+            "emailAddress": "jkowalski@corp.test",
+            "displayName": "Jan Kowalski",
+            "active": true
+          },
+          "body": "Comment accepted by the mcp-platform-dev mock (not stored).",
+          "created": "2026-10-27T10:00:00.000+0000",
+          "updated": "2026-10-27T10:00:00.000+0000"
+        }
+      }
+    },
+    {
+      "name": "add comment without body",
+      "priority": 7,
+      "request": {
+        "method": "POST",
+        "urlPathPattern": "/rest/api/2/issue/(ABC\\-1|10100|ABC\\-2|10101|DEF\\-1|10200|DEF\\-5|10205|HR\\-1|10300)/comment",
+        "headers": {
+          "Authorization": {
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "errorMessages": [],
+          "errors": {
+            "comment": "Comment body can not be empty!"
+          }
+        }
+      }
+    },
+    {
+      "name": "list transitions",
+      "priority": 5,
+      "request": {
+        "method": "GET",
+        "urlPathPattern": "/rest/api/2/issue/(ABC\\-1|10100|ABC\\-2|10101|DEF\\-1|10200|DEF\\-5|10205|HR\\-1|10300)/transitions",
+        "headers": {
+          "Authorization": {
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "expand": "transitions",
+          "transitions": [
+            {
+              "id": "11",
+              "name": "To Do",
+              "to": {
+                "name": "To Do",
+                "statusCategory": {
+                  "key": "new"
+                }
+              }
+            },
+            {
+              "id": "21",
+              "name": "In Progress",
+              "to": {
+                "name": "In Progress",
+                "statusCategory": {
+                  "key": "indeterminate"
+                }
+              }
+            },
+            {
+              "id": "31",
+              "name": "Done",
+              "to": {
+                "name": "Done",
+                "statusCategory": {
+                  "key": "done"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "transition 11 (To Do)",
+      "priority": 5,
+      "request": {
+        "method": "POST",
+        "urlPathPattern": "/rest/api/2/issue/(ABC\\-1|10100|ABC\\-2|10101|DEF\\-1|10200|DEF\\-5|10205|HR\\-1|10300)/transitions",
+        "headers": {
+          "Authorization": {
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
+          }
+        },
+        "bodyPatterns": [
+          {
+            "matchesJsonPath": {
+              "expression": "$.transition.id",
+              "equalTo": "11"
+            }
+          }
+        ]
+      },
+      "response": {
+        "status": 204
+      }
+    },
+    {
+      "name": "transition 21 (In Progress)",
+      "priority": 5,
+      "request": {
+        "method": "POST",
+        "urlPathPattern": "/rest/api/2/issue/(ABC\\-1|10100|ABC\\-2|10101|DEF\\-1|10200|DEF\\-5|10205|HR\\-1|10300)/transitions",
+        "headers": {
+          "Authorization": {
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
+          }
+        },
+        "bodyPatterns": [
+          {
+            "matchesJsonPath": {
+              "expression": "$.transition.id",
+              "equalTo": "21"
+            }
+          }
+        ]
+      },
+      "response": {
+        "status": 204
+      }
+    },
+    {
+      "name": "transition 31 (Done)",
+      "priority": 5,
+      "request": {
+        "method": "POST",
+        "urlPathPattern": "/rest/api/2/issue/(ABC\\-1|10100|ABC\\-2|10101|DEF\\-1|10200|DEF\\-5|10205|HR\\-1|10300)/transitions",
+        "headers": {
+          "Authorization": {
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
+          }
+        },
+        "bodyPatterns": [
+          {
+            "matchesJsonPath": {
+              "expression": "$.transition.id",
+              "equalTo": "31"
+            }
+          }
+        ]
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "errorMessages": [],
+          "errors": {
+            "resolution": "Resolution is required."
+          }
+        }
+      }
+    },
+    {
+      "name": "transition not valid",
+      "priority": 7,
+      "request": {
+        "method": "POST",
+        "urlPathPattern": "/rest/api/2/issue/(ABC\\-1|10100|ABC\\-2|10101|DEF\\-1|10200|DEF\\-5|10205|HR\\-1|10300)/transitions",
+        "headers": {
+          "Authorization": {
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
+          }
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "errorMessages": [
+            "Transition id is not valid for this issue."
+          ],
+          "errors": {}
+        }
+      }
+    },
+    {
+      "name": "comment or transitions of unknown issue",
+      "priority": 9,
+      "request": {
+        "urlPathPattern": "/rest/api/2/issue/[^/]+/(comment|transitions)",
+        "headers": {
+          "Authorization": {
+            "matches": "^Bearer (alice\\-pat|bob\\-pat|carol\\-pat|mallory\\-pat|test\\-only\\-jira\\-pat\\-0000000000000000)$"
+          }
+        }
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "errorMessages": [
+            "Issue Does Not Exist"
+          ],
+          "errors": {}
+        }
+      }
+    },
+    {
       "name": "search project ABC (GET)",
       "priority": 5,
       "request": {
