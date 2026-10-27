@@ -34,7 +34,7 @@ make token USER=alice                          # sam token (np. do curl -H "Auth
 make exchange USER=alice REQUESTER=mcp-gateway # token exchange do aud=mcp-credential-broker
 make pat USER=alice SYSTEM=jira                # zapis PAT alice-pat przez C4 PUT /v1/connections/jira/secret
 make pat USER=alice BROKER_URL=https://localhost:18100   # to samo na prawdziwym brokerze
-make audit RID=<requestId>                     # zdarzenia C8 jednego żądania z gateway'a, brokera i mcp-jira
+make audit RID=<requestId> [LOGS="a.log b.log"]  # zdarzenia C8 jednego żądania (kontenery + logi komponentów z hosta)
 make jira-auth                                 # jakie poświadczenia dotarły do mocka Jiry
 make down | make reset | make clean
 ```

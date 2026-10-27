@@ -335,6 +335,23 @@ check("audit: events of one requestId found in all three components",
 check("audit: exit 0 with gateway, broker and server", audit_exit(lines) == 0)
 check("audit: exit 1 when the server event is missing", audit_exit(lines[:2]) == 1)
 
+
+def audit_exit_files(chunks):
+    paths = []
+    for chunk in chunks:
+        with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as f:
+            f.write("\n".join(chunk))
+        paths.append(f.name)
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            return mcpdev.audit(rid, paths)
+    finally:
+        for path in paths:
+            Path(path).unlink()
+
+
+check("audit: events merged from several --logs files", audit_exit_files([lines[:1], lines[1:2], lines[2:]]) == 0)
+
 print()
 if failures:
     print(f"{len(failures)} check(s) failed: {', '.join(failures)}")

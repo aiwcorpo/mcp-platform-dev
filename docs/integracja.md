@@ -132,7 +132,10 @@ Czyta logi `mcp-gateway`, `mcp-credential-broker` i `mcp-jira` (profil `full`), 
 którego `requestId` jest równy `RID` (prefiks logu przed `{` jest pomijany), i wypisuje je według `ts`.
 Kod wyjścia 0 tylko wtedy, gdy są zdarzenia od wszystkich trzech komponentów (`component` = `gateway`,
 `broker`, `server`) i każde ma wymagane pola C8 (`ts`, `requestId`, `component`, `componentId`, `event`).
-`--logs <plik>` w `scripts/mcpdev.py audit` czyta logi z pliku. Pełna walidacja schematem
+Komponenty uruchomione na hoście (np. gateway z IDE) zapisują stdout do pliku i dokłada się go do logów
+kontenerów: `make audit RID=<id> LOGS="gateway.log jira.log"`. Bezpośrednio: `scripts/mcpdev.py audit <id>
+--logs a.log --logs b.log` (opcja powtarzalna, zdarzenia ze wszystkich plików są scalane; z `--compose`
+dochodzą logi kontenerów, bez `--logs` czytane są tylko one). Pełna walidacja schematem
 `audit-event.schema.json` nie jest robiona (brak walidatora JSON Schema w bibliotece standardowej).
 
 Do sprawdzenia, że do Jiry dotarł PAT, a nie token z IdP: `make jira-auth`.

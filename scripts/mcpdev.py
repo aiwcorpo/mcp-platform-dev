@@ -5,7 +5,8 @@
   exchange USER --audience A [--requester R] token exchange (RFC 8693) of USER's token to audience A
   put-secret USER SYSTEM                     store a PAT for USER through the broker API (C4 PUT .../secret);
                                              the PAT comes from $MCP_PAT, default <user>-pat
-  audit REQUEST_ID [--logs FILE]             C8 audit events of one request from gateway, broker, mcp-jira logs
+  audit REQUEST_ID [--logs FILE]... [--compose]
+                                             C8 audit events of one request from gateway, broker, mcp-jira logs
   jira-auth                                  credentials that reached the Jira mock (from its request journal)
 
 Configuration comes from .env and .secrets/dev.env; environment variables override:
@@ -286,15 +287,30 @@ def audit_events(lines, request_id):
     return events
 
 
-def audit(request_id, logs_file=None):
-    if logs_file:
-        lines = Path(logs_file).read_text().splitlines()
-    else:
-        out = subprocess.run([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "logs", "--no-color",
-                              "--no-log-prefix", *AUDIT_COMPONENTS.values()], capture_output=True, text=True)
-        if out.returncode != 0:
-            raise Fail(f"compose logs failed: {out.stderr.strip()[-300:]}")
-        lines = out.stdout.splitlines()
+def compose_log_lines():
+    out = subprocess.run([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "logs", "--no-color",
+                          "--no-log-prefix", *AUDIT_COMPONENTS.values()], capture_output=True, text=True)
+    if out.returncode != 0:
+        raise Fail(f"compose logs failed: {out.stderr.strip()[-300:]}")
+    return out.stdout.splitlines()
+
+
+def audit(request_id, logs_files=None, with_compose=None):
+    """Events from all given log files merged; container logs are read when no file is given or when
+    with_compose is set (components on the host write to files, the rest run in compose)."""
+    if isinstance(logs_files, (str, Path)):
+        logs_files = [logs_files]
+    logs_files = list(logs_files or [])
+    if with_compose is None:
+        with_compose = not logs_files
+    lines = []
+    for path in logs_files:
+        try:
+            lines += Path(path).read_text(errors="replace").splitlines()
+        except OSError as e:
+            raise Fail(f"cannot read log file {path}: {e.strerror}") from None
+    if with_compose:
+        lines += compose_log_lines()
     events = audit_events(lines, request_id)
     for e in sorted(events, key=lambda e: e.get("ts", "")):
         missing = [k for k in AUDIT_REQUIRED if k not in e]
@@ -357,7 +373,10 @@ def main():
 
     p = sub.add_parser("audit")
     p.add_argument("request_id")
-    p.add_argument("--logs", help="read log lines from a file instead of docker compose logs")
+    p.add_argument("--logs", action="append", default=[], metavar="FILE",
+                   help="log file to search (repeatable); without --compose only these files are read")
+    p.add_argument("--compose", action="store_true",
+                   help="also read container logs of gateway, broker and mcp-jira (default when no --logs)")
 
     sub.add_parser("jira-auth")
 
@@ -377,7 +396,7 @@ def main():
             print(json.dumps({"httpStatus": status, **body}))
             return 0 if status == 200 else 1
         elif args.cmd == "audit":
-            return audit(args.request_id, args.logs)
+            return audit(args.request_id, args.logs, True if args.compose else None)
         elif args.cmd == "jira-auth":
             for row in jira_auth():
                 print(f"{row['status']:4} {row['method']:6} {row['url'][:60]:60} {row['credential']}")

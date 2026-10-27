@@ -6,7 +6,7 @@ pracy na kamienie, więc M1 = podzbiór produktów potrzebny do demo M1; reszta 
 
 ## M1: zrobione
 
-Sprawdzone `make clean && make up && make smoke`: 92 sprawdzenia, wszystkie PASS; `make up` od zera ok. 20 s
+Sprawdzone `make clean && make up && make smoke`: 92 sprawdzenia, wszystkie PASS (po poprawce `audit` 93 na działającym środowisku, bez restartu); `make up` od zera ok. 20 s
 przy pobranych obrazach.
 
 | Produkt | Stan |
@@ -73,6 +73,12 @@ Integracja z brokerem ws-06 (commit c59dc82, obraz `mcp-credential-broker:dev`):
   `SECRET=bob-pat` -> 422 `identity_mismatch`; `mcpdev.py audit <requestId>` znajduje zdarzenie
   `connection_change` brokera w jego logach (brak gateway'a i serwera, więc kod 1, zgodnie z oczekiwaniem);
   w liniach audytu brokera nie ma wartości PAT; kontener brokera usunięty po teście.
+
+Poprawka `audit` (zgłoszenie z testu gateway'a ws-05): `--logs` przyjmowało jeden plik, kolejne po cichu
+nadpisywały poprzedni, więc audyt zgłaszał brak komponentów, których zdarzenia były w innych plikach. Teraz
+`--logs` jest powtarzalne i zdarzenia ze wszystkich plików są scalane; `--compose` dokłada logi kontenerów;
+`make audit RID=... LOGS="a.log b.log"` łączy logi komponentów z hosta z logami kontenerów; nieczytelny plik
+daje błąd zamiast cichego pominięcia. Smoke: nowy test scalania trzech plików.
 
 ## Odstępstwa od briefu
 

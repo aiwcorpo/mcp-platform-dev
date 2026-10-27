@@ -79,8 +79,8 @@ seed: ## store Jira PATs of alice and bob through the broker API (BROKER_URL as 
 	@$(PY) scripts/mcpdev.py put-secret alice jira
 	@$(PY) scripts/mcpdev.py put-secret bob jira
 
-audit: ## audit events (C8) of one request from gateway, broker and mcp-jira logs: make audit RID=<requestId>
-	@$(PY) scripts/mcpdev.py audit $(RID)
+audit: ## C8 events of one request from container logs: make audit RID=<id> [LOGS="host1.log host2.log"]
+	@$(PY) scripts/mcpdev.py audit $(RID) $(if $(LOGS),--compose $(foreach f,$(LOGS),--logs $(f)))
 
 jira-auth: ## which credentials reached the Jira mock (scheme and known PAT name; JWTs are flagged)
 	@$(PY) scripts/mcpdev.py jira-auth
