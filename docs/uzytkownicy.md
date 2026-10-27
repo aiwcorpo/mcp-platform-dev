@@ -86,6 +86,6 @@ Dane: projekty `ABC`, `DEF`, `HR` (kategoria `Restricted`); zgłoszenia `ABC-1` 
 `ABC-2`, `DEF-1`, `DEF-5`, `HR-1`; `ABC-3` przeniesione do `DEF` (odpowiedź z kluczem `DEF-5`);
 `/rest/api/2/search` (GET i POST) rozpoznaje `project = ABC|DEF|HR` w JQL. Endpointy danych wymagają
 jednego ze znanych PAT z tabeli. Każde inne poświadczenie, w tym token z Keycloaka (token passthrough,
-niezmiennik 2), cudzy PAT i `Basic`, dostaje `401`. `make jira-auth` pokazuje z dziennika żądań mocka, jakie
+niezmiennik 2), cudzy PAT i `Basic`, dostaje `401`. `make jira-auth` pokazuje z dziennika żądań mocka (admin API z hasłem z `.secrets/dev.env`), jakie
 poświadczenie dotarło do Jiry (nazwa znanego PAT, oznaczony JWT z `iss`/`aud`, inne tylko długością).
 Mock nie sprawdza uprawnień per użytkownik.

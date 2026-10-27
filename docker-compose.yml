@@ -146,12 +146,21 @@ services:
       timeout: 3s
       retries: 30
 
-  # Admin API (/__admin, request journal) is open on purpose: tests read the journal to check which
-  # credential reached Jira (invariant 2). It holds only the mock's fixed test PATs.
+  # Admin API (/__admin, request journal) requires Basic auth (JIRA_MOCK_ADMIN_PASSWORD, host tools only):
+  # the mock sits in both networks, and an open admin API would let an MCP server rewrite mappings or add
+  # proxy stubs into the core network. Proxy targets are limited to an unroutable TEST-NET address.
+  # WireMock takes the credentials only as an option; they protect a mock with fixed test PATs.
   jira-mock:
     image: wiremock/wiremock:3.13.2@sha256:0d4ecb3e4dc8213fd7a4d37d6a78f6e6b553a6d2e15bd51b0999781282ac61b3
-    command: ["--port", "8080", "--disable-banner", "--async-response-enabled", "true",
-              "--root-dir", "/mocks/jira", "--max-request-journal-entries", "1000"]
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        exec /docker-entrypoint.sh --port 8080 --disable-banner --async-response-enabled true
+        --root-dir /mocks/jira --max-request-journal-entries 1000
+        --admin-api-basic-auth "admin:$$JIRA_MOCK_ADMIN_PASSWORD"
+        --allow-proxy-targets 192.0.2.1
+    environment:
+      JIRA_MOCK_ADMIN_PASSWORD: ${JIRA_MOCK_ADMIN_PASSWORD:?run make secrets}
     volumes:
       - ./mocks/jira:/mocks/jira:ro
     ports:
@@ -162,7 +171,7 @@ services:
       servers:
         aliases: [jira.internal]
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/__admin/health"]
+      test: ["CMD-SHELL", "curl -sf -u \"admin:$$JIRA_MOCK_ADMIN_PASSWORD\" http://127.0.0.1:8080/__admin/health"]
       interval: 3s
       timeout: 3s
       retries: 30

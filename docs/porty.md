@@ -15,7 +15,7 @@ Usługi mają nazwy usług i aliasy `*.internal`.
 | OpenBao (dev) | `http://localhost:18200` | `http://openbao:8200` | root token: `BAO_ROOT_TOKEN` w `.secrets/dev.env`; audyt na stdout kontenera |
 | Redis | `localhost:16379` | `redis:6379` | ACL per komponent, patrz [integracja.md](integracja.md#redis-użytkownicy-i-prefiksy-propozycja-ws-01-dla-ws-02-ws-05-ws-06) |
 | PostgreSQL | `localhost:15432` | `postgres:5432` | bazy `gateway` i `broker`, użytkownicy o tych samych nazwach |
-| Mock Jiry (HTTP) | `http://localhost:18081` | `http://jira.internal:8080` | PAT jako `Authorization: Bearer <pat>`; `/__admin` otwarte (dziennik żądań do testów) |
+| Mock Jiry (HTTP) | `http://localhost:18081` | `http://jira.internal:8080` | PAT jako `Authorization: Bearer <pat>`; `/__admin` z Basic auth `admin:$JIRA_MOCK_ADMIN_PASSWORD` |
 | Stub brokera C4 (mTLS) | `https://localhost:18443` | `https://${MCP_BROKER_TLS_NAME}:8443` | `make up`; kontrakty z `MCP_CONTRACTS_REF` |
 | Stub admina gateway'a C5 (mTLS) | `https://localhost:18444` | `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443` | `make up` |
 | Gateway | `http://localhost:18000` | `${MCP_GATEWAY_INTERNAL_TLS_NAME}` | `make up-full`, port w kontenerze 8080 |

@@ -100,8 +100,14 @@ Klucze nie są w kontraktach. Środowisko zakłada poniższe prefiksy i egzekwuj
 | `mcp-<system>` | `REDIS_MCP_<SYSTEM>_PASSWORD` | `jti:mcp-<system>:*` | brak | starter (ws-02): prefiks `jti:<serverId>:` |
 | `admin` | `REDIS_ADMIN_PASSWORD` | wszystkie | wszystkie | tylko narzędzia dev i healthcheck |
 
-Użytkownik `default` jest wyłączony. Wszyscy poza `admin` mają odebrane komendy z kategorii `@dangerous`
-(`FLUSHALL`, `KEYS`, `CONFIG` itd.).
+Użytkownik `default` jest wyłączony. Użytkownicy komponentów mają jawną listę komend, bez kategorii:
+`GET`, `SET`, `SETNX`, `GETDEL`, `GETEX`, `MGET`, `DEL`, `UNLINK`, `EXISTS`, `EXPIRE`, `PEXPIRE`, `TTL`, `PTTL`,
+`INCR`, `INCRBY`, `DECR`, `HSET`, `HGET`, `HDEL`, `HGETALL`, `HEXISTS`, `HINCRBY`, `MULTI`, `EXEC`, `DISCARD`,
+`PING`, `AUTH`, `HELLO`, `CLIENT SETNAME`, `CLIENT SETINFO`, `RESET`, `QUIT` oraz `SUBSCRIBE`/`UNSUBSCRIBE`
+(gateway) albo `PUBLISH` (broker). Nie ma `SCAN`, `KEYS`, `RANDOMKEY`, `EVAL`, `SCRIPT`, `FUNCTION`:
+wzorce `~prefiks` w ACL ich nie ograniczają i ujawniałyby nazwy kluczy innych komponentów (np. `sub` w
+kluczach potwierdzeń). Komponent, który potrzebuje innej komendy (np. Lua dla atomowego "sprawdź i zużyj"
+potwierdzenia), zgłasza to do ws-01; zmiana jest w `redis/start.sh` i w tej tabeli.
 
 ## Portal BFF (ws-07)
 
@@ -132,5 +138,8 @@ Do sprawdzenia, że do Jiry dotarł PAT, a nie token z IdP: `make jira-auth`.
 - `scripts/smoke.py` jako wzór sprawdzeń środowiska;
 - certyfikat obcego CA: `certs/untrusted/mcp-gateway`;
 - użytkownik bez uprawnień: `mallory`; PAT cudzej tożsamości: dowolny `Bearer` inny niż `<login>-pat`;
-- dziennik żądań mocka Jiry (`http://localhost:18081/__admin/requests`) jest celowo włączony i bez
-  uwierzytelnienia; stuby C4/C5 nie mają dziennika (`--no-request-journal`), bo `PUT .../secret` niesie PAT.
+- dziennik żądań mocka Jiry (`http://localhost:18081/__admin/requests`) jest włączony, ale admin API wymaga
+  Basic auth `admin:$JIRA_MOCK_ADMIN_PASSWORD` (`.secrets/dev.env`, tylko dla narzędzi hosta; `mcpdev.jira_auth()`
+  bierze je stamtąd). Bez tego serwer MCP z sieci `servers` mógłby zmienić mapowania albo dodać stub proxy do
+  sieci `core`. Proxy jest dodatkowo zablokowane (`--allow-proxy-targets 192.0.2.1`, adres TEST-NET);
+- stuby C4/C5 nie mają dziennika (`--no-request-journal`), bo `PUT .../secret` niesie PAT.

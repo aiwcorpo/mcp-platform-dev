@@ -2,6 +2,7 @@
 """Smoke test of the running environment (profile infra). Exit code 1 if any check fails.
 Secrets are handed to processes inside containers through stdin, never through argv."""
 
+import base64
 import contextlib
 import io
 import json
@@ -245,6 +246,11 @@ check("broker: broker:*, jti:mcp-credential-broker:*, publish credential.invalid
 check("broker: no gateway keys, no other channels", all("NOPERM" in o for o in out[3:]), str(out))
 out = redis_as("mcp-jira", "set jti:mcp-jira:smoke 1 EX 60", "set jti:mcp-confluence:smoke 1", "publish credential.invalidated x")
 check("mcp-jira: only jti:mcp-jira:*", out[0] == "OK" and all("NOPERM" in o for o in out[1:]), str(out))
+out = redis_as("mcp-jira", "scan 0", "keys '*'", "randomkey", "eval 'return 1' 0", "script flush", "get gw:smoke")
+check("mcp-jira: no SCAN, KEYS, RANDOMKEY, EVAL, SCRIPT, no gw:* keys",
+      len(out) == 6 and all("NOPERM" in o for o in out), str(out))
+out = redis_as("gateway", "scan 0", "keys '*'")
+check("gateway: no SCAN, KEYS", len(out) == 2 and all("NOPERM" in o for o in out), str(out))
 
 print("== PostgreSQL")
 for user, db, ok in (("broker", "broker", True), ("gateway", "gateway", True), ("broker", "gateway", False)):
@@ -263,6 +269,26 @@ for target, reachable in (("http://jira.internal:8080/__admin/health", True), ("
     resolved = res.returncode != 6
     check(f"servers network: {target.split('/')[2]} {'reachable' if reachable else 'not visible'}",
           resolved == reachable, f"curl exit {res.returncode}")
+
+for method, path in (("GET", "/__admin/mappings"), ("POST", "/__admin/mappings"), ("POST", "/__admin/reset")):
+    res = run("docker", "run", "--rm", "--network", f"{PROJECT}-servers", "--entrypoint", "curl", CURL_IMAGE,
+              "-s", "-o", "/dev/null", "-w", "%{http_code}", "-m", "5", "-X", method,
+              "-H", "Content-Type: application/json", "-d", "{}" if method == "POST" else "",
+              f"http://jira.internal:8080{path}")
+    check(f"servers network: Jira mock {method} {path} without admin credentials -> 401", res.stdout == "401",
+          res.stdout)
+
+# Even with admin credentials the mock must not proxy into the core network (SSRF).
+admin = {"Authorization": "Basic " + base64.b64encode(
+    f"admin:{mcpdev.cfg('JIRA_MOCK_ADMIN_PASSWORD')}".encode()).decode(), "Content-Type": "application/json"}
+probe = {"request": {"urlPath": "/smoke-proxy-probe"}, "response": {"proxyBaseUrl": "http://keycloak:8080"}}
+with urllib.request.urlopen(urllib.request.Request(f"{JIRA}/__admin/mappings", data=json.dumps(probe).encode(),
+                                                   headers=admin, method="POST")) as resp:
+    probe_id = json.load(resp)["id"]
+status, body = http_get(f"{JIRA}/smoke-proxy-probe")
+urllib.request.urlopen(urllib.request.Request(f"{JIRA}/__admin/mappings/{probe_id}", headers=admin, method="DELETE"))
+check("Jira mock refuses to proxy to the core network", status != 200 and "keycloak" not in body.lower(),
+      f"{status} {body[:120]}")
 
 print("== certificates (C3, C4, C5, CC-035)")
 certs = ROOT / "certs"

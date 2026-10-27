@@ -3,7 +3,11 @@
 # Key prefixes and channels per component are a ws-01 proposal, see docs/integracja.md ("Redis").
 set -eu
 
-data_cmds="-@all +@read +@write +@string +@hash +@list +@set +@sortedset +@stream +@keyspace +@scripting +@transaction +@connection -@dangerous"
+# Explicit command list instead of categories: key patterns (~prefix) do not restrict SCAN, KEYS, RANDOMKEY
+# or scripts, which would reveal other components' key names. A component needing more commands asks ws-01.
+data_cmds="-@all +get +set +setnx +getdel +getex +mget +del +unlink +exists +expire +pexpire +ttl +pttl \
++incr +incrby +decr +hset +hget +hdel +hgetall +hexists +hincrby +multi +exec +discard \
++ping +auth +hello +client|setname +client|setinfo +reset +quit"
 
 acl=/tmp/users.acl
 umask 077

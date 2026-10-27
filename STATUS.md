@@ -6,16 +6,16 @@ pracy na kamienie, więc M1 = podzbiór produktów potrzebny do demo M1; reszta 
 
 ## M1: zrobione
 
-Sprawdzone `make clean && make up && make smoke`: 86 sprawdzeń, wszystkie PASS; `make up` od zera ok. 20 s
+Sprawdzone `make clean && make up && make smoke`: 92 sprawdzenia, wszystkie PASS; `make up` od zera ok. 20 s
 przy pobranych obrazach.
 
 | Produkt | Stan |
 | --- | --- |
 | Keycloak 26.8.1, realm `corp` | klienci `claude-code` (public, PKCE S256 wymuszone, bez ROPC, `aud=mcp-gateway`), `mcp-gateway`, `mcp-portal-bff`, `mcp-credential-broker`, `mcp-gateway-admin`, `opensearch`; standardowy token exchange w łańcuchu z C4 (gateway -> broker, BFF -> broker/admin, broker -> opensearch); mapper `groups` z `full.path=false`; jawna polityka DCR "Trusted Hosts" bez hostów; użytkownicy `alice`, `bob`, `carol`, `mallory` z grupami C9 |
 | OpenBao 2.7.2 (dev) | KV v2 `secret/`, Transit z kluczem `mcp-credential-broker`, AppRole brokera (polityka tylko na swoje ścieżki, `secret_id` 7 dni), audyt deklaratywny na stdout |
-| Redis 8.8.4 | ACL per komponent (`gateway`, `broker`, `mcp-<system>`, `admin`), `default` wyłączony, prefiksy kluczy i kanał `credential.invalidated` wg `docs/integracja.md` |
+| Redis 8.8.4 | ACL per komponent (`gateway`, `broker`, `mcp-<system>`, `admin`), `default` wyłączony, jawna lista komend (bez `SCAN`/`KEYS`/`EVAL`), prefiksy kluczy i kanał `credential.invalidated` wg `docs/integracja.md` |
 | PostgreSQL 18.6 | bazy `gateway` i `broker`, osobni użytkownicy, brak dostępu krzyżowego |
-| Mock Jiry (WireMock 3.13.2) | `/rest/api/2/myself` (C4.1) dla `<login>-pat`, inny PAT = inny użytkownik; dane tylko dla znanych PAT (token z IdP, cudzy PAT -> 401); projekty `ABC`, `DEF`, `HR` (`Restricted`), linki między projektami, zgłoszenie przeniesione; `make jira-auth` pokazuje, jakie poświadczenie dotarło |
+| Mock Jiry (WireMock 3.13.2) | `/rest/api/2/myself` (C4.1) dla `<login>-pat`, inny PAT = inny użytkownik; dane tylko dla znanych PAT (token z IdP, cudzy PAT -> 401); projekty `ABC`, `DEF`, `HR` (`Restricted`), linki między projektami, zgłoszenie przeniesione; `make jira-auth` pokazuje, jakie poświadczenie dotarło; admin API z Basic auth, proxy zablokowane |
 | Stuby C4 i C5 | z `mcp-contracts` `v1.1.0` (`MCP_CONTRACTS_REF`) przez `git archive` do `out/contracts/`, tylko HTTPS z wymaganym certyfikatem klienta, bez dziennika żądań |
 | CA i mTLS | CA EC P-256; `CN=<nazwa>`; EKU per rola; SAN `<serverId>.internal` dla serwerów MCP, nazwy TLS brokera i gateway'a z `.env` (CC-035); PEM + PKCS12 dla Javy; certyfikat obcego CA do testów negatywnych |
 | Skrypt zapisu PAT | `make pat USER=alice SYSTEM=jira [SECRET=...] [BROKER_URL=...]`: PKCE w kliencie BFF, token exchange, `PUT /v1/connections/{system}/secret` po mTLS z weryfikacją `MCP_BROKER_TLS_NAME`; PAT przez zmienną środowiska |
@@ -56,6 +56,13 @@ DoD briefu, punkty dotyczące M1:
 | L9 drobne | komentarz `make clean`, opis `BROKER_URL` w `make help`, obrazy przypięte digestem |
 | L10 brak endpointów zapisu, `project in (...)` | poza M1, niezrobione |
 
+Przegląd bezpieczeństwa commita f0e8ae0:
+
+| Znalezisko | Co zrobione |
+| --- | --- |
+| MEDIUM: admin API mocka Jiry bez uwierzytelnienia w sieciach `core` i `servers` (zmiana mapowań, proxy = SSRF do `core`) | `--admin-api-basic-auth` z generowanym `JIRA_MOCK_ADMIN_PASSWORD`, `--allow-proxy-targets 192.0.2.1`; smoke: z sieci `servers` `GET/POST /__admin/mappings` i `POST /__admin/reset` -> 401; stub proxy do `keycloak:8080` dodany z hasłem -> 500 "target proxy address is denied" |
+| MEDIUM: kategorie `+@keyspace`/`+@scripting` w ACL Redis ujawniają nazwy cudzych kluczy | jawna lista komend w `redis/start.sh`, opis i zasada zgłaszania w `docs/integracja.md`; smoke: `mcp-jira` bez `SCAN`/`KEYS`/`RANDOMKEY`/`EVAL`/`SCRIPT` i bez `gw:*`, `gateway` bez `SCAN`/`KEYS` |
+
 ## Odstępstwa od briefu
 
 - Hasła użytkowników, sekrety klientów, root token OpenBao, hasła Redis/PostgreSQL i keystore'ów są
@@ -68,8 +75,8 @@ DoD briefu, punkty dotyczące M1:
 - `make token` nie używa ROPC: skrypt przechodzi prawdziwy authorization code + PKCE.
 - Komponenty w kontenerach muszą używać JWKS `http://keycloak:8080/...` i oczekiwanego `iss`
   `http://localhost:18080/realms/corp` zamiast discovery z `issuer-uri` (`docs/porty.md`).
-- Hasło keystore'ów stubów WireMock jest w argumentach procesu Javy w kontenerze (WireMock nie przyjmuje go
-  inaczej); chroni tylko testowe klucze.
+- Hasło keystore'ów stubów WireMock i hasło admina mocka Jiry są w argumentach procesu Javy w kontenerze
+  (WireMock przyjmuje je tylko jako opcje); chronią testowe klucze i mock.
 
 ## Poza M1 (nie zrobione)
 
