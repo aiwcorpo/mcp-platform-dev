@@ -258,6 +258,9 @@ services:
       MCP_OIDC_JWKS_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/certs
       MCP_OIDC_TOKEN_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/token
       MCP_OIDC_AUDIENCE: mcp-gateway
+      MCP_PUBLIC_URL: http://localhost:${GATEWAY_PORT}
+      # Dev only: Keycloak's token endpoint (token exchange) is plain http in this stack.
+      MCP_ALLOW_PLAIN_HTTP: "true"
       MCP_OIDC_CLIENT_ID: mcp-gateway
       MCP_OIDC_CLIENT_SECRET: ${KC_CLIENT_MCP_GATEWAY_SECRET:?run make secrets}
       MCP_INTERNAL_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
@@ -281,6 +284,8 @@ services:
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
     ports:
       - 127.0.0.1:${GATEWAY_PORT}:8080
+      # Internal TLS endpoint (JWKS C2, actuator), published for tests from the host (mTLS still required).
+      - 127.0.0.1:${GATEWAY_INTERNAL_PORT}:8443
     networks:
       core:
         aliases: ["${MCP_GATEWAY_INTERNAL_TLS_NAME}"]
@@ -365,6 +370,10 @@ services:
       - ./certs/mcp-jira:/certs/mcp-jira:ro
       - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
+    # Published only so that tests from the host can attack the server directly (A1, A3); every request still
+    # needs the mcp-gateway client certificate and an internal JWT.
+    ports:
+      - 127.0.0.1:${MCP_JIRA_PORT}:8443
     networks:
       servers:
         aliases: [mcp-jira.internal]

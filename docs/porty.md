@@ -18,9 +18,10 @@ Usługi mają nazwy usług i aliasy `*.internal`.
 | Mock Jiry (HTTP) | `http://localhost:18081` | `http://jira.internal:8080` | PAT jako `Authorization: Bearer <pat>`; `/__admin` z Basic auth `admin:$JIRA_MOCK_ADMIN_PASSWORD` |
 | Stub brokera C4 (mTLS) | `https://localhost:18443` | `https://${MCP_BROKER_TLS_NAME}:8443` | `make up`; kontrakty z `MCP_CONTRACTS_REF` |
 | Stub admina gateway'a C5 (mTLS) | `https://localhost:18444` | `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443` | `make up` |
-| Gateway | `http://localhost:18000` | `${MCP_GATEWAY_INTERNAL_TLS_NAME}` | `make up-full`, port w kontenerze 8080 |
+| Gateway (klienci MCP) | `http://localhost:18000` | `http://mcp-gateway.internal:8080` | `make up-full`, endpoint `/s/mcp-jira/mcp` |
+| Gateway (wewnętrzny, mTLS) | `https://localhost:18445` | `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443` | JWKS C2 i actuator; port hosta tylko dla testów, wymaga certyfikatu klienta |
 | Broker | `https://localhost:18100` | `https://${MCP_BROKER_TLS_NAME}:8443` | `make up-full` (stuby wtedy są usuwane) |
-| `mcp-jira` | | `https://mcp-jira.internal:8443` | profil `full` |
+| `mcp-jira` | `https://localhost:18446` | `https://mcp-jira.internal:8443` | profil `full`; port hosta tylko dla testów A1/A3, wymaga certyfikatu `mcp-gateway` i JWT |
 | Portal (zarezerwowany) | `http://localhost:18090` | | redirect URI klienta `mcp-portal-bff` |
 | Callback Claude Code | `http://localhost:33418/callback` | | redirect URI klienta `claude-code` |
 

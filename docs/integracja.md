@@ -109,9 +109,7 @@ ma w `docker-compose.yml` `MCP_JIRA_ALLOW_PLAIN_HTTP: "true"` (z komentarzem, ż
 z certyfikatem wewnętrznego CA i `MCP_JIRA_SSL_BUNDLE` odrzucone: zmusiłoby do trzeciego certyfikatu serwerowego,
 SAN `jira.internal` i zmian w `make certs` bez zysku dla testów serwera, który i tak mówi z Jirą zwykłym klientem
 HTTP. Zmienna działa tylko jako zgoda: poświadczenie idzie wtedy otwartym tekstem i serwer loguje ostrzeżenie.
-Nie ustawia się jej wobec prawdziwej Jiry. Serwer `mcp-server-jira` w stanie 79ffecd (starter alpha-5) tej
-zmiennej jeszcze nie czyta i przyjmuje http bez niej; zmienna jest nieszkodliwa i zaczyna działać po rebase na
-szkielet od c1258c4.
+Nie ustawia się jej wobec prawdziwej Jiry. Serwer `mcp-server-jira` od startera alpha-6 czyta tę zmienną (sprawdzone na a64287c w `make up-full`).
 
 Mock obsługuje zapisy używane przez narzędzia `add_comment` i `transition_issue` (kształt jak w Jira DC REST API
 v2 i w `StubBackend` serwera `mcp-jira`): `POST /rest/api/2/issue/{key|id}/comment` (201; 400 bez pola `body`),
@@ -122,8 +120,9 @@ pokazuje stary status); uprawnień do projektów (403) mock nie modeluje. Mapowa
 WireMock czyta je przy starcie, a admin API jest zablokowane hasłem, więc po `python3 scripts/gen-jira-mock.py
 mocks/jira` kontener `jira-mock` trzeba zrestartować (`docker compose restart jira-mock`).
 
-Podmiana serwera testowego na prawdziwy `mcp-jira` w profilu `full`: usługa używa obrazu `${MCP_JIRA_IMAGE}`
-z `.env` (domyślnie `mcp-server-jira:dev`, `pull_policy: never`, więc obraz musi istnieć lokalnie). Budowa wg
+Obrazy profilu `full` buduje `make images` (`scripts/build-images.sh`, commity w repozytoriach obok, bez zmian w ich
+kopiach roboczych); tagi `m1-<commit>` trafiają do `.env`. Podmiana serwera testowego na prawdziwy `mcp-jira`: usługa używa obrazu `${MCP_JIRA_IMAGE}`
+z `.env` (`mcp-server-jira:m1-<commit>`, `pull_policy: never`, więc obraz musi istnieć lokalnie). Budowa wg
 README `mcp-server-jira`:
 
 ```bash

@@ -36,6 +36,8 @@ make pat USER=alice SYSTEM=jira                # zapis PAT alice-pat przez C4 PU
 make pat USER=alice BROKER_URL=https://localhost:18100   # to samo na prawdziwym brokerze
 make audit RID=<requestId> [LOGS="a.log b.log"]  # zdarzenia C8 jednego żądania (kontenery + logi komponentów z hosta)
 make jira-auth                                 # jakie poświadczenia dotarły do mocka Jiry
+make m1                                        # scenariusze M1 (F1 A1 A2 A3 A9 A15) na stosie z make up-full
+make images                                    # obrazy gateway, broker, mcp-jira z commitów repozytoriów obok
 make down | make reset | make clean
 ```
 
@@ -47,11 +49,55 @@ make down | make reset | make clean
 | --- | --- | --- |
 | (bez profilu) | `make up-core` | Keycloak, OpenBao (+ jednorazowy `openbao-init`), Redis, PostgreSQL, mock Jiry |
 | `infra` | `make up` | powyższe + stuby WireMock brokera (C4) i API admina gateway'a (C5) z `mcp-contracts` `MCP_CONTRACTS_REF` |
-| `full` | `make up-full` | infrastruktura + `mcp-gateway`, `mcp-credential-broker`, `mcp-jira` z obrazów z `.env` (budują je ws-05, ws-06, ws-04); stuby są usuwane |
+| `full` | `make up-full` | infrastruktura + `mcp-gateway`, `mcp-credential-broker`, `mcp-jira` z obrazów z `.env` (`make images` buduje je z commitów repozytoriów obok); stuby są usuwane |
 
 `up-core` jest dla strumienia, który uruchamia własny komponent na hoście i nie chce stuba pod tym samym adresem.
 Compose zawsze przez `make` albo `scripts/compose.sh`: skrypt podaje `.env` i `.secrets/dev.env` jako
 `--env-file`, dzięki czemu każda usługa dostaje tylko swoje sekrety.
+
+## Demo M1 z Claude Code
+
+Stan: `make up-full` uruchamia prawdziwy gateway, broker i `mcp-jira`; `make m1` przechodzi F1, A1, A2, A3, A9 i A15
+(patrz [STATUS.md](STATUS.md)). Logowania w przeglądarce nie da się zautomatyzować, więc ta część jest dla człowieka.
+Sprawdzone bez przeglądarki: nagłówek 401 z `resource_metadata`, metadane RFC 9728 gateway'a
+(`authorization_servers = http://localhost:18080/realms/corp`), metadane RFC 8414 Keycloaka, żądanie autoryzacji
+klienta `claude-code` z PKCE i `resource` (formularz logowania), odrzucenie obcego redirect URI (400).
+
+Anonimowa dynamiczna rejestracja klienta (DCR) jest w tym realmie zablokowana (`403`), więc Claude Code używa
+zarejestrowanego klienta publicznego `claude-code` ze stałym portem callbacku 33418.
+
+1. Stos i PAT alice (PAT jest zapisany w OpenBao po `make m1`; po `make reset` zapisz go ponownie):
+
+   ```bash
+   make up-full
+   make pat USER=alice SYSTEM=jira BROKER_URL=https://localhost:18100   # 200 connected, backendUser alice
+   make users                                                          # hasło alice dla ekranu logowania
+   ```
+
+2. Dodanie serwera (Claude Code 2.1.x; port 33418 musi być wolny na hoście):
+
+   ```bash
+   claude mcp add --transport http --client-id claude-code --callback-port 33418 \
+     jira http://localhost:18000/s/mcp-jira/mcp
+   ```
+
+3. W Claude Code: `/mcp`, wybierz `jira`, `Authenticate`. Otworzy się przeglądarka z logowaniem Keycloaka
+   (realm `corp`); zaloguj się jako `alice` z hasłem z `make users`. Po powrocie na `localhost:33418/callback`
+   `/mcp` pokazuje `jira` jako connected.
+
+4. Prompt testowy: `pobierz ABC-1`. Oczekiwany wynik: wywołanie narzędzia `jira__get_issue` i dane zgłoszenia ABC-1
+   z mocka ("Login page returns 500" w tytule).
+
+5. Kontrola po stronie platformy:
+
+   ```bash
+   make jira-auth      # do mocka dotarł wyłącznie "PAT alice-pat", nigdy token z IdP
+   RID=$(docker logs mcp-dev-mcp-gateway-1 2>&1 | grep '"event":"tool_call"' | tail -1 | sed -E 's/.*"requestId":"([^"]+)".*/\1/')
+   make audit RID=$RID # zdarzenia gateway, broker i server jednego requestId, "missing: none"
+   ```
+
+Na stacji nie ma żadnego PAT: token Keycloaka ma `aud=mcp-gateway`, a poświadczenie do Jiry gateway pobiera z brokera.
+Inny użytkownik w Claude Code: `/mcp`, `jira`, `Clear authentication`, ponowne logowanie.
 
 ## Dokumentacja
 

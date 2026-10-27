@@ -13,10 +13,10 @@ STUBS := broker-mock gateway-admin-mock
 COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira
 
 .PHONY: help secrets certs contracts up up-core up-full down reset clean ps logs token claims exchange pat seed \
-        smoke users audit jira-auth
+        smoke users audit jira-auth images m1
 
 help: ## list targets
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
+	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
 
 secrets: ## generate .secrets/dev.env (missing keys only)
 	@./scripts/init-secrets.sh
@@ -84,6 +84,12 @@ audit: ## C8 events of one request from container logs: make audit RID=<id> [LOG
 
 jira-auth: ## which credentials reached the Jira mock (scheme and known PAT name; JWTs are flagged)
 	@$(PY) scripts/mcpdev.py jira-auth
+
+images: ## build the component images of profile full from git refs of the sibling repos (needs JAVA_HOME=JDK 25)
+	@./scripts/build-images.sh
+
+m1: ## M1 scenarios (F1 A1 A2 A3 A9 A15) against the running make up-full; needs ../mcp-e2e (read only)
+	@$(PY) -I scripts/m1-compose.py
 
 smoke: ## smoke test of the running profile infra
 	@$(PY) scripts/smoke.py

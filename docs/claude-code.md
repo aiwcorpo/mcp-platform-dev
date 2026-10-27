@@ -1,8 +1,8 @@
 # Claude Code a lokalny gateway
 
-Stan: realm jest gotowy, gateway'a jeszcze nie ma (ws-05). Poniższe polecenia nie były uruchomione
-end-to-end; sprawdzone są ich elementy: klient `claude-code` z PKCE, redirect, `aud`, metadane RFC 8414
-Keycloaka i tolerowanie parametru `resource` (RFC 8707) w żądaniu autoryzacji i tokenu.
+Stan (2026-10-27): gateway działa w compose (`make up-full`), a `make m1` przechodzi scenariusze M1. Samego logowania
+w przeglądarce nie wykonano; sprawdzone są metadane RFC 9728 i RFC 8414, żądanie autoryzacji z PKCE i `resource`,
+redirect URI i odrzucenie obcego redirect URI. Pełna instrukcja dla człowieka: sekcja "Demo M1 z Claude Code" w README.
 
 Anonimowa dynamiczna rejestracja klientów (DCR) jest zablokowana domyślną polityką Keycloaka "Trusted Hosts"
 (`403 Host not trusted`, sprawdzone), więc Claude Code dostaje zarejestrowany wcześniej klient publiczny

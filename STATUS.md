@@ -88,6 +88,46 @@ kształt jak `connectUrl` brokera i przykład C4). Pozostałe zmienne przejrzane
 (zgodne, opis w `docs/integracja.md`). Sprawdzone `compose --profile full config` i `make smoke`; samego
 kontenera `mcp-jira` nie uruchamiałem (obraz `mcp-server-jira:dev` jeszcze nie istnieje).
 
+## M1 w compose z prawdziwymi komponentami (2026-10-27)
+
+`make up-full` z obrazami zbudowanymi `make images` (`scripts/build-images.sh`: `git archive` commita do katalogu
+tymczasowego, `./mvnw package -DskipTests`, `docker build`; repozytoria obok tylko do odczytu):
+
+| Komponent | Commit | Obraz |
+| --- | --- | --- |
+| `mcp-gateway` | d4fbf98 | `mcp-gateway:m1-d4fbf98` |
+| `mcp-credential-broker` | 9a5d292 | `mcp-credential-broker:m1-9a5d292` |
+| `mcp-server-jira` (starter alpha-6) | a64287c | `mcp-server-jira:m1-a64287c` |
+
+`make m1` (`scripts/m1-compose.py`) uruchamia scenariusze z `mcp-e2e` (importowane tylko do odczytu, nic nie jest
+zapisywane w tamtym repo) na kontenerach: F1, A1, A2, A3, A9 (logi gateway'a, brokera, `mcp-jira` oraz logi
+wszystkich kontenerów projektu) i A15 (broker zatrzymany i uruchomiony przez `docker stop/start`). Wynik: wszystkie PASS,
+w tym `mcpdev.py audit --compose` dla jednego `requestId` -> gateway, broker i server, `missing: none`, oraz zero
+wystąpień `alice-pat`, tokenu alice i ciągów JWT w logach 9 kontenerów (w tym OpenBao i Keycloaka).
+
+Zmiany w środowisku:
+
+- `.env`: tagi obrazów jak wyżej; `GATEWAY_INTERNAL_PORT=18445`, `MCP_JIRA_PORT=18446`.
+- `docker-compose.yml`: gateway dostał `MCP_PUBLIC_URL` i `MCP_ALLOW_PLAIN_HTTP` (token exchange po http do Keycloaka);
+  porty hosta 18445 (gateway wewnętrzny) i 18446 (`mcp-jira`) dla testów negatywnych z hosta (A1, A3). Oba wymagają
+  certyfikatu klienta `mcp-gateway`; `mcp-jira` nadal wymaga też wewnętrznego JWT.
+- `make smoke` dotyczy profilu `infra` (stuby); przy `make up-full` kończy się na sprawdzeniu stubów, bo ich nie ma. Do
+  profilu `full` służy `make m1`.
+- Stuby `mcp-dev-broker-mock-1` i `mcp-dev-gateway-admin-mock-1` zostały zatrzymane i usunięte przez `make up-full`
+  (za zgodą człowieka); wolumeny, realm i OpenBao bez zmian.
+
+Claude Code: sekcja "Demo M1 z Claude Code" w README. Bez przeglądarki sprawdzone: 401 z `resource_metadata`, metadane
+zasobu (`authorization_servers` = Keycloak), metadane RFC 8414, żądanie autoryzacji `claude-code` z PKCE i `resource`
+(formularz logowania), obcy redirect URI -> 400, anonimowy DCR -> 403 (więc `--client-id claude-code
+--callback-port 33418`). Samo logowanie i wywołanie narzędzia z Claude Code nie były wykonane.
+
+## Propozycje CC
+
+Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktów tu nie zmieniano.
+
+- Brak. Zmienne `MCP_*` dla gateway'a, brokera i `mcp-jira` zgadzają się z compose; jedyne odstępstwo to
+  `MCP_ALLOW_PLAIN_HTTP` gateway'a (token exchange do Keycloaka po http), które jest dev-only i już opisane w README gateway'a.
+
 ## Odstępstwa od briefu
 
 - Hasła użytkowników, sekrety klientów, root token OpenBao, hasła Redis/PostgreSQL i keystore'ów są
@@ -114,12 +154,8 @@ kontenera `mcp-jira` nie uruchamiałem (obraz `mcp-server-jira:dev` jeszcze nie 
 
 ## Niesprawdzone
 
-- Prawdziwe logowanie Claude Code (`claude mcp add --client-id claude-code --callback-port 33418 ...`):
-  bez gateway'a nie ma czego podłączyć. Sprawdzone elementy: PKCE, redirect, `aud`, metadane RFC 8414,
-  tolerowanie parametru `resource`.
-- Profil `full`: z prawdziwym komponentem uruchomiony tylko broker (sam, `--no-deps`); gateway i `mcp-jira`
-  tylko `docker compose config`.
-- `make audit` z kompletem trzech komponentów (na prawdziwych logach sprawdzony tylko broker).
+- Prawdziwe logowanie Claude Code w przeglądarce i wywołanie narzędzia z jego poziomu: wymaga człowieka
+  (kroki w README). Sprawdzone elementy: PKCE, redirect, `aud`, metadane RFC 9728 i 8414, parametr `resource`.
 - Klient Redis z Spring (Lettuce) przeciw ACL: komendy połączeniowe są w `@connection`, ale nie było
   komponentu do sprawdzenia.
 - `make up` na innym systemie niż macOS (Docker Desktop).
