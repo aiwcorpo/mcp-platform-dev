@@ -63,6 +63,17 @@ Przegląd bezpieczeństwa commita f0e8ae0:
 | MEDIUM: admin API mocka Jiry bez uwierzytelnienia w sieciach `core` i `servers` (zmiana mapowań, proxy = SSRF do `core`) | `--admin-api-basic-auth` z generowanym `JIRA_MOCK_ADMIN_PASSWORD`, `--allow-proxy-targets 192.0.2.1`; smoke: z sieci `servers` `GET/POST /__admin/mappings` i `POST /__admin/reset` -> 401; stub proxy do `keycloak:8080` dodany z hasłem -> 500 "target proxy address is denied" |
 | MEDIUM: kategorie `+@keyspace`/`+@scripting` w ACL Redis ujawniają nazwy cudzych kluczy | jawna lista komend w `redis/start.sh`, opis i zasada zgłaszania w `docs/integracja.md`; smoke: `mcp-jira` bez `SCAN`/`KEYS`/`RANDOMKEY`/`EVAL`/`SCRIPT` i bez `gw:*`, `gateway` bez `SCAN`/`KEYS` |
 
+Integracja z brokerem ws-06 (commit c59dc82, obraz `mcp-credential-broker:dev`):
+
+- usługa `mcp-credential-broker` w profilu `full` ma `MCP_PORTAL_URL` i `MCP_ALLOW_PLAIN_HTTP=true` (tylko dev;
+  OpenBao i mock Jiry są po http); `MCP_JIRA_URL=http://jira.internal:8080` już było; `compose config` dla
+  `full` przechodzi;
+- broker uruchomiony sam (`up --no-deps`) na infrastrukturze z `make up`:
+  `make pat USER=alice BROKER_URL=https://localhost:18100` -> 200 `connected`, `backendUser: alice`;
+  `SECRET=bob-pat` -> 422 `identity_mismatch`; `mcpdev.py audit <requestId>` znajduje zdarzenie
+  `connection_change` brokera w jego logach (brak gateway'a i serwera, więc kod 1, zgodnie z oczekiwaniem);
+  w liniach audytu brokera nie ma wartości PAT; kontener brokera usunięty po teście.
+
 ## Odstępstwa od briefu
 
 - Hasła użytkowników, sekrety klientów, root token OpenBao, hasła Redis/PostgreSQL i keystore'ów są
@@ -92,8 +103,9 @@ Przegląd bezpieczeństwa commita f0e8ae0:
 - Prawdziwe logowanie Claude Code (`claude mcp add --client-id claude-code --callback-port 33418 ...`):
   bez gateway'a nie ma czego podłączyć. Sprawdzone elementy: PKCE, redirect, `aud`, metadane RFC 8414,
   tolerowanie parametru `resource`.
-- Profil `full`: tylko `docker compose config`; nazwy zmiennych `MCP_*` dla komponentów to propozycja.
-- `make audit` na prawdziwych logach komponentów (test tylko na zdarzeniach z wektorów kontraktu).
+- Profil `full`: z prawdziwym komponentem uruchomiony tylko broker (sam, `--no-deps`); gateway i `mcp-jira`
+  tylko `docker compose config`.
+- `make audit` z kompletem trzech komponentów (na prawdziwych logach sprawdzony tylko broker).
 - Klient Redis z Spring (Lettuce) przeciw ACL: komendy połączeniowe są w `@connection`, ale nie było
   komponentu do sprawdzenia.
 - `make up` na innym systemie niż macOS (Docker Desktop).

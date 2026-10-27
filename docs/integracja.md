@@ -62,11 +62,16 @@ Jiry przedstawia ten PAT jako `jkowalski`. Dopiero prawdziwy broker zwróci `ali
 | token gateway'a | wewnętrzny JWT C2 (JWKS gateway'a, nazwa TLS `MCP_GATEWAY_INTERNAL_TLS_NAME`), `aud=mcp-credential-broker` |
 | wymiana `subjectToken` na system `token-exchange` | klient `mcp-credential-broker`, sekret `KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET`, `audience=opensearch` + `scope=opensearch-audience` |
 | OpenBao | `http://openbao:8200` / `http://localhost:18200`; AppRole `role_id=BAO_BROKER_ROLE_ID`, `secret_id=BAO_BROKER_SECRET_ID` (ważny 7 dni, odnawia go `make up`); polityka: KV v2 `secret/data/mcp/connections/*`, Transit `transit/{encrypt,decrypt}/mcp-credential-broker`; audyt OpenBao na stdout kontenera `openbao` |
-| whoami Jiry (C4.1) | `http://jira.internal:8080/rest/api/2/myself` / `http://localhost:18081/...` |
+| whoami Jiry (C4.1) | `MCP_JIRA_URL=http://jira.internal:8080` (sieć `core`) / `http://localhost:18081` z hosta |
+| `connectUrl` w `409 credential_required` | `MCP_PORTAL_URL=http://localhost:18090` |
+| http do OpenBao i mocka Jiry | `MCP_ALLOW_PLAIN_HTTP=true` tylko w compose dev; broker poza dev wymaga https |
 | PostgreSQL | baza `broker`, użytkownik `broker`, hasło `BROKER_DB_PASSWORD` (nie ma dostępu do bazy `gateway`) |
 | Redis | użytkownik `broker`, hasło `REDIS_BROKER_PASSWORD`, klucze `broker:*` i `jti:mcp-credential-broker:*`, publikacja na `credential.invalidated` (C4.3) |
 
-Test akceptacyjny zapisu PAT na prawdziwym brokerze (broker na hoście z portem 18100):
+Test akceptacyjny zapisu PAT na prawdziwym brokerze (port 18100; sam broker z obrazu
+`mcp-credential-broker:dev`: `./scripts/compose.sh --profile full up -d --no-deps mcp-credential-broker`,
+po teście `./scripts/compose.sh --profile full rm -sf mcp-credential-broker`, bo ma ten sam alias co stub C4).
+Sprawdzone 2026-10-27 z commitem brokera c59dc82:
 
 ```bash
 make pat USER=alice SYSTEM=jira BROKER_URL=https://localhost:18100              # 200, backendUser alice

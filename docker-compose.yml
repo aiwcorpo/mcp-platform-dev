@@ -308,6 +308,9 @@ services:
       MCP_BAO_ROLE_ID: ${BAO_BROKER_ROLE_ID:?run make secrets}
       MCP_BAO_SECRET_ID: ${BAO_BROKER_SECRET_ID:?run make secrets}
       MCP_JIRA_URL: http://jira.internal:8080
+      MCP_PORTAL_URL: http://localhost:${PORTAL_PORT}
+      # Dev only: OpenBao and the Jira mock speak plain http here; the broker requires https otherwise.
+      MCP_ALLOW_PLAIN_HTTP: "true"
       MCP_REDIS_HOST: redis
       MCP_REDIS_PORT: "6379"
       MCP_REDIS_USER: broker
