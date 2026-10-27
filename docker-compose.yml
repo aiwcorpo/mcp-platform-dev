@@ -345,6 +345,9 @@ services:
       MCP_GATEWAY_JWKS_URI: https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json
       MCP_GATEWAY_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
       MCP_GATEWAY_ISSUER: https://mcp-gateway.internal
+      # Portal page for credential_required (C10); same shape as the broker's connectUrl (C4 example).
+      MCP_CONNECT_URL: http://localhost:${PORTAL_PORT}/connections?system={system}
+      # System API address; the template calls this MCP_<SYSTEM>_URL (MCP_EXAMPLE_URL in the example).
       MCP_JIRA_URL: http://jira.internal:8080
       MCP_REDIS_HOST: redis
       MCP_REDIS_PORT: "6379"

@@ -90,8 +90,16 @@ token exchange na `aud=mcp-credential-broker`, `PUT /v1/connections/{system}/sec
 | serwer mTLS | `certs/mcp-jira/keystore.p12` (CN `mcp-jira`, SAN `mcp-jira.internal`, EKU tylko serverAuth); klientem jest tylko `mcp-gateway` |
 | walidacja C2 | JWKS gateway'a `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json` (nazwa TLS w `MCP_GATEWAY_TLS_NAME`), `iss` `https://mcp-gateway.internal`; do testów bez gateway'a: klucze i wektory z `mcp-contracts/test-vectors` |
 | replay `jti` (C2) | Redis, użytkownik `mcp-jira`, hasło `REDIS_MCP_JIRA_PASSWORD`, klucze tylko `jti:mcp-jira:*` |
-| Jira | `http://jira.internal:8080`, poświadczenie z `X-MCP-Credential` (`Bearer <PAT>`) |
+| Jira | `MCP_JIRA_URL=http://jira.internal:8080` (w template'cie `MCP_<SYSTEM>_URL`, w przykładzie `MCP_EXAMPLE_URL`), poświadczenie z `X-MCP-Credential` (`Bearer <PAT>`) |
+| `connectUrl` w `credential_required` (C10) | `MCP_CONNECT_URL=http://localhost:18090/connections?system={system}`, ten sam kształt co `connectUrl` brokera (C4); starter 3.0.0-alpha-3 bez niego nie wstaje |
 | sieć | tylko `servers`: widzi gateway, Redis i mock Jiry; nie widzi Keycloaka, OpenBao, PostgreSQL ani brokera |
+
+Zmienne usługi `mcp-jira` w `docker-compose.yml` odpowiadają tabeli konfiguracji w README
+`mcp-server-template` (stan 7f65f8f): `MCP_TLS_KEYSTORE`, `MCP_TLS_TRUSTSTORE`, `MCP_TLS_STORE_PASSWORD`,
+`MCP_GATEWAY_JWKS_URI`, `MCP_GATEWAY_ISSUER`, `MCP_CONNECT_URL`, `MCP_REDIS_HOST`, `MCP_REDIS_PORT`,
+`MCP_REDIS_USER`, `MCP_REDIS_PASSWORD`; `MCP_PORT` i `MCP_BIND` zostają domyślne (`8443`, `0.0.0.0`).
+`MCP_GATEWAY_TLS_NAME` i `MCP_REDIS_KEY_PREFIX` template nie czyta (nazwa TLS wynika z hosta w
+`MCP_GATEWAY_JWKS_URI`, prefiks `jti:<serverId>:` jest w starterze); zostają jako informacja.
 
 ## Redis: użytkownicy i prefiksy (propozycja ws-01 dla ws-02, ws-05, ws-06)
 

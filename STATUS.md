@@ -80,6 +80,12 @@ nadpisywały poprzedni, więc audyt zgłaszał brak komponentów, których zdarz
 `make audit RID=... LOGS="a.log b.log"` łączy logi komponentów z hosta z logami kontenerów; nieczytelny plik
 daje błąd zamiast cichego pominięcia. Smoke: nowy test scalania trzech plików.
 
+Integracja z template'em ws-03 (7f65f8f, starter 3.0.0-alpha-3): usługa `mcp-jira` w profilu `full` ma
+`MCP_CONNECT_URL=http://localhost:${PORTAL_PORT}/connections?system={system}` (bez niego serwer nie wstaje;
+kształt jak `connectUrl` brokera i przykład C4). Pozostałe zmienne przejrzane względem README template'u
+(zgodne, opis w `docs/integracja.md`). Sprawdzone `compose --profile full config` i `make smoke`; samego
+kontenera `mcp-jira` nie uruchamiałem (obraz `mcp-server-jira:dev` jeszcze nie istnieje).
+
 ## Odstępstwa od briefu
 
 - Hasła użytkowników, sekrety klientów, root token OpenBao, hasła Redis/PostgreSQL i keystore'ów są
