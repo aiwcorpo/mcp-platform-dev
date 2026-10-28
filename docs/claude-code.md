@@ -1,6 +1,6 @@
 # Claude Code a lokalny gateway
 
-Stan (2026-10-27): gateway działa w compose (`make up-full`), a `make m1` przechodzi scenariusze M1. Samego logowania
+Stan (2026-10-28): adres publiczny (M2) to `https://localhost:18745`, patrz sekcja "Przez proxy na https (M2)" na końcu; pierwsza część poniżej opisuje tryb M1 (`http://localhost:18000`, `make up-full`), który nadal przechodzi w `make m1`. Samego logowania
 w przeglądarce nie wykonano; sprawdzone są metadane RFC 9728 i RFC 8414, żądanie autoryzacji z PKCE i `resource`,
 redirect URI i odrzucenie obcego redirect URI. Pełna instrukcja dla człowieka: sekcja "Demo M1 z Claude Code" w README.
 

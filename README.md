@@ -36,10 +36,10 @@ make pat USER=alice SYSTEM=jira                # zapis PAT alice-pat przez C4 PU
 make pat USER=alice BROKER_URL=https://localhost:18100   # to samo na prawdziwym brokerze
 make audit RID=<requestId> [LOGS="a.log b.log"]  # zdarzenia C8 jednego żądania (kontenery + logi komponentów z hosta)
 make jira-auth                                 # jakie poświadczenia dotarły do mocka Jiry
-make m1                                        # scenariusze M1 (F1 A1 A2 A3 A9 A15) na stosie z make up-full
+make m1                                        # scenariusze M1 (F1 A1 A2 A3 A9 A9b A15); A15 robi docker stop/start kontenera brokera (stos bez brokera, dopoki nie zdrowy)
 make images                                    # obrazy gateway, broker, mcp-jira z commitów repozytoriów obok
 make images-m2 | make up-m2                    # M2: proxy (jedna domena), BFF, web, serwery ws-04; docs/m2.md
-make proxy-test | make mocks-test | make m2    # testy proxy, mocków i szkielet scenariusza M2
+make proxy-test | make mocks-test | make m2    # testy proxy, mocków i scenariusz M2; m2 zmienia stan stosu (patrz docs/m2.md)
 make trust-ca                                   # drukuje polecenia zaufania do CA https proxy (https://localhost:18745)
 make down | make reset | make clean
 ```
@@ -77,7 +77,9 @@ zarejestrowanego klienta publicznego `claude-code` ze stałym portem callbacku 3
    make users                                                          # hasło alice dla ekranu logowania
    ```
 
-2. Dodanie serwera (Claude Code 2.1.x; port 33418 musi być wolny na hoście):
+2. Dodanie serwera w trybie M1, wprost do gateway'a na `:18000` (Claude Code 2.1.x; port 33418 musi być wolny na hoście).
+   Po M2 adresem publicznym jest `https://localhost:18745` i obowiązuje komenda z
+   [docs/claude-code.md](docs/claude-code.md) (ten sam `--client-id claude-code`, plus zaufanie do CA):
 
    ```bash
    claude mcp add --transport http --client-id claude-code --callback-port 33418 \
