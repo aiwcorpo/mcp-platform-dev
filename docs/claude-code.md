@@ -28,3 +28,20 @@ Przebieg:
 
 Inny port callbacku: zmienić `CLAUDE_CODE_CALLBACK_PORT` w `.env` i zrestartować Keycloak (`make up`),
 bo redirect URI w realmie jest podstawiany przy imporcie.
+
+## Przez proxy na https (M2)
+
+Adres publiczny to `https://localhost:18745` (docs/m2.md). Zaufanie do CA i `NODE_EXTRA_CA_CERTS` dla Node: `make trust-ca`
+drukuje polecenia dla człowieka; bez nich `claude` odrzuci certyfikat. Serwer systemowy:
+
+```bash
+export NODE_EXTRA_CA_CERTS=<katalog repo>/certs/public-ca/ca.crt
+claude mcp add --transport http --client-id claude-code --callback-port 33418 \
+  jira https://localhost:18745/s/mcp-jira/mcp
+```
+
+Wirtualny serwer z portalu ma ten sam kształt (`https://localhost:18745/v/<slug>/mcp`); portal pokazuje gotową komendę
+(BFF dostaje `PORTAL_CLIENT_CONFIGS_CLAUDE_CODE_CLIENT_ID=claude-code` i `..._CALLBACK_PORT=33418` z `docker-compose.yml`).
+Metadane zasobu i wyzwanie 401 wskazują adres https; serwer autoryzacji to nadal `http://localhost:18080/realms/corp`,
+więc przeglądarka logowania pokazuje Keycloaka po http (ostrzeżenie o Safari: docs/m2.md, "Keycloak zostaje na http").
+Klient `claude-code` w realmie `corp` jest publiczny, z redirect URI `http://localhost:33418/callback`.

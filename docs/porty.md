@@ -18,12 +18,12 @@ Usługi mają nazwy usług i aliasy `*.internal`.
 | Mock Jiry (HTTP) | `http://localhost:18081` | `http://jira.internal:8080` | PAT jako `Authorization: Bearer <pat>`; `/__admin` z Basic auth `admin:$JIRA_MOCK_ADMIN_PASSWORD` |
 | Stub brokera C4 (mTLS) | `https://localhost:18443` | `https://${MCP_BROKER_TLS_NAME}:8443` | `make up`; kontrakty z `MCP_CONTRACTS_REF` |
 | Stub admina gateway'a C5 (mTLS) | `https://localhost:18444` | `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443` | `make up` |
-| Gateway (listener publiczny) | `http://localhost:18000` | `http://mcp-gateway.internal:8080` | tylko dla `make m1` (mcp-e2e); klienci MCP i przeglądarka używają proxy `:18740`, a ogłaszany origin (`MCP_PUBLIC_URL`) to proxy |
+| Gateway (listener publiczny) | `http://localhost:18000` | `http://mcp-gateway.internal:8080` | tylko dla `make m1` (mcp-e2e); klienci MCP i przeglądarka używają proxy (https `:18745`), a ogłaszany origin (`MCP_PUBLIC_URL`) to proxy |
 | Gateway (wewnętrzny, mTLS) | `https://localhost:18445` | `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443` | JWKS C2 i actuator; port hosta tylko dla testów, wymaga certyfikatu klienta |
 | Broker | `https://localhost:18100` | `https://${MCP_BROKER_TLS_NAME}:8443` | `make up-full` (stuby wtedy są usuwane) |
 | `mcp-jira` | `https://localhost:18446` | `https://mcp-jira.internal:8443` | profil `full`; port hosta tylko dla testów A1/A3, wymaga certyfikatu `mcp-gateway` i JWT |
 | Portal (zarezerwowany) | `http://localhost:18090` | | redirect URI klienta `mcp-portal-bff` (BFF uruchomiony na hoście) |
-| Proxy (jedna domena, M2) | `http://localhost:18740` | `proxy.internal:8080` | `make up-m2`; `/` web, `/api` BFF, `/s/` `/v/` `/.well-known/oauth-protected-resource*` gateway; patrz [m2.md](m2.md) |
+| Proxy (jedna domena, M2) | `https://localhost:18745` (adres publiczny), `http://localhost:18740` (te same trasy, bez TLS) | `proxy.internal:8080` | `make up-m2`; certyfikat CA "dev public" (`make trust-ca`); `/` web, `/api` BFF, `/s/` `/v/` `/.well-known/oauth-protected-resource*` gateway; patrz [m2.md](m2.md) |
 | Portal web (M2) | | `http://portal-web:8080` | statyczny serwer SPA za proxy |
 | Portal BFF (M2) | | `http://portal-bff.internal:8080` | za proxy, `PORTAL_PORT=8080`; działa w przestrzeni sieciowej `idp-relay` (patrz [m2.md](m2.md)) |
 | Mock GitLaba (OAuth + REST) | `http://localhost:18741` | `http://gitlab.internal:8080` | authorize otwiera przeglądarka (port hosta), reszta z sieci compose |
@@ -59,6 +59,8 @@ Metadane serwera autoryzacji (RFC 8414) są pod
 | `certs/<nazwa>/tls.crt`, `tls.key`, `chain.crt` | certyfikat, klucz PKCS#8, certyfikat + CA |
 | `certs/<nazwa>/keystore.p12` | klucz + łańcuch dla Javy; hasło `TLS_STORE_PASSWORD` |
 | `certs/untrusted/mcp-gateway/` | CN `mcp-gateway` podpisany innym CA, do testów negatywnych |
+| `certs/public-ca/ca.crt`, `ca.key` | osobne CA "dev public" dla adresu publicznego (`scripts/gen-public-cert.sh`); name constraints: tylko `localhost`, `127.0.0.1`, `::1`; klucz zostaje na hoście, nigdzie niemontowany |
+| `certs/proxy/tls.crt`, `tls.key`, `chain.crt` | certyfikat serwera proxy (SAN `localhost`, `127.0.0.1`, `::1`, 397 dni), montowany do kontenera `proxy` |
 
 | Nazwa | EKU | SAN |
 | --- | --- | --- |

@@ -12,6 +12,7 @@ import base64
 import hashlib
 import json
 import secrets
+import ssl
 import subprocess
 import sys
 import urllib.error
@@ -23,7 +24,9 @@ import mcpdev
 from mcpdev import cfg
 
 PORTS = {name: int(cfg(f"{name.upper()}_MOCK_PORT")) for name in ("gitlab", "confluence", "servicedesk", "opensearch")}
-PROXY = f"http://localhost:{cfg('PROXY_PORT')}"
+PROXY = f"https://localhost:{cfg('PROXY_TLS_PORT')}"
+PUBLIC_CA = mcpdev.ROOT / "certs" / "public-ca" / "ca.crt"
+TLS = ssl.create_default_context(cafile=str(PUBLIC_CA)) if PUBLIC_CA.exists() else ssl.create_default_context()
 GITLAB = f"http://localhost:{PORTS['gitlab']}"
 CALLBACK = f"{PROXY}/api/v1/oauth/callback"
 CLIENT = {"client_id": "mcp-broker", "client_secret": None}
@@ -35,7 +38,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-OPENER = urllib.request.build_opener(NoRedirect)
+OPENER = urllib.request.build_opener(NoRedirect, urllib.request.HTTPSHandler(context=TLS))
 
 
 def http(method, url, headers=None, data=None):
@@ -302,7 +305,8 @@ class Portal:
 
     def __init__(self):
         self.jar = CookieJar(policy=mcpdev.LoopbackCookiePolicy())
-        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar), NoRedirect)
+        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar), NoRedirect,
+                                                 urllib.request.HTTPSHandler(context=TLS))
 
     def request(self, method, url, body=None, headers=None):
         data = json.dumps(body).encode() if body is not None else None

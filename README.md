@@ -40,6 +40,7 @@ make m1                                        # scenariusze M1 (F1 A1 A2 A3 A9 
 make images                                    # obrazy gateway, broker, mcp-jira z commitów repozytoriów obok
 make images-m2 | make up-m2                    # M2: proxy (jedna domena), BFF, web, serwery ws-04; docs/m2.md
 make proxy-test | make mocks-test | make m2    # testy proxy, mocków i szkielet scenariusza M2
+make trust-ca                                   # drukuje polecenia zaufania do CA https proxy (https://localhost:18745)
 make down | make reset | make clean
 ```
 

@@ -40,7 +40,7 @@ x-mcp-server-env: &mcp-server-env
   MCP_GATEWAY_JWKS_URI: https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json
   MCP_GATEWAY_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
   MCP_GATEWAY_ISSUER: https://mcp-gateway.internal
-  MCP_CONNECT_URL: http://localhost:${PROXY_PORT}/connections?system={system}
+  MCP_CONNECT_URL: https://localhost:${PROXY_TLS_PORT}/connections?system={system}
   MCP_REDIS_HOST: redis
   MCP_REDIS_PORT: "6379"
   MCP_TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
@@ -80,6 +80,7 @@ services:
       CLAUDE_CODE_CALLBACK_PORT: ${CLAUDE_CODE_CALLBACK_PORT}
       PORTAL_PORT: ${PORTAL_PORT}
       PROXY_PORT: ${PROXY_PORT}
+      PROXY_TLS_PORT: ${PROXY_TLS_PORT}
     volumes:
       - ./keycloak/realm-corp.json:/opt/keycloak/data/import/realm-corp.json:ro
     ports:
@@ -229,7 +230,7 @@ services:
       # Lifetime of access tokens in seconds; lower it (GITLAB_MOCK_TOKEN_TTL=60 in .env) to watch the broker refresh.
       MOCK_GITLAB_TOKEN_TTL: ${GITLAB_MOCK_TOKEN_TTL:-7200}
       # The broker's callback is the BFF (C12) on the single public origin; 18090 is the BFF run on the host.
-      MOCK_GITLAB_REDIRECT_URIS: http://localhost:${PROXY_PORT}/api/v1/oauth/callback,http://localhost:${PORTAL_PORT}/api/v1/oauth/callback
+      MOCK_GITLAB_REDIRECT_URIS: https://localhost:${PROXY_TLS_PORT}/api/v1/oauth/callback,http://localhost:${PROXY_PORT}/api/v1/oauth/callback,http://localhost:${PORTAL_PORT}/api/v1/oauth/callback
     ports:
       - 127.0.0.1:${GITLAB_MOCK_PORT}:8080
     networks:
@@ -360,7 +361,7 @@ services:
       MCP_OIDC_TOKEN_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/token
       MCP_OIDC_AUDIENCE: mcp-gateway
       # The single public origin (the proxy): resource_metadata, "resource" of RFC 9728, link urls and connectUrl.
-      MCP_PUBLIC_URL: http://localhost:${PROXY_PORT}
+      MCP_PUBLIC_URL: https://localhost:${PROXY_TLS_PORT}
       # Dev only: Keycloak's token endpoint (token exchange) is plain http in this stack.
       MCP_ALLOW_PLAIN_HTTP: "true"
       MCP_OIDC_CLIENT_ID: mcp-gateway
@@ -432,7 +433,7 @@ services:
       MCP_BAO_SECRET_ID: ${BAO_BROKER_SECRET_ID:?run make secrets}
       MCP_JIRA_URL: http://jira.internal:8080
       # Single public origin (profile m2): connectUrl and the OAuth redirect_uri <MCP_PORTAL_URL>/api/v1/oauth/callback.
-      MCP_PORTAL_URL: http://localhost:${PROXY_PORT}
+      MCP_PORTAL_URL: https://localhost:${PROXY_TLS_PORT}
       # Dev only: OpenBao and the Jira mock speak plain http here; the broker requires https otherwise.
       MCP_ALLOW_PLAIN_HTTP: "true"
       # Systems beyond Jira (mocks of this stack, plain http). GitLab: "Polacz przez OAuth"; the browser opens the
@@ -485,7 +486,7 @@ services:
       MCP_GATEWAY_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
       MCP_GATEWAY_ISSUER: https://mcp-gateway.internal
       # Portal page for credential_required (C10); same shape as the broker's connectUrl (C4 example).
-      MCP_CONNECT_URL: http://localhost:${PROXY_PORT}/connections?system={system}
+      MCP_CONNECT_URL: https://localhost:${PROXY_TLS_PORT}/connections?system={system}
       # System API address; the template calls this MCP_<SYSTEM>_URL (MCP_EXAMPLE_URL in the example).
       MCP_JIRA_URL: http://jira.internal:8080
       # The Jira mock speaks plain http and exists only in this dev environment; servers built from the
@@ -519,7 +520,7 @@ services:
   # ---- Profile "m2": single public origin, portal and the remaining MCP servers (images: .env, built by
   # scripts/build-images-m2.sh). Started by `make up-m2` on top of `make up-full`.
 
-  # The only published entry for browsers and MCP clients: http://localhost:${PROXY_PORT}. Rules: proxy/nginx.conf,
+  # The only published entry for browsers and MCP clients: https://localhost:${PROXY_TLS_PORT} (certificate of the "dev public" CA, scripts/gen-public-cert.sh); http://localhost:${PROXY_PORT} serves the same routes for tools without TLS. Rules: proxy/nginx.conf,
   # tests: `make proxy-test`. It reaches the gateway's public listener (8080) only; the gateway's mTLS listener
   # (C5, JWKS) has no route here and no client certificate.
   proxy:
@@ -530,24 +531,29 @@ services:
     tmpfs: [/tmp]
     environment:
       PUBLIC_PORT: ${PROXY_PORT}
-    # nginx cannot read the environment: the public origin (the one Host the upstreams ever see) is written
-    # to a file the main config includes.
+      PUBLIC_TLS_PORT: ${PROXY_TLS_PORT}
+    # nginx cannot read the environment: the public origin of each listener (the one Host the upstreams ever see)
+    # is written to a file the main config includes.
     command:
       - /bin/sh
       - -c
       - |
-        printf 'map "" $$public_host { default "localhost:%s"; }\nmap "" $$public_port { default "%s"; }\n' "$$PUBLIC_PORT" "$$PUBLIC_PORT" > /tmp/public-origin.conf
+        printf 'map $$server_port $$public_host { 8080 "localhost:%s"; 8443 "localhost:%s"; }\nmap $$server_port $$public_port { 8080 "%s"; 8443 "%s"; }\n' "$$PUBLIC_PORT" "$$PUBLIC_TLS_PORT" "$$PUBLIC_PORT" "$$PUBLIC_TLS_PORT" > /tmp/public-origin.conf
         exec nginx -g 'daemon off;'
     volumes:
       - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./proxy/routes.conf:/etc/nginx/routes.conf:ro
       - ./proxy/proxy-common.conf:/etc/nginx/proxy-common.conf:ro
       - ./proxy/to-bff.conf:/etc/nginx/to-bff.conf:ro
       - ./proxy/to-gateway.conf:/etc/nginx/to-gateway.conf:ro
       - ./proxy/to-web.conf:/etc/nginx/to-web.conf:ro
       - ./proxy/gateway-headers.conf:/etc/nginx/gateway-headers.conf:ro
       - ./proxy/errors:/etc/nginx/errors:ro
+      - ./certs/proxy/tls.crt:/etc/nginx/tls/tls.crt:ro
+      - ./certs/proxy/tls.key:/etc/nginx/tls/tls.key:ro
     ports:
       - 127.0.0.1:${PROXY_PORT}:8080
+      - 127.0.0.1:${PROXY_TLS_PORT}:8443
     networks:
       core:
         aliases: [proxy.internal]
@@ -606,7 +612,10 @@ services:
       PORTAL_BROKER_TLS_NAME: ${MCP_BROKER_TLS_NAME}
       PORTAL_GATEWAY_ADMIN_URL: https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443
       PORTAL_GATEWAY_ADMIN_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
-      PORTAL_PUBLIC_BASE_URL: http://localhost:${PROXY_PORT}
+      PORTAL_PUBLIC_BASE_URL: https://localhost:${PROXY_TLS_PORT}
+      # Flags of the claude mcp add command shown in the portal; empty by default outside the dev profile.
+      PORTAL_CLIENT_CONFIGS_CLAUDE_CODE_CLIENT_ID: claude-code
+      PORTAL_CLIENT_CONFIGS_CLAUDE_CODE_CALLBACK_PORT: "${CLAUDE_CODE_CALLBACK_PORT}"
       PORTAL_TLS_KEYSTORE: /certs/mcp-portal-bff/keystore.p12
       PORTAL_TLS_KEYSTORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
       PORTAL_TLS_TRUSTSTORE: /certs/ca/truststore.p12

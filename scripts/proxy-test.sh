@@ -7,6 +7,7 @@ set -uo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 net=mcp-dev-proxytest
 port=18749
+tls_port=18748
 base="http://127.0.0.1:$port"
 nginx_image="$(grep -o 'nginx:[^ ]*@sha256:[0-9a-f]*' "$root/docker-compose.yml" | head -1)"
 python_image="$(grep -o 'python:[^ ]*@sha256:[0-9a-f]*' "$root/docker-compose.yml" | head -1)"
@@ -29,16 +30,18 @@ for pair in gateway:mcp-gateway bff:portal-bff.internal web:portal-web; do
     -v "$root/proxy/test/echo.py:/echo.py:ro" "$python_image" python3 -I /echo.py >/dev/null || exit 1
 done
 docker run -d --name "$net-proxy" --network "$net" --read-only --tmpfs /tmp --user 101:101 \
-  -p "127.0.0.1:$port:8080" \
+  -p "127.0.0.1:$port:8080" -p "127.0.0.1:$tls_port:8443" \
+  -v "$root/proxy/routes.conf:/etc/nginx/routes.conf:ro" \
+  -v "$root/certs/proxy/tls.crt:/etc/nginx/tls/tls.crt:ro" -v "$root/certs/proxy/tls.key:/etc/nginx/tls/tls.key:ro" \
   -v "$root/proxy/nginx.conf:/etc/nginx/nginx.conf:ro" \
   -v "$root/proxy/proxy-common.conf:/etc/nginx/proxy-common.conf:ro" \
   -v "$root/proxy/to-bff.conf:/etc/nginx/to-bff.conf:ro" \
   -v "$root/proxy/to-gateway.conf:/etc/nginx/to-gateway.conf:ro" \
   -v "$root/proxy/to-web.conf:/etc/nginx/to-web.conf:ro" \
   -v "$root/proxy/gateway-headers.conf:/etc/nginx/gateway-headers.conf:ro" \
-  -v "$root/proxy/errors:/etc/nginx/errors:ro" -e PUBLIC_PORT="$port" "$nginx_image" /bin/sh -c '
-    printf "map \"\" \$public_host { default \"localhost:%s\"; }\nmap \"\" \$public_port { default \"%s\"; }\n" \
-      "$PUBLIC_PORT" "$PUBLIC_PORT" > /tmp/public-origin.conf
+  -v "$root/proxy/errors:/etc/nginx/errors:ro" -e PUBLIC_PORT="$port" -e PUBLIC_TLS_PORT="$tls_port" "$nginx_image" /bin/sh -c '
+    printf "map \$server_port \$public_host { 8080 \"localhost:%s\"; 8443 \"localhost:%s\"; }\nmap \$server_port \$public_port { 8080 \"%s\"; 8443 \"%s\"; }\n" \
+      "$PUBLIC_PORT" "$PUBLIC_TLS_PORT" "$PUBLIC_PORT" "$PUBLIC_TLS_PORT" > /tmp/public-origin.conf
     exec nginx -g "daemon off;"' >/dev/null || exit 1
 
 up=0
@@ -250,6 +253,23 @@ check "DELETE status passed" 204 "$status"
 req "$base/s/mcp-jira/mcp?echo_status=401"
 check "upstream 401 passed unchanged" 401 "$status"
 check "upstream 401 body is the upstream's" gateway "$(field .upstream)"
+
+# HTTPS listener: same routes and rules, origin and scheme of the TLS port, certificate from the "dev public" CA.
+tls="https://localhost:$tls_port"
+cacert="$root/certs/public-ca/ca.crt"
+req --cacert "$cacert" "$tls/api/v1/me";                check "https: route /api -> bff" bff "$(field .upstream)"
+req --cacert "$cacert" "$tls/s/mcp-jira/mcp";           check "https: route /s/ -> gateway" gateway "$(field .upstream)"
+req --cacert "$cacert" "$tls/";                         check "https: route / -> web" web "$(field .upstream)"
+check "https: Host is the TLS origin" "localhost:$tls_port" "$(curl -s --cacert "$cacert" "$tls/api/v1/me" | jq -r .headers.host)"
+req --cacert "$cacert" -H 'X-Forwarded-Proto: http' "$tls/api/v1/me"
+check "https: X-Forwarded-Proto is https whatever the client sent" https "$(field '.headers["x-forwarded-proto"]')"
+check "https: X-Forwarded-Port is the TLS port" "$tls_port" "$(field '.headers["x-forwarded-port"]')"
+req --cacert "$cacert" "$tls/s/%2e%2e/x";               check "https: noncanonical path refused" 404 "$status"
+req --cacert "$cacert" "$tls/admin/v1/registry/servers"; check "https: admin API not exposed" 404 "$status"
+req --cacert "$cacert" "$tls/.well-known/jwks.json";    check "https: JWKS not exposed" 404 "$status"
+check "https: HSTS not sent (localhost HSTS would force https on every dev port)" 0 "$(header strict-transport-security)"
+curl -s -o /dev/null --cacert "$root/certs/ca/ca.crt" "$tls/" >/dev/null 2>&1; check "https: the internal CA does not verify the public certificate" 60 "$?"
+check "https: TLS 1.1 refused" 1 "$(curl -s -o /dev/null --cacert "$cacert" --tls-max 1.1 "$tls/" >/dev/null 2>&1 && echo 0 || echo 1)"
 
 echo "proxy tests: $pass passed, $fail failed"
 [[ "$fail" -eq 0 ]]

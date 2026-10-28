@@ -13,7 +13,7 @@ STUBS := broker-mock gateway-admin-mock
 COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira
 
 .PHONY: help secrets certs contracts up up-core up-full down reset clean ps logs token claims exchange pat seed \
-        smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test mocks-test m2 mock-auth
+        smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test trust-ca mocks-test m2 mock-auth
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -21,8 +21,9 @@ help: ## list targets
 secrets: ## generate .secrets/dev.env (missing keys only)
 	@./scripts/init-secrets.sh
 
-certs: secrets ## generate the dev CA and mTLS certificates (once)
+certs: secrets ## generate the dev CA, mTLS certificates and the https certificate of the proxy (once)
 	@./scripts/gen-certs.sh
+	@./scripts/gen-public-cert.sh
 
 contracts: ## extract C4/C5 stubs and audit vectors of MCP_CONTRACTS_REF into out/contracts
 	@./scripts/fetch-contracts.sh
@@ -113,6 +114,9 @@ m2-sync: ## apply the settings of the running stack that need no restart: Keyclo
 	@./scripts/kc-sync-bff-client.sh
 	@./scripts/redis-sync-acl.sh >/dev/null
 	@$(COMPOSE) --profile m2 restart proxy
+
+trust-ca: ## print the commands that trust the "dev public" CA (macOS keychain, Node/Claude Code); runs nothing
+	@./scripts/trust-ca.sh
 
 proxy-test: ## rules of the reverse proxy against stand-in upstreams (isolated network, does not touch the stack)
 	@./scripts/proxy-test.sh

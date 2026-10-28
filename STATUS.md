@@ -199,6 +199,28 @@ Starter alpha-10+ odmawia profilu dev w kontenerze: zadna z pieciu uslug nie ma 
 asercji w `make m2` (sprawdza `noteId`, status 201 po stronie mocka, `credential_required`).
 `make m2`); BFF potrzebuje osobnego ustawienia backchannel OIDC zamiast `idp-relay` (propozycja poniżej).
 
+### Adres publiczny na https (2026-10-28)
+
+Powód: Safari nie zapisuje ciasteczek `__Host-`/`Secure` z `http://localhost` ("Sesja wygasla" po logowaniu do portalu).
+
+- Proxy: drugi listener TLS, `https://localhost:18745` (`PROXY_TLS_PORT`; wolny w zakresie 18740-18759, 18743/18744 to mocki). Te same trasy i reguly
+  (`proxy/routes.conf` wspolny dla obu listenerow), `X-Forwarded-Proto: https` i origin `localhost:18745` na tym listenerze. http `:18740` zostaje bez
+  przekierowania (make m1, health, narzedzia bez TLS); bez HSTS.
+- Certyfikat: osobne CA "dev public" (`certs/public-ca/`, `scripts/gen-public-cert.sh`, wywolywany przez `make certs`) z name constraints
+  localhost/127.0.0.1/::1; wewnetrzne CA od mTLS nie ma ograniczen nazw, wiec nie nadaje sie do zaufania w pęku kluczy. Klucz CA nie jest montowany ani w repo (`/certs/` w .gitignore).
+- `MCP_PUBLIC_URL`, `PORTAL_PUBLIC_BASE_URL`, `MCP_PORTAL_URL`, `MCP_CONNECT_URL` serwerow i redirect mocka GitLaba: https. Redirect URI i post-logout klienta
+  `mcp-portal-bff` (https) w `realm-corp.json`, zastosowane do dzialajacego Keycloaka przez `scripts/kc-sync-bff-client.sh` (bez resetu).
+- BFF w compose: `PORTAL_CLIENT_CONFIGS_CLAUDE_CODE_CLIENT_ID=claude-code`, `PORTAL_CLIENT_CONFIGS_CLAUDE_CODE_CALLBACK_PORT=33418` (usluga `portal-bff`).
+  Realm ma publiczny klient `claude-code` z redirect `http://localhost:33418/callback`.
+- `make trust-ca` drukuje polecenia dla czlowieka (`security add-trusted-cert ...`, `NODE_EXTRA_CA_CERTS`); niczego nie uruchamia.
+- `scripts/m2.py` idzie przez https z CA "dev public". `make proxy-test`: 212 PASS. `make m2`: 88 PASS, 2 SKIP. `make m1`: F1, A1, A2, A3, A9, A9b, A15 PASS.
+- Keycloak zostal na http i ustawia ciasteczka `Secure`; Safari moze je odrzucic (docs/m2.md). Do ustalenia: Keycloak na https (nowy `iss`, zmiana u gateway'a, brokera i BFF).
+- Definicja kontenera Keycloaka zmienila sie (env `PROXY_TLS_PORT`), wiec najblizsze `make up-m2` go odtworzy (realm importowany od nowa z nowymi URI); w tym przebiegu
+  przeladowalem tylko proxy, gateway, broker, BFF, mock GitLaba i serwery MCP (`up -d --no-deps`).
+- mcp-e2e (`run-m2.sh`): BLOCKED, bo harness jest na `http://localhost:18740` (`e2e/portal.py` PROXY/HOST, `e2e/m2.py` MCP_BASE, `raw_request` na http.client,
+  gniazdo surowe w m2.py, `h.McpClient(base=...)`). Dla ws-10: zmienic origin na `https://localhost:18745`, kontekst TLS z `certs/public-ca/ca.crt`
+  (HTTPSConnection, ssl.wrap_socket dla surowych zadan), a regex "obcych portow" w m2.py:217 na `:18745`.
+
 ## Propozycje CC
 
 Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktów tu nie zmieniano.

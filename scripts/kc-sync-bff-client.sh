@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Applies redirect URIs and post-logout URIs of client mcp-portal-bff from keycloak/realm-corp.json (the single
-# source; ${PORTAL_PORT} and ${PROXY_PORT} come from .env) to the RUNNING Keycloak: the realm file is only
+# source; ${PORTAL_PORT}, ${PROXY_PORT} and ${PROXY_TLS_PORT} come from .env) to the RUNNING Keycloak: the realm file is only
 # imported when the container is created, and recreating Keycloak would end every session. Idempotent.
 # Secrets reach curl through /dev/fd files, never through argv.
 set -euo pipefail
@@ -13,7 +13,7 @@ set +a
 kc="http://localhost:${KEYCLOAK_PORT}"
 
 wanted="$(jq -c '.clients[] | select(.clientId == "mcp-portal-bff") | {redirectUris, post: .attributes["post.logout.redirect.uris"]}' \
-  "$root/keycloak/realm-corp.json" | sed -e "s/\${PORTAL_PORT}/${PORTAL_PORT}/g" -e "s/\${PROXY_PORT}/${PROXY_PORT}/g")"
+  "$root/keycloak/realm-corp.json" | sed -e "s/\${PORTAL_PORT}/${PORTAL_PORT}/g" -e "s/\${PROXY_PORT}/${PROXY_PORT}/g" -e "s/\${PROXY_TLS_PORT}/${PROXY_TLS_PORT}/g")"
 
 token="$(curl -sf "$kc/realms/master/protocol/openid-connect/token" \
   -d @<(jq -rn --arg u "$KC_BOOTSTRAP_ADMIN_USERNAME" --arg p "$KC_BOOTSTRAP_ADMIN_PASSWORD" \
