@@ -7,8 +7,8 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-gw_ref="${1:-d4fbf98}"
-broker_ref="${2:-9a5d292}"
+gw_ref="${1:-HEAD}"
+broker_ref="${2:-HEAD}"
 jira_ref="${3:-HEAD}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT

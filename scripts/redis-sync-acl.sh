@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# Adds the portal-bff ACL user to the RUNNING Redis (redis/start.sh only runs when the container is created).
-# Idempotent; the password goes through the environment of redis-cli, not through argv.
+# Applies the ACL users defined by redis/*.rules (portal-bff, broker) to the RUNNING Redis; redis/start.sh only
+# runs when the container is created and reads the same files. Every secret goes through stdin or the
+# environment of the container, never through argv.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 set -a
+# shellcheck disable=SC1091
 . "$root/.secrets/dev.env"
 set +a
-docker exec -e PORTAL_PW="$REDIS_PORTAL_BFF_PASSWORD" "$(docker compose -p mcp-dev ps -q redis)" sh -c '
-  REDISCLI_AUTH="$REDIS_ADMIN_PASSWORD" redis-cli --user admin ACL SETUSER portal-bff reset on ">$PORTAL_PW" \
-    "resetkeys" "~portal:*" "resetchannels" "-@all" "+@read" "+@write" "+@keyspace" "+@hash" "+@string" "+@scripting" \
-    "+ping" "+auth" "+hello" "+client|setname" "+client|setinfo" "+multi" "+exec" "+discard"'
+container="$("$root/scripts/compose.sh" ps -q redis)"
+{
+  printf 'ACL SETUSER portal-bff reset on >%s %s\n' "$REDIS_PORTAL_BFF_PASSWORD" "$(cat "$root/redis/portal-bff.rules")"
+  printf 'ACL SETUSER broker reset on >%s %s\n' "$REDIS_BROKER_PASSWORD" "$(cat "$root/redis/broker.rules")"
+} | docker exec -i "$container" sh -c 'REDISCLI_AUTH="$REDIS_ADMIN_PASSWORD" redis-cli --user admin'

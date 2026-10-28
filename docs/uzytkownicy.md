@@ -25,7 +25,7 @@ Claim `groups` zawiera nazwy bez ścieżki (`mcp-jira-read`, nie `/mcp-jira-read
 | --- | --- | --- | --- |
 | `claude-code` | public | authorization code + PKCE S256 (wymuszone) | redirect `http://localhost:33418/callback` i `http://127.0.0.1:33418/callback`; zawsze `aud=mcp-gateway`; bez ROPC |
 | `mcp-gateway` | confidential | tylko token exchange | wymienia token z `aud=mcp-gateway` wyłącznie na `mcp-credential-broker` (`subjectToken` dla `resolve`, C4) |
-| `mcp-portal-bff` | confidential | authorization code (+PKCE), token exchange | redirect `http://localhost:18090/login/oauth2/code/*`, `.../api/v1/oauth/callback`; wymiana na `mcp-credential-broker` albo `mcp-gateway-admin` |
+| `mcp-portal-bff` | confidential | authorization code (+PKCE), token exchange | redirect `http://localhost:18090/api/v1/auth/callback` i `http://localhost:18740/api/v1/auth/callback` (dokładne adresy); wymiana na `mcp-credential-broker` albo `mcp-gateway-admin` |
 | `mcp-credential-broker` | confidential | tylko token exchange | `aud` tokenów C4; wymienia `subjectToken` (aud brokera) na `opensearch` dla systemów typu `token-exchange` |
 | `mcp-gateway-admin` | confidential | brak | tylko jako `aud` |
 | `opensearch` | confidential | brak | tylko jako `aud` (typ poświadczenia `token-exchange`) |

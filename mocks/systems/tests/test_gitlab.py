@@ -230,6 +230,82 @@ class WhoamiTest(unittest.TestCase):
         self.assertEqual(401, get("/api/v4/projects/42").status)
         self.assertEqual(200, get("/api/v4/projects/42", headers={"Authorization": "Bearer alice-pat"}).status)
 
+    def post_note(self, tokens):
+        payload = json.dumps({"body": "hello"}).encode()
+        req = common.Request("POST", "/api/v4/projects/team-a%2Fapp/merge_requests/7/notes",
+                             {"Authorization": "Bearer " + tokens["access_token"], "Content-Type": "application/json"}, payload)
+        return gitlab.handle(req)
+
+    def test_read_api_token_cannot_write(self):
+        tokens = obtain_tokens()
+        self.assertEqual("read_api", tokens["scope"])
+        resp = self.post_note(tokens)
+        self.assertEqual(403, resp.status)
+        self.assertEqual("insufficient_scope", body(resp)["error"])
+        self.assertIn("insufficient_scope", resp.headers["WWW-Authenticate"])
+        self.assertEqual(200, get("/api/v4/projects/team-a%2Fapp", headers={"Authorization": "Bearer " + tokens["access_token"]}).status)
+
+    def test_api_scope_writes(self):
+        self.assertEqual(201, self.post_note(obtain_tokens(scope="api")).status)
+
+    def test_read_user_scope_reads_only_the_user(self):
+        tokens = obtain_tokens(scope="read_user")
+        auth = {"Authorization": "Bearer " + tokens["access_token"]}
+        self.assertEqual(200, get("/api/v4/user", headers=auth).status)
+        self.assertEqual(403, get("/api/v4/projects/team-a%2Fapp", headers=auth).status)
+
+    def test_pat_is_not_limited_by_scope(self):
+        self.assertEqual(201, gitlab.handle(common.Request(
+            "POST", "/api/v4/projects/team-a%2Fapp/merge_requests/7/notes",
+            {"Authorization": "Bearer alice-pat"}, json.dumps({"body": "x"}).encode())).status)
+
+    def test_authorize_without_or_with_unknown_scope_is_invalid_scope(self):
+        for scope in (None, "", "admin", "read_api sudo"):
+            query = authorize_query(mock_user="alice")
+            if scope is None:
+                del query["scope"]
+            else:
+                query["scope"] = scope
+            self.assertEqual("invalid_scope", redirect_params(get("/oauth/authorize", query))["error"], scope)
+
+    def test_reused_code_voids_the_tokens_it_produced(self):
+        code = redirect_params(get("/oauth/authorize", authorize_query(mock_user="alice")))["code"]
+        tokens = body(post_form("/oauth/token", token_form(code)))
+        auth = {"Authorization": "Bearer " + tokens["access_token"]}
+        self.assertEqual(200, get("/api/v4/user", headers=auth).status)
+        self.assertEqual(400, post_form("/oauth/token", token_form(code)).status)
+        self.assertEqual(401, get("/api/v4/user", headers=auth).status)
+        self.assertEqual("invalid_grant", body(post_form("/oauth/token", {
+            "grant_type": "refresh_token", "refresh_token": tokens["refresh_token"], "client_id": "mcp-broker",
+            "client_secret": "client-secret-for-tests"}))["error"])
+
+    def test_pkce_format_is_validated(self):
+        for challenge in ("short", "x" * 44, "\u00e9" * 43):
+            resp = get("/oauth/authorize", authorize_query(mock_user="alice", code_challenge=challenge))
+            self.assertEqual("invalid_request", redirect_params(resp)["error"], challenge)
+        for verifier in ("abc", "v" * 129, "\u00e9" * 50, "v" * 42 + " "):
+            resp = post_form("/oauth/token", token_form(self.code_for_tokens(), code_verifier=verifier))
+            self.assertEqual((400, "invalid_grant"), (resp.status, body(resp)["error"]), verifier)
+
+    def code_for_tokens(self):
+        return redirect_params(get("/oauth/authorize", authorize_query(mock_user="alice")))["code"]
+
+    def test_two_client_authentication_methods_are_refused(self):
+        basic = "Basic " + base64.b64encode(b"mcp-broker:client-secret-for-tests").decode()
+        form = token_form(self.code_for_tokens(), client_secret="wrong")
+        resp = post_form("/oauth/token", form, {"Authorization": basic})
+        self.assertEqual((400, "invalid_request"), (resp.status, body(resp)["error"]))
+
+    def test_repeated_parameters_are_refused(self):
+        query = urlencode(authorize_query(mock_user="alice")) + "&state=other"
+        resp = gitlab.handle(common.Request("GET", "/oauth/authorize?" + query, {}, b""))
+        self.assertEqual("invalid_request", redirect_params(resp)["error"])
+        query = urlencode(authorize_query(mock_user="alice")) + "&redirect_uri=" + REDIRECT
+        self.assertEqual(400, gitlab.handle(common.Request("GET", "/oauth/authorize?" + query, {}, b"")).status)
+        form = urlencode(token_form(self.code_for_tokens())) + "&code=again"
+        resp = gitlab.handle(common.Request("POST", "/oauth/token", {}, form.encode()))
+        self.assertEqual("invalid_request", body(resp)["error"])
+
     def test_unknown_path_is_none(self):
         self.assertIsNone(get("/nothing"))
 

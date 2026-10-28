@@ -15,10 +15,11 @@ umask 077
   echo "user default off resetkeys resetchannels -@all"
   echo "user admin on >$REDIS_ADMIN_PASSWORD ~* &* +@all"
   echo "user gateway on >$REDIS_GATEWAY_PASSWORD resetkeys ~gw:* resetchannels &credential.invalidated $data_cmds +subscribe +unsubscribe"
-  echo "user broker on >$REDIS_BROKER_PASSWORD resetkeys ~broker:* ~jti:mcp-credential-broker:* resetchannels &credential.invalidated $data_cmds +publish"
-  # Spring Session of the portal BFF (ws-07): wider command set than the other components, key prefix portal:*, no pub/sub.
-  # Only needed with several BFF instances; the BFF keeps sessions in memory until then.
-  echo "user portal-bff on >$REDIS_PORTAL_BFF_PASSWORD resetkeys ~portal:* resetchannels -@all +@read +@write +@keyspace +@hash +@string +@scripting +ping +auth +hello +client|setname +client|setinfo +multi +exec +discard"
+  # EVAL/EVALSHA for the atomic lock release; Redis checks the keys a script touches against ~broker:*, and
+  # without +script and +function nothing can be loaded or flushed.
+  echo "user broker on >$REDIS_BROKER_PASSWORD $(cat /broker.rules)"
+  # Spring Session of the portal BFF (ws-07): rules shared with scripts/redis-sync-acl.sh, mounted at /portal-bff.rules.
+  echo "user portal-bff on >$REDIS_PORTAL_BFF_PASSWORD $(cat /portal-bff.rules)"
   for server in jira confluence gitlab servicedesk opensearch; do
     var="REDIS_MCP_$(echo "$server" | tr a-z A-Z)_PASSWORD"
     eval "pw=\${$var}"

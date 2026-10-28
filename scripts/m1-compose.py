@@ -53,6 +53,54 @@ class ContainerComponent:
 
     def start(self):
         subprocess.run(["docker", "start", self.container], capture_output=True, text=True, check=True)
+        if not wait_healthy(self.container):
+            raise h.Blocked(f"{self.container} did not become healthy after the restart")
+        wait_gateway_reaches_broker()
+
+
+def health_of(container):
+    out = subprocess.run(["docker", "inspect", "-f", "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}", container],
+                         capture_output=True, text=True)
+    return out.stdout.strip()
+
+
+def wait_healthy(container, timeout=90):
+    """Containers without a health check count as ready once running."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        status = health_of(container)
+        if status in ("healthy", "none"):
+            return True
+        time.sleep(1)
+    return False
+
+
+def wait_gateway_reaches_broker(timeout=60):
+    """The gateway keeps refusing broker calls for a few seconds after the broker returns, so a healthy broker is
+    not enough: poll a real tools/call as alice. Best effort (without a stored PAT it cannot succeed)."""
+    sys.path.insert(0, str(DEV / "scripts"))
+    import json
+    import urllib.request
+    import mcpdev
+    deadline = time.time() + timeout
+    try:
+        token = mcpdev.login("alice", "claude-code")
+    except Exception:
+        return False
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json",
+               "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25"}
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+        "name": "jira__get_issue", "arguments": {"issueKey": "ABC-1"}}}).encode()
+    while time.time() < deadline:
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{h.PORTS['gateway']}/s/mcp-jira/mcp", data=body, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if b"ABC-1" in resp.read():
+                    return True
+        except Exception:
+            pass
+        time.sleep(2)
+    return False
 
 
 def preflight():
@@ -63,6 +111,10 @@ def preflight():
     missing = [n for n in need if n not in running]
     if missing:
         raise h.Blocked("stack is not up (make up-full): " + ", ".join(missing))
+    unhealthy = [n for n in need if not wait_healthy(n, timeout=60)]
+    if unhealthy:
+        raise h.Blocked("not healthy within 60 s: " + ", ".join(unhealthy))
+    wait_gateway_reaches_broker(timeout=20)
     for stub in (f"{PROJECT}-broker-mock-1", f"{PROJECT}-gateway-admin-mock-1"):
         if stub in running:
             raise h.Blocked(f"{stub} is running: it shares the alias with the real component")

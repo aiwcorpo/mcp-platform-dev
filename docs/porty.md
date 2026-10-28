@@ -18,14 +18,14 @@ Usługi mają nazwy usług i aliasy `*.internal`.
 | Mock Jiry (HTTP) | `http://localhost:18081` | `http://jira.internal:8080` | PAT jako `Authorization: Bearer <pat>`; `/__admin` z Basic auth `admin:$JIRA_MOCK_ADMIN_PASSWORD` |
 | Stub brokera C4 (mTLS) | `https://localhost:18443` | `https://${MCP_BROKER_TLS_NAME}:8443` | `make up`; kontrakty z `MCP_CONTRACTS_REF` |
 | Stub admina gateway'a C5 (mTLS) | `https://localhost:18444` | `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443` | `make up` |
-| Gateway (klienci MCP) | `http://localhost:18000` | `http://mcp-gateway.internal:8080` | `make up-full`, endpoint `/s/mcp-jira/mcp` |
+| Gateway (listener publiczny) | `http://localhost:18000` | `http://mcp-gateway.internal:8080` | tylko dla `make m1` (mcp-e2e); klienci MCP i przeglądarka używają proxy `:18740`, a ogłaszany origin (`MCP_PUBLIC_URL`) to proxy |
 | Gateway (wewnętrzny, mTLS) | `https://localhost:18445` | `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443` | JWKS C2 i actuator; port hosta tylko dla testów, wymaga certyfikatu klienta |
 | Broker | `https://localhost:18100` | `https://${MCP_BROKER_TLS_NAME}:8443` | `make up-full` (stuby wtedy są usuwane) |
 | `mcp-jira` | `https://localhost:18446` | `https://mcp-jira.internal:8443` | profil `full`; port hosta tylko dla testów A1/A3, wymaga certyfikatu `mcp-gateway` i JWT |
 | Portal (zarezerwowany) | `http://localhost:18090` | | redirect URI klienta `mcp-portal-bff` (BFF uruchomiony na hoście) |
 | Proxy (jedna domena, M2) | `http://localhost:18740` | `proxy.internal:8080` | `make up-m2`; `/` web, `/api` BFF, `/s/` `/v/` `/.well-known/oauth-protected-resource*` gateway; patrz [m2.md](m2.md) |
 | Portal web (M2) | | `http://portal-web:8080` | statyczny serwer SPA za proxy |
-| Portal BFF (M2) | | `http://portal-bff:8080` | za proxy, `PORTAL_PORT=8080` w kontenerze |
+| Portal BFF (M2) | | `http://portal-bff.internal:8080` | za proxy, `PORTAL_PORT=8080`; działa w przestrzeni sieciowej `idp-relay` (patrz [m2.md](m2.md)) |
 | Mock GitLaba (OAuth + REST) | `http://localhost:18741` | `http://gitlab.internal:8080` | authorize otwiera przeglądarka (port hosta), reszta z sieci compose |
 | Mock Confluence | `http://localhost:18742` | `http://confluence.internal:8080` | |
 | Mock Service Desku | `http://localhost:18743` | `http://servicedesk.internal:8080` | sieć `servers` |

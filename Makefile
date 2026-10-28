@@ -13,7 +13,7 @@ STUBS := broker-mock gateway-admin-mock
 COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira
 
 .PHONY: help secrets certs contracts up up-core up-full down reset clean ps logs token claims exchange pat seed \
-        smoke users audit jira-auth images m1 images-m2 up-m2 proxy-test mocks-test m2 mock-auth
+        smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test mocks-test m2 mock-auth
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -101,9 +101,18 @@ users: ## test users and their generated passwords (NOT FOR PRODUCTION)
 images-m2: ## build the images of profile m2 (portal BFF and web, MCP servers of ws-04) from HEAD of the sibling repos
 	@./scripts/build-images-m2.sh
 
-# --no-recreate: running M1 services (and Keycloak, whose env gained PROXY_PORT) are left alone.
-up-m2: certs ## start profile m2 (proxy, portal BFF and web, MCP servers) on top of make up-full
-	$(COMPOSE) --profile full --profile m2 up -d --wait --no-recreate
+# Compose recreates exactly the services whose configuration or image changed; m2-sync then applies what lives
+# outside the containers' definitions (Keycloak client, Redis ACL, proxy rules).
+up-m2: certs ## start profile m2 (proxy, portal BFF and web, MCP servers) on top of make up-full; recreates changed services only
+	@$(COMPOSE) --profile infra rm -sf $(STUBS) >/dev/null 2>&1
+	$(COMPOSE) --profile full --profile m2 up -d --wait
+	@./scripts/wait-init.sh
+	@$(MAKE) --no-print-directory m2-sync
+
+m2-sync: ## apply the settings of the running stack that need no restart: Keycloak client, Redis ACL, nginx reload
+	@./scripts/kc-sync-bff-client.sh
+	@./scripts/redis-sync-acl.sh >/dev/null
+	@$(COMPOSE) --profile m2 restart proxy
 
 proxy-test: ## rules of the reverse proxy against stand-in upstreams (isolated network, does not touch the stack)
 	@./scripts/proxy-test.sh

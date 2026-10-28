@@ -30,6 +30,7 @@ if want bff; then
   ctx="$work/bff-ctx"
   mkdir -p "$ctx"
   cp "$(ls "$work"/mcp-portal/bff/target/mcp-portal-bff-*.jar | grep -v original | head -1)" "$ctx/app.jar"
+  cp "$dev/docker/bff-entrypoint.sh" "$ctx/bff-entrypoint.sh"
   docker build -q -f "$dev/docker/bff.Dockerfile" -t "mcp-portal-bff:m2-$short" "$ctx" >/dev/null
   echo "MCP_PORTAL_BFF_IMAGE=mcp-portal-bff:m2-$short"
 fi

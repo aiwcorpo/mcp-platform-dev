@@ -21,7 +21,7 @@ bao read transit/keys/mcp-credential-broker >/dev/null 2>&1 \
 bao policy write mcp-credential-broker - <<'HCL'
 path "secret/data/mcp/connections/*"     { capabilities = ["create", "read", "update", "delete"] }
 path "secret/metadata/mcp/connections/*" { capabilities = ["read", "list", "delete"] }
-path "secret/data/mcp/oauth-clients/*"   { capabilities = ["read"] }
+path "secret/data/mcp/oauth-clients/gitlab" { capabilities = ["read"] }
 path "transit/encrypt/mcp-credential-broker" { capabilities = ["update"] }
 path "transit/decrypt/mcp-credential-broker" { capabilities = ["update"] }
 HCL

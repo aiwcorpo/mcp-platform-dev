@@ -22,7 +22,7 @@ trap '[[ -n "${KEEP:-}" ]] || remove_containers; rm -rf "$tmp"' EXIT
 remove_containers
 docker network create "$net" >/dev/null || exit 1
 
-for pair in gateway:mcp-gateway bff:portal-bff web:portal-web; do
+for pair in gateway:mcp-gateway bff:portal-bff.internal web:portal-web; do
   name="${pair%%:*}"
   alias="${pair##*:}"
   docker run -d --name "$net-$name" --network "$net" --network-alias "$alias" -e ECHO_NAME="$name" \
@@ -36,7 +36,10 @@ docker run -d --name "$net-proxy" --network "$net" --read-only --tmpfs /tmp --us
   -v "$root/proxy/to-gateway.conf:/etc/nginx/to-gateway.conf:ro" \
   -v "$root/proxy/to-web.conf:/etc/nginx/to-web.conf:ro" \
   -v "$root/proxy/gateway-headers.conf:/etc/nginx/gateway-headers.conf:ro" \
-  -v "$root/proxy/errors:/etc/nginx/errors:ro" "$nginx_image" >/dev/null || exit 1
+  -v "$root/proxy/errors:/etc/nginx/errors:ro" -e PUBLIC_PORT="$port" "$nginx_image" /bin/sh -c '
+    printf "map \"\" \$public_host { default \"localhost:%s\"; }\nmap \"\" \$public_port { default \"%s\"; }\n" \
+      "$PUBLIC_PORT" "$PUBLIC_PORT" > /tmp/public-origin.conf
+    exec nginx -g "daemon off;"' >/dev/null || exit 1
 
 up=0
 for _ in $(seq 1 100); do
@@ -85,6 +88,8 @@ check "route well-known resource -> gateway" gateway "$(field .upstream)"
 req "$base/.well-known/oauth-protected-resource/s/mcp-jira/mcp"
 check "route well-known resource with path -> gateway" gateway "$(field .upstream)"
 check "well-known path forwarded unchanged" "/.well-known/oauth-protected-resource/s/mcp-jira/mcp" "$(field .uri)"
+req "$base/.well-known/oauth-protected-resourceXYZ"
+check "negative: resource prefix without a segment boundary is 404" "404 none" "$status $(upstream)"
 req "$base/.well-known/jwks.json"
 check "negative: other well-known is 404" 404 "$status"
 check "negative: other well-known is not served by any upstream" none "$(upstream)"
@@ -189,11 +194,55 @@ check "request id passed to gateway" "0198-client" "$(field '.headers["x-request
 # Forwarded headers come from the proxy, not from the client.
 req -H 'X-Forwarded-Host: evil.test' -H 'X-Forwarded-Proto: https' -H 'X-Forwarded-For: 6.6.6.6' -H 'Forwarded: host=evil.test' \
   -H 'X-Real-IP: 6.6.6.6' "$base/s/mcp-jira/mcp"
-check "client X-Forwarded-Host replaced" "127.0.0.1:$port" "$(field '.headers["x-forwarded-host"]')"
+check "client X-Forwarded-Host replaced" "localhost:$port" "$(field '.headers["x-forwarded-host"]')"
 check "client X-Forwarded-Proto replaced" http "$(field '.headers["x-forwarded-proto"]')"
 check "client X-Forwarded-For replaced" 1 "$(field '.headers["x-forwarded-for"] | select(. != "6.6.6.6") | 1')"
 check "client Forwarded dropped" null "$(field '.headers.forwarded // "null"')"
 check "client X-Real-IP dropped" null "$(field '.headers["x-real-ip"] // "null"')"
+
+# Host is the public origin whatever the client sent; the forwarded headers nobody may set are cleared.
+for p in /s/mcp-jira/mcp /api/v1/me /; do
+  req -H 'Host: evil.test' -H 'X-Forwarded-Port: 1' -H 'X-Forwarded-Prefix: /x' -H 'X-Forwarded-Ssl: on' \
+    -H 'X-Forwarded-Scheme: https' -H 'X-Original-URL: /admin' -H 'X-Rewrite-URL: /admin' "$base$p"
+  check "Host fixed on $p" "localhost:$port" "$(field .headers.host)"
+  check "X-Forwarded-Host fixed on $p" "localhost:$port" "$(field '.headers["x-forwarded-host"]')"
+  check "X-Forwarded-Port set by the proxy on $p" "$port" "$(field '.headers["x-forwarded-port"]')"
+  for h in x-forwarded-prefix x-forwarded-ssl x-forwarded-scheme x-original-url x-rewrite-url; do
+    check "client $h dropped on $p" null "$(field ".headers[\"$h\"] // \"null\"")"
+  done
+done
+
+# Own error pages on gateway routes carry the headers and JSON in every case, including the ones that bypass
+# error_page 400 (header too large, unknown Transfer-Encoding) and the refusal that fires in the rewrite phase.
+gw_error() { # label expected-status
+  check "$1: status" "$2" "$status"
+  check "$1: JSON" "application/json" "$(hvalue content-type | sed 's/;.*//')"
+  check "$1: nosniff" nosniff "$(hvalue x-content-type-options)"
+  check "$1: CSP" "$csp" "$(hvalue content-security-policy)"
+  check "$1: nosniff once" 1 "$(header x-content-type-options)"
+}
+for p in "/s/../admin/v1/x" "/s/%2e%2e/admin" "/.well-known/oauth-protected-resource/../x" "/v/%2e%2e/x" "/s/a;b/mcp" \
+         "/s/..;/admin/v1/x" "/s/a%3bb/mcp" "/s/x%41/mcp" "/%73/x/mcp"; do
+  req "$base$p"
+  gw_error "refused $p" 404
+done
+req -H "X-Big: $(head -c 20000 /dev/zero | tr '\0' a)" "$base/s/mcp-jira/mcp"
+gw_error "oversized header" 431
+req -X POST -H 'Transfer-Encoding: gzip, chunked' --data-binary x "$base/s/mcp-jira/mcp"
+gw_error "unknown Transfer-Encoding" 400
+req -H "Cookie: a=$(head -c 20000 /dev/zero | tr '\0' a)" "$base/v/team-link/mcp"
+gw_error "oversized cookie" 431
+req --request-target "/s/mcp-jira/$(head -c 20000 /dev/zero | tr '\0' a)" "$base"
+gw_error "oversized request line" 414
+req -X TRACE "$base/s/mcp-jira/mcp"
+check "TRACE on a gateway route: nosniff" nosniff "$(hvalue x-content-type-options)"
+req "$base/missing/%2e%2e/x"
+check "negative: web route refusal is text, not gateway JSON" 0 "$(header content-security-policy)"
+check "web route refusal has nosniff" nosniff "$(hvalue x-content-type-options)"
+
+# The access log has paths, not query strings (authorization codes).
+req "$base/api/v1/auth/callback?code=SECRETCODE&state=abc"
+if docker logs "$net-proxy" 2>&1 | grep -q SECRETCODE; then check "access log without query strings" clean leaked; else check "access log without query strings" clean clean; fi
 
 # Methods and bodies pass through; the status of the upstream is not rewritten.
 req -X DELETE "$base/s/mcp-jira/mcp?echo_status=204"

@@ -146,7 +146,8 @@ Klucze nie są w kontraktach. Środowisko zakłada poniższe prefiksy i egzekwuj
 | Użytkownik | Hasło (`.secrets/dev.env`) | Klucze | Kanały | Uwagi |
 | --- | --- | --- | --- | --- |
 | `gateway` | `REDIS_GATEWAY_PASSWORD` | `gw:*` (potwierdzenia C11, cache poświadczeń, limity) | `credential.invalidated`: tylko `SUBSCRIBE` | bez `PUBLISH` |
-| `broker` | `REDIS_BROKER_PASSWORD` | `broker:*`, `jti:mcp-credential-broker:*` | `credential.invalidated`: tylko `PUBLISH` | broker też odbiera C2, więc pilnuje `jti` |
+| `broker` | `REDIS_BROKER_PASSWORD` | `broker:*`, `jti:mcp-credential-broker:*` | `credential.invalidated`: tylko `PUBLISH` | broker też odbiera C2, więc pilnuje `jti`; `EVAL`/`EVALSHA` dla atomowego zwolnienia blokady (Redis sprawdza klucze skryptu względem ACL) |
+| `portal-bff` | `REDIS_PORTAL_BFF_PASSWORD` | `portal:*` (Spring Session) | brak | lista komend w `redis/portal-bff.rules`: `HSET`/`HGETALL`/`HDEL`/`DEL`/`EXPIRE`/`RENAME` itd., bez `FLUSHALL`, `KEYS`, `SCAN`, `SCRIPT`, `FUNCTION`, `MIGRATE`; `RedisIndexedSessionRepository` wymagałby też `SADD`/`SREM`/`SMEMBERS` i kanałów keyevent |
 | `mcp-<system>` | `REDIS_MCP_<SYSTEM>_PASSWORD` | `jti:mcp-<system>:*` | brak | starter (ws-02): prefiks `jti:<serverId>:` |
 | `admin` | `REDIS_ADMIN_PASSWORD` | wszystkie | wszystkie | tylko narzędzia dev i healthcheck |
 
@@ -154,15 +155,15 @@ Użytkownik `default` jest wyłączony. Użytkownicy komponentów mają jawną l
 `GET`, `SET`, `SETNX`, `GETDEL`, `GETEX`, `MGET`, `DEL`, `UNLINK`, `EXISTS`, `EXPIRE`, `PEXPIRE`, `TTL`, `PTTL`,
 `INCR`, `INCRBY`, `DECR`, `HSET`, `HGET`, `HDEL`, `HGETALL`, `HEXISTS`, `HINCRBY`, `MULTI`, `EXEC`, `DISCARD`,
 `PING`, `AUTH`, `HELLO`, `CLIENT SETNAME`, `CLIENT SETINFO`, `RESET`, `QUIT` oraz `SUBSCRIBE`/`UNSUBSCRIBE`
-(gateway) albo `PUBLISH` (broker). Nie ma `SCAN`, `KEYS`, `RANDOMKEY`, `EVAL`, `SCRIPT`, `FUNCTION`:
+(gateway) albo `PUBLISH` (broker). Nie ma `SCAN`, `KEYS`, `RANDOMKEY`, `SCRIPT`, `FUNCTION`, a `EVAL` ma tylko broker:
 wzorce `~prefiks` w ACL ich nie ograniczają i ujawniałyby nazwy kluczy innych komponentów (np. `sub` w
 kluczach potwierdzeń). Komponent, który potrzebuje innej komendy (np. Lua dla atomowego "sprawdź i zużyj"
-potwierdzenia), zgłasza to do ws-01; zmiana jest w `redis/start.sh` i w tej tabeli.
+potwierdzenia), zgłasza to do ws-01; zmiana jest w `redis/start.sh` (reguły brokera i `portal-bff` w `redis/*.rules`) i w tej tabeli; na działającym Redisie stosuje ją `scripts/redis-sync-acl.sh` (`make m2-sync`).
 
 ## Portal BFF (ws-07)
 
 Klient `mcp-portal-bff` (sekret `KC_CLIENT_MCP_PORTAL_BFF_SECRET`), redirect
-`http://localhost:18090/login/oauth2/code/*`, wymiana na `mcp-credential-broker` i `mcp-gateway-admin`.
+`http://localhost:18090/api/v1/auth/callback` i `http://localhost:18740/api/v1/auth/callback` (dokładne adresy), wymiana na `mcp-credential-broker` i `mcp-gateway-admin`.
 Stub C5 (`https://localhost:18444`) i C4 (`https://localhost:18443`) wymagają certyfikatu
 `certs/mcp-portal-bff` (EKU tylko clientAuth). Nazwy TLS do weryfikacji: `MCP_BROKER_TLS_NAME`,
 `MCP_GATEWAY_INTERNAL_TLS_NAME`. Step-up (`acr`) jeszcze nie jest skonfigurowany (STATUS.md).

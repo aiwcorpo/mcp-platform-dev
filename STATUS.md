@@ -129,8 +129,8 @@ Opis: [docs/m2.md](docs/m2.md). Kamienie pośrednie:
 | --- | --- | --- |
 | M2.1 | reverse proxy nginx (`proxy/`), `make proxy-test` (106 sprawdzeń, dodatnie i ujemne dla każdej reguły CC-089) | zrobione |
 | M2.2 | mocki GitLab (OAuth + `/api/v4/user` + REST), Confluence, Service Desk, OpenSearch (`mocks/systems/`, `make mocks-test` 165 testów); usługi w compose bez profilu | zrobione, mocki działają na stosie |
-| M2.3 | Keycloak: redirect BFF `http://localhost:18740/api/v1/auth/callback` (realm i działający Keycloak przez `scripts/kc-sync-bff-client.sh`, bez restartu); Redis: użytkownik `portal-bff`; OpenBao: `secret/mcp/oauth-clients/gitlab` + odczyt w polityce brokera; broker z HEAD (8e7f037) z GitLabem i Confluence; profil `m2` z proxy, web, BFF i czterema serwerami ws-04 (`make images-m2`, `make up-m2`) | zrobione; BFF nie uruchomiony (czeka na M2 ws-07) |
-| M2.4 | `make m2`: 50 sprawdzeń (mocki, OAuth z mockiem, prawdziwy broker, Keycloak), 7 SKIP z nazwą brakującego elementu | zrobione; integracja końcowa po M2 ws-05/07/08 |
+| M2.3 | Keycloak: redirect BFF `http://localhost:18740/api/v1/auth/callback` (realm i działający Keycloak przez `scripts/kc-sync-bff-client.sh`, bez restartu); Redis: użytkownik `portal-bff`; OpenBao: `secret/mcp/oauth-clients/gitlab` + odczyt w polityce brokera; broker z HEAD (8e7f037) z GitLabem i Confluence; profil `m2` z proxy, web, BFF i czterema serwerami ws-04 (`make images-m2`, `make up-m2`) | zrobione; BFF działa w kontenerze |
+| M2.4 | `make m2`: 85 sprawdzeń (mocki, OAuth, broker, Redis ACL, Keycloak, portal przez proxy, klient MCP), 2 SKIP | zrobione |
 
 Sprawdzone: `make m1` przechodzi po zmianach (jedno nieudane F1/A9 zaraz po poprzednim `make m1`, gdy broker dopiero
 wstawał po A15; powtórka zielona). Przepływ "Połącz przez OAuth" z prawdziwym brokerem (`oauth/start` -> mock ->
@@ -152,16 +152,47 @@ Decyzje i odstępstwa:
 - `make up` po tej zmianie odtworzy Keycloaka (nowa zmienna `PROXY_PORT`) i Redisa (nowy użytkownik): robi to
   tylko ten, kto go uruchomi; `make up-m2` używa `--no-recreate`.
 
-Do zrobienia w integracji końcowej (po M2 ws-05/06/07/08): `MCP_SERVER_<X>_URL` czterech serwerów i `publicBaseUrl`
-w gateway'u, `MCP_CONNECT_URL` `mcp-jira` na adres proxy, konfiguracja OIDC BFF w kontenerze (backchannel
-`http://keycloak:8080`, issuer `localhost:18080`), `PORTAL_TRUSTED_PROXIES`, `service-account` service desku i
-`token-exchange` OpenSearch w brokerze, przebudowa obrazów BFF/web z nowego HEAD.
+### Runda poprawek M2 (przegląd Opus, 2026-10-28)
+
+Stan po rundzie: `make m1` trzy razy pod rząd zielone, `make m2` 85 PASS / 0 FAIL / 2 SKIP, `make proxy-test` 200,
+`make mocks-test` 174. Stos: gateway `m2-8dc1d7a`, broker 8eac9d8, BFF i web z HEAD mcp-portal (1c2a769), serwery ws-04
+z HEAD; BFF działa w kontenerze i loguje przez Keycloaka za proxy (opis: [docs/m2.md](docs/m2.md)).
+
+| Znalezisko | Status |
+| --- | --- |
+| H1 ACL Redis `portal-bff` | poprawione: jawna lista komend w `redis/portal-bff.rules` (jedno źródło dla `start.sh` i `redis-sync-acl.sh`), tylko `~portal:*`; zastosowane na działającym Redisie; `make m2` sprawdza NOPERM dla FLUSHALL/FLUSHDB/SWAPDB/KEYS/SCAN/RANDOMKEY/DBSIZE/SCRIPT/FUNCTION/MIGRATE/CONFIG, `gw:*`, `broker:*`. Dodatkowo (koordynator): broker ma `+eval +evalsha` (`redis/broker.rules`), skrypt na kluczu spoza `~broker:*` jest odrzucany, SCRIPT i FUNCTION nie |
+| M1 błędy proxy bez nagłówków | poprawione: odmowa ścieżki nie odpala się drugi raz przy przekierowaniu do `/_err/` (mapy `volatile`), `error_page` dla 494 (431), 501 (400), 408, 411; wybór strony błędu także po zdekodowanym URI (`/%73/x`); `proxy-test` sprawdza `Content-Type`, `nosniff`, CSP i jednokrotność nagłówka dla każdego przypadku |
+| M2 drugi origin gateway'a | poprawione: `MCP_PUBLIC_URL` = proxy, `resource` w RFC 9728 sprawdzany w `make m2`; port 18000 zostaje wyłącznie dla `make m1` (harness mcp-e2e łączy się wprost), opisane w `docs/porty.md`. Obraz `m2-8dc1d7a`, alias `mcp-gateway.internal:8443` (C5), certyfikat `mcp-portal-bff`, cztery serwery ws-04 |
+| M3 Host i X-Forwarded-* | poprawione: stały `Host`/`X-Forwarded-Host`/`X-Forwarded-Port`, czyszczenie Prefix/Ssl/Scheme/X-Original-URL/X-Rewrite-URL; `PORTAL_TRUSTED_PROXIES` = adres proxy (entrypoint BFF rozwiązuje `proxy.internal`; stałego IP nie dałem, bo zmiana IPAM wymusiłaby odtworzenie sieci współdzielonego stosu) |
+| M4 mock GitLaba i `scope` | poprawione: scope egzekwowany (403 `insufficient_scope`), brak lub nieznany scope w authorize -> `invalid_scope`; testy jednostkowe i `make m2` (zapis przez `read_api` kończy się błędem). Decyzja dla ws-04/ws-06: broker prosi o `read_api`, więc `gitlab__comment_merge_request` na połączeniu OAuth nie zadziała jak w prawdziwym GitLabie |
+| M5 determinizm `make m1` | poprawione: healthchecki gateway'a, brokera, `mcp-jira` i serwerów ws-04; `m1-compose.py` czeka na `healthy` po restarcie brokera (A15) oraz na działające wywołanie gateway -> broker (gateway odmawia przez kilka sekund po powrocie brokera); preflight wymaga `healthy` |
+| M6 `up-m2` zależny od historii | poprawione: bez `--no-recreate`, Compose odtwarza zmienione usługi; `make m2-sync` (Keycloak, Redis ACL, restart proxy) wołany z `up-m2`. Skutek uboczny: pierwszy `up-m2` po tej zmianie odtworzył Keycloaka i Redisa |
+| L1 normalizacja ścieżki | częściowo: odrzucane `;`, `%3b` i każde `%` na trasach gateway'a. Zostaje overlong UTF-8 w segmentach SPA/BFF (nieszkodliwe: gateway ma StrictHttpFirewall) |
+| L2, L3, L4 mock GitLaba | poprawione: ponowne użycie kodu unieważnia tokeny, walidacja formatu PKCE, nie-ASCII challenge -> 400 `invalid_request`/`invalid_grant`, dwie metody uwierzytelnienia i powtórzone parametry -> `invalid_request` |
+| L5 OpenBao | częściowo: polityka brokera na dokładną ścieżkę `oauth-clients/gitlab`, sekret klienta usunięty z env brokera (czyta z OpenBao) |
+| L6 redirecty Keycloaka | poprawione: dokładne `.../api/v1/auth/callback` (proxy i `:18090`), post-logout dokładne `/`; `kc-sync-bff-client.sh` czyta listę z realmu |
+| L7 sekrety w argv | poprawione w `kc-sync-bff-client.sh` i `redis-sync-acl.sh` (pliki `/dev/fd`, stdin); `make pat` i inne skrypty już używały środowiska |
+| L8 kody w access logu | poprawione: log ze ścieżką bez query |
+| L9 limity połączeń | nie zrobione (dev, jeden użytkownik): `worker_connections` 256, SSE do 1 h |
+| L10 `make m2` zmienia stan brokera | nie zrobione: przebieg używa alice i sprząta połączenie GitLab oraz link; wymaga osobnego użytkownika testowego w realmie |
+| L11 prefiks well-known | poprawione: `location =` i `^~ .../` zamiast prefiksu bez granicy segmentu |
+
+Zmiany poza listą: realm i skrypty nie używają już redirectu `/login/oauth2/code/*`; `identity_mismatch` w `make m2` zastąpiony
+sprawdzeniem zgodnym z kontraktami 2.2.3 (brak porównania tożsamości).
+
+SKIP w `make m2` (2): interfejs web w przeglądarce (brak sterownika przeglądarki w środowisku; te same wywołania API są
+w przebiegu) i Claude Code z linkiem (wymaga człowieka). Zero SKIP blokuje: przeglądarka (Playwright/e2e ws-08 na
+`http://localhost:18740`) oraz człowiek z Claude Code.
+
+Do zrobienia: poświadczenie `service-account` service desku i `token-exchange` OpenSearch w brokerze (kroki spoza
+`make m2`); BFF potrzebuje osobnego ustawienia backchannel OIDC zamiast `idp-relay` (propozycja poniżej).
 
 ## Propozycje CC
 
 Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktów tu nie zmieniano.
 
-- Brak. Zmienne `MCP_*` dla gateway'a, brokera i `mcp-jira` zgadzają się z compose; jedyne odstępstwo to
+- Brak zmian kontraktów. Prośba do ws-07 (nie CC): ustawienie backchannel OIDC w BFF (osobne adresy tokenu i JWKS przy `issuer-uri` do walidacji `iss`), żeby `idp-relay` nie był potrzebny.
+- Zmienne `MCP_*` dla gateway'a, brokera i `mcp-jira` zgadzają się z compose; jedyne odstępstwo to
   `MCP_ALLOW_PLAIN_HTTP` gateway'a (token exchange do Keycloaka po http), które jest dev-only i już opisane w README gateway'a.
 
 ## Odstępstwa od briefu

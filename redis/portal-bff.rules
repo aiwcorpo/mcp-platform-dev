@@ -1,0 +1,1 @@
+resetkeys ~portal:* resetchannels -@all +hget +hmget +hset +hmset +hgetall +hdel +hexists +del +unlink +exists +expire +pexpire +expireat +pexpireat +ttl +pttl +rename +get +set +ping +auth +hello +client|setname +client|setinfo +multi +exec +discard

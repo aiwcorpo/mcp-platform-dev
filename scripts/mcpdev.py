@@ -71,7 +71,7 @@ CLIENTS = {
         "secret_key": None,
     },
     "mcp-portal-bff": {
-        "redirect_uri": f"http://localhost:{cfg('PORTAL_PORT', '18090')}/login/oauth2/code/keycloak",
+        "redirect_uri": f"http://localhost:{cfg('PORTAL_PORT', '18090')}/api/v1/auth/callback",
         "secret_key": "KC_CLIENT_MCP_PORTAL_BFF_SECRET",
     },
     "mcp-gateway": {"redirect_uri": None, "secret_key": "KC_CLIENT_MCP_GATEWAY_SECRET"},

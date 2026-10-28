@@ -13,6 +13,8 @@ Query parameters of /oauth/authorize that only this mock understands (a real Git
                           token_error     the token endpoint answers 500 for this code
                           refresh_revoked tokens of this grant cannot be refreshed (invalid_grant)
                           short_ttl       access token lives 30 s
+Scopes are enforced like GitLab does: api (everything), read_api (GET and HEAD of the REST API), read_user
+(GET /api/v4/user only). authorize without a scope or with an unknown one is invalid_scope; PATs count as api.
 State is in memory: a restart of the mock invalidates every code and token.
 """
 import base64
@@ -20,10 +22,11 @@ import hashlib
 import hmac
 import html
 import os
+import re
 import secrets
 import threading
 import time
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode
 
 import common
 import gitlab_rest
@@ -37,6 +40,13 @@ SHORT_TTL = 30
 CODE_TTL = 120
 LOGINS = ("alice", "bob", "carol", "mallory")
 USER_IDS = {"alice": 101, "bob": 102, "carol": 103, "mallory": 104, "someone-else": 199}
+
+SCOPES = ("api", "read_api", "read_user")
+# RFC 7636: S256 challenge is 43 characters of base64url; verifier is 43-128 characters of the unreserved set.
+CHALLENGE_RE = re.compile(r"[A-Za-z0-9_-]{43}")
+VERIFIER_RE = re.compile(r"[A-Za-z0-9._~-]{43,128}")
+AUTHORIZE_PARAMS = ("client_id", "redirect_uri", "response_type", "state", "scope", "code_challenge",
+                    "code_challenge_method")
 
 _lock = threading.Lock()
 _codes = {}
@@ -92,12 +102,26 @@ def _authorize(req):
         return html_response(400, "<h1>redirect_uri is not registered</h1>")
     state = req.param("state")
     out = {"state": state} if state else {}
+    repeated = [name for name in AUTHORIZE_PARAMS if len(req.query.get(name, [])) > 1]
+    if "client_id" in repeated or "redirect_uri" in repeated:
+        return html_response(400, "<h1>Repeated client_id or redirect_uri</h1>")
+    if repeated:
+        return _redirect(redirect_uri, {"error": "invalid_request",
+                                        "error_description": "Parameters must not be repeated: " + ", ".join(repeated)})
     if req.param("response_type") != "code":
         return _redirect(redirect_uri, {**out, "error": "unsupported_response_type"})
     challenge = req.param("code_challenge", "")
     if not challenge or req.param("code_challenge_method") != "S256":
         return _redirect(redirect_uri, {**out, "error": "invalid_request",
                                         "error_description": "PKCE with S256 is required"})
+    if not CHALLENGE_RE.fullmatch(challenge):
+        return _redirect(redirect_uri, {**out, "error": "invalid_request",
+                                        "error_description": "code_challenge must be 43 base64url characters"})
+    scope = req.param("scope", "")
+    requested = scope.split()
+    if not requested or any(item not in SCOPES for item in requested):
+        return _redirect(redirect_uri, {**out, "error": "invalid_scope",
+                                        "error_description": "The requested scope is invalid, unknown, or malformed."})
     if not state:
         return _redirect(redirect_uri, {"error": "invalid_request", "error_description": "state is required"})
     scenario = req.param("mock_scenario", "")
@@ -114,7 +138,7 @@ def _authorize(req):
     code = "glc-" + secrets.token_urlsafe(24)
     with _lock:
         _codes[code] = {"login": login, "challenge": challenge, "redirect_uri": redirect_uri,
-                        "scope": req.param("scope", ""), "scenario": scenario, "expires": _now() + CODE_TTL,
+                        "scope": " ".join(requested), "scenario": scenario, "expires": _now() + CODE_TTL,
                         "used": False}
     returned_state = state + "-tampered" if scenario == "wrong_state" else state
     return _redirect(redirect_uri, {"code": code, "state": returned_state})
@@ -124,20 +148,24 @@ def _client_ok(req, form):
     client_id, secret = form.get("client_id"), form.get("client_secret")
     creds = req.basic()
     if creds is not None:
+        if "client_secret" in form:
+            return False
         client_id, secret = creds
     if client_id != CLIENT_ID or not CLIENT_SECRET or secret is None:
         return False
     return hmac.compare_digest(secret.encode(), CLIENT_SECRET.encode())
 
 
-def _issue(login, scope, scenario):
+def _issue(login, scope, scenario, code_record=None):
     ttl = SHORT_TTL if scenario == "short_ttl" else TOKEN_TTL
     access, refresh = "glo-" + secrets.token_urlsafe(24), "glr-" + secrets.token_urlsafe(24)
     now = _now()
     _access[access] = {"login": login, "expires": now + ttl, "scenario": scenario, "scope": scope, "refresh": refresh}
     _refresh[refresh] = {"login": login, "scope": scope, "scenario": scenario, "access": access}
+    if code_record is not None:
+        code_record["issued"] = (access, refresh)
     return json_response(200, {"access_token": access, "token_type": "Bearer", "expires_in": ttl,
-                               "refresh_token": refresh, "scope": scope or "api", "created_at": int(now)},
+                               "refresh_token": refresh, "scope": scope, "created_at": int(now)},
                          {"Cache-Control": "no-store", "Pragma": "no-cache"})
 
 
@@ -145,6 +173,10 @@ def _token(req):
     if req.method != "POST":
         return json_response(405, {"error": "invalid_request"})
     form = req.form()
+    if req.basic() is not None and "client_secret" in form:
+        return _oauth_error(400, "invalid_request", "More than one client authentication method was used.")
+    if any(len(v) > 1 for v in parse_qs(req.body.decode("utf-8", "replace"), keep_blank_values=True).values()):
+        return _oauth_error(400, "invalid_request", "Parameters must not be repeated.")
     if not _client_ok(req, form):
         return _oauth_error(401, "invalid_client", "Client authentication failed due to unknown client, "
                             "no client authentication included, or unsupported authentication method.")
@@ -159,6 +191,10 @@ def _token(req):
 
 def _exchange_code(form):
     record = _codes.get(form.get("code", ""))
+    if record is not None and record["used"]:
+        # RFC 6749 4.1.2: a code presented twice voids what it already produced.
+        for access in record.get("issued", ()):
+            _refresh_tokens_drop(access)
     if record is None or record["used"] or record["expires"] < _now():
         return _oauth_error(400, "invalid_grant", "The provided authorization grant is invalid, expired, "
                             "revoked, does not match the redirection URI, or was issued to another client.")
@@ -166,12 +202,23 @@ def _exchange_code(form):
     if form.get("redirect_uri") != record["redirect_uri"]:
         return _oauth_error(400, "invalid_grant", "redirect_uri does not match the authorization request.")
     verifier = form.get("code_verifier", "")
+    if not VERIFIER_RE.fullmatch(verifier):
+        return _oauth_error(400, "invalid_grant", "code_verifier must be 43-128 characters of [A-Za-z0-9._~-].")
     digest = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
-    if not verifier or not hmac.compare_digest(digest, record["challenge"]):
+    if not hmac.compare_digest(digest, record["challenge"]):
         return _oauth_error(400, "invalid_grant", "code_verifier does not match code_challenge.")
     if record["scenario"] == "token_error":
         return _oauth_error(500, "server_error", "Mock provider failure requested by mock_scenario=token_error.")
-    return _issue(record["login"], record["scope"], record["scenario"])
+    return _issue(record["login"], record["scope"], record["scenario"], record)
+
+
+def _refresh_tokens_drop(token):
+    """Forgets an access or refresh token together with its counterpart."""
+    record = _access.pop(token, None)
+    if record is not None:
+        _refresh.pop(record["refresh"], None)
+    elif token in _refresh:
+        _access.pop(_refresh.pop(token)["access"], None)
 
 
 def _refresh_grant(form):
@@ -190,12 +237,16 @@ def _revoke(req):
         return _oauth_error(401, "invalid_client", "Client authentication failed.")
     token = form.get("token", "")
     with _lock:
-        record = _access.pop(token, None)
-        if record is not None:
-            _refresh.pop(record["refresh"], None)
-        elif token in _refresh:
-            _access.pop(_refresh.pop(token)["access"], None)
+        _refresh_tokens_drop(token)
     return json_response(200, {})
+
+
+def _scope_allows(scopes, req):
+    if "api" in scopes:
+        return True
+    if "read_api" in scopes and req.method in ("GET", "HEAD"):
+        return True
+    return "read_user" in scopes and req.method in ("GET", "HEAD") and req.segments == ["api", "v4", "user"]
 
 
 def _unauthorized(description=None):
@@ -206,7 +257,8 @@ def _unauthorized(description=None):
 
 
 def _authenticate(req):
-    """(user, None) or (None, error response). PAT as Bearer or PRIVATE-TOKEN, OAuth access token as Bearer."""
+    """(user, None) or (None, error response). PAT as Bearer or PRIVATE-TOKEN, OAuth access token as Bearer.
+    An OAuth token must also carry a scope that covers the request."""
     token = req.bearer() or req.header("private-token")
     if not token:
         return None, _unauthorized()
@@ -220,6 +272,11 @@ def _authenticate(req):
             return None, _unauthorized("The access token is invalid, revoked or was replaced by a refresh.")
         if record["expires"] < _now():
             return None, _unauthorized("The access token expired")
+        if not _scope_allows(record["scope"].split(), req):
+            return None, json_response(403, {"error": "insufficient_scope",
+                                             "error_description": "The request requires higher privileges than provided by the access token.",
+                                             "scope": "api"},
+                                       {"WWW-Authenticate": 'Bearer error="insufficient_scope", scope="api"'})
         return USERS[record["login"]], None
     return None, _unauthorized()
 
