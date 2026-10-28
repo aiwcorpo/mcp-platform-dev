@@ -323,7 +323,7 @@ serwisowe z OpenBao). Uwaga dla ws-04/ws-05: manifest serwera opensearch w compo
 `make m3` ma test `broker: the system <x> is configured` dla kazdego serwera z compose (katalog portalu ma wpis `credential`); dla `opensearch` i `servicedesk` jest SKIP ze znana
 przyczyna (`BROKER_GAPS` w `scripts/m3.py`), kazdy inny system bez wpisu to FAIL.
 
-Przygotowane, nie zastosowane: gateway `m3-0623849` z profilem devstack (N-1 zamkniete po stronie gatewaya); `make m3-switch` odtwarza broker, serwery i gateway;
+Przygotowane, nie zastosowane: gateway `m3-1f7f543` z profilem devstack (N-1 zamkniete po stronie gatewaya); `make m3-switch` odtwarza broker, serwery i gateway;
 test `gateway: the running container logs event=devstack_profile` w `make m3` jest SKIP do zastosowania. Po zastosowaniu zmienne `MCP_POLICY_ALLOW_TEST_KEYS`,
 `MCP_REGISTRY_BOOTSTRAP`, `MCP_ALLOW_PLAIN_HTTP` obowiazuja za podwojna zgoda (wpis N-1 nizej jest wtedy zalatwiony).
 
