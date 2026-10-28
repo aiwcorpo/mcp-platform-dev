@@ -273,9 +273,12 @@ Opis: [docs/m3.md](docs/m3.md). Kontrakty 3.0.1. Kamienie:
 | --- | --- | --- | --- |
 | M3.1 | OpenBao (klucz Transit `mcp-authenticators`, polityka brokera), Redis (`redis/gateway.rules`), Keycloak (przeplyw `browser-corp`, `acr` `password`=1 / `mfa`=2, OTP dla alice/bob/carol, ziarna z `init-secrets.sh`), serwer paczek `policies` (:18747), mock Jiry `DELETE issue`, `scripts/totp.py` | zrobione | 11eaf3c |
 | M3.2 | `make m3` (37 kontroli infrastruktury + scenariusz Authenticatora z SKIP), `make otp`, `make reset-authenticator`, grupa `mcp-jira-destructive` dla alice, docs | zrobione | patrz git log |
-| M3.3 | integracja obrazow M3 (gateway m3-86bf670, broker m3-b4dd446, BFF m3-44dc221, web m3-de48d2f), bez `idp-relay`, Redis AOF + noeviction, wolumen stanu gateway'a, `MCP_POLICY_*` | zrobione; `make m2` 80/8 przez polityke klienta (nizej), mcp-jira bez `delete_issue` | patrz git log |
+| M3.3 | integracja obrazow M3 (gateway m3-7315893, broker m3-b4dd446, BFF m3-44dc221, web m3-de48d2f), bez `idp-relay`, Redis AOF + noeviction, wolumen stanu gateway'a, `MCP_POLICY_*` | zrobione; `make m2` 80/8 przez polityke klienta (nizej), mcp-jira bez `delete_issue` | patrz git log |
 
-Integracja M3.3 (2026-10-28), wyniki: `make proxy-test` 212; `make m1` 7 PASS; `make m3` 54 PASS / 0 FAIL / 2 SKIP (wykonanie
+Runda 2 (gateway m3-7315893, paczka 20261028210510-bec5815 z mcp-portal-bff): proxy-test 212, m1 7 PASS, m2 88 PASS / 0 FAIL / 2 SKIP,
+m3 54 PASS / 0 FAIL / 2 SKIP, run-m2.sh wszystkie PASS; blokada polityki klienta z rundy 1 usunieta. Ponizej wyniki rundy 1.
+
+Integracja M3.3 (2026-10-28), wyniki rundy 1: `make proxy-test` 212; `make m1` 7 PASS; `make m3` 54 PASS / 0 FAIL / 2 SKIP (wykonanie
 `delete_issue` i powtorzenie kodu: `mcp-jira` bez narzedzia, kod przyjety, serwer odpowiada Invalid params); `make m2` 80 PASS /
 8 FAIL / 2 SKIP; `mcp-e2e/run-m2.sh` pada na F3, A5b, A7, A8, A13 i scenariuszach (ten sam powod).
 Przyczyna FAIL w m2 i run-m2: paczka polityk ws-09 (rewizja 20261028201639-742561e) ma `platform-client-not-allowed`
