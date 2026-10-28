@@ -54,6 +54,7 @@ networks:
 
 volumes:
   postgres-data:
+  gateway-state:
 
 services:
   keycloak:
@@ -425,7 +426,23 @@ services:
       MCP_TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
       MCP_TLS_KEYSTORE: /certs/mcp-gateway/keystore.p12
       MCP_TLS_TRUSTSTORE: /certs/ca/truststore.p12
+      # Policy bundles (C7) pulled from the bundle server; dev keys of ws-09 (test-*) are accepted only with the flag.
+      MCP_POLICY_MAIN_URL: http://policies.internal:8080/policies/main/
+      MCP_POLICY_OVERRIDES_URL: http://policies.internal:8080/policies/overrides/
+      MCP_POLICY_MAIN_KEY_ID: test-policies-main-dev
+      MCP_POLICY_MAIN_KEY_FILE: /keys/test-policies-main-dev.public.pem
+      MCP_POLICY_OVERRIDES_KEY_ID: test-policies-overrides-dev
+      MCP_POLICY_OVERRIDES_KEY_FILE: /keys/test-policies-overrides-dev.public.pem
+      MCP_POLICY_ALLOW_TEST_KEYS: "true"
+      MCP_POLICY_STATE_DIR: /app/state
+      # The MCP server images of this stack (starter alpha-11) do not serve /mcp-manifest yet, so no manifest can be
+      # approved or bootstrapped; static takes the tools from the gateway configuration. Back to required with starter beta-2.
+      MCP_REGISTRY_MODE: static
+      MCP_ACTIVITY_CURSOR_KEY: ${MCP_ACTIVITY_CURSOR_KEY:?run make secrets}
     volumes:
+      - gateway-state:/app/state
+      - ${POLICY_KEYS_DIR:-../mcp-policies/keys/dev}/test-policies-main-dev.public.pem:/keys/test-policies-main-dev.public.pem:ro
+      - ${POLICY_KEYS_DIR:-../mcp-policies/keys/dev}/test-policies-overrides-dev.public.pem:/keys/test-policies-overrides-dev.public.pem:ro
       - ./certs/mcp-gateway:/certs/mcp-gateway:ro
       - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
@@ -442,11 +459,12 @@ services:
         aliases: ["${MCP_GATEWAY_INTERNAL_TLS_NAME}"]
     # Any answer of the public listener means Flyway and the context are done (Tomcat opens connectors last).
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/.well-known/oauth-protected-resource"]
+      # The glibc image (Cedar library) has no wget or curl; bash opens the socket.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /.well-known/oauth-protected-resource HTTP/1.0\\r\\n\\r\\n' >&3 && head -c 5 <&3 | grep -q HTTP"]
       interval: 3s
       timeout: 3s
       retries: 40
-      start_period: 5s
+      start_period: 15s
     depends_on:
       keycloak: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -615,48 +633,19 @@ services:
       timeout: 3s
       retries: 20
 
-  # Network namespace of the portal BFF (network_mode: service:idp-relay), hence also its network alias.
-  idp-relay:
-    profiles: [m2]
-    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
-    user: "101:101"
-    read_only: true
-    tmpfs: [/tmp]
-    environment:
-      KEYCLOAK_TLS_PORT: ${KEYCLOAK_TLS_PORT}
-    command:
-      - /bin/sh
-      - -c
-      - |
-        printf 'listen 127.0.0.1:%s ssl;\n' "$$KEYCLOAK_TLS_PORT" > /tmp/relay-listen.conf
-        exec nginx -g 'daemon off;'
-    volumes:
-      - ./proxy/idp-relay.conf:/etc/nginx/nginx.conf:ro
-      - ./certs/keycloak/tls.crt:/etc/nginx/tls/tls.crt:ro
-      - ./certs/keycloak/tls.key:/etc/nginx/tls/tls.key:ro
-      - ./certs/public-ca/ca.crt:/etc/nginx/tls/ca.crt:ro
-    networks:
-      core:
-        aliases: [portal-bff.internal]
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null --no-check-certificate --header \"Host: localhost:$$KEYCLOAK_TLS_PORT\" https://127.0.0.1:$$KEYCLOAK_TLS_PORT/realms/corp/.well-known/openid-configuration"]
-      interval: 3s
-      timeout: 3s
-      retries: 40
-    depends_on:
-      keycloak: {condition: service_healthy}
-
   portal-bff:
     profiles: [m2]
     image: ${MCP_PORTAL_BFF_IMAGE}
     pull_policy: never
     environment:
       PORTAL_PORT: "8080"
-      # Discovery runs at the issuer address; the idp-relay sharing this network namespace answers there. The
-      # OIDC client uses the JVM default truststore (portal.tls.truststore is for mTLS only), so the JVM gets the
-      # "dev public" CA through the standard javax.net.ssl properties.
+      # No discovery: the issuer is only compared with `iss`; the browser goes to the public https address, the
+      # BFF itself uses the plain-http alias of Keycloak on the core network.
       PORTAL_OIDC_ISSUER_URI: https://localhost:${KEYCLOAK_TLS_PORT}/realms/corp
-      JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/certs/public-ca/truststore.p12 -Djavax.net.ssl.trustStoreType=PKCS12 -Djavax.net.ssl.trustStorePassword=${TLS_STORE_PASSWORD:?run make secrets}
+      PORTAL_OIDC_AUTHORIZATION_URI: https://localhost:${KEYCLOAK_TLS_PORT}/realms/corp/protocol/openid-connect/auth
+      PORTAL_OIDC_TOKEN_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/token
+      PORTAL_OIDC_JWK_SET_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/certs
+      PORTAL_OIDC_END_SESSION_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/logout
       PORTAL_OIDC_CLIENT_ID: mcp-portal-bff
       PORTAL_OIDC_CLIENT_SECRET: ${KC_CLIENT_MCP_PORTAL_BFF_SECRET:?run make secrets}
       PORTAL_BROKER_URL: https://${MCP_BROKER_TLS_NAME}:8443
@@ -681,9 +670,10 @@ services:
     volumes:
       - ./certs/mcp-portal-bff:/certs/mcp-portal-bff:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
-      - ./certs/public-ca/truststore.p12:/certs/public-ca/truststore.p12:ro
       - ../mcp-portal/bff/dev:/dev-data:ro
-    network_mode: service:idp-relay
+    networks:
+      core:
+        aliases: [portal-bff.internal]
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/actuator/health"]
       interval: 3s
@@ -691,7 +681,7 @@ services:
       retries: 40
       start_period: 10s
     depends_on:
-      idp-relay: {condition: service_healthy}
+      keycloak: {condition: service_healthy}
       proxy: {condition: service_healthy}
 
   mcp-confluence:

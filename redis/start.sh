@@ -30,4 +30,4 @@ umask 077
   done
 } > "$acl"
 
-exec redis-server --aclfile "$acl" --appendonly no
+exec redis-server --aclfile "$acl" --appendonly yes --appendfsync everysec --maxmemory-policy noeviction

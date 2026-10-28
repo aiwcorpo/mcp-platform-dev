@@ -273,7 +273,16 @@ Opis: [docs/m3.md](docs/m3.md). Kontrakty 3.0.1. Kamienie:
 | --- | --- | --- | --- |
 | M3.1 | OpenBao (klucz Transit `mcp-authenticators`, polityka brokera), Redis (`redis/gateway.rules`), Keycloak (przeplyw `browser-corp`, `acr` `password`=1 / `mfa`=2, OTP dla alice/bob/carol, ziarna z `init-secrets.sh`), serwer paczek `policies` (:18747), mock Jiry `DELETE issue`, `scripts/totp.py` | zrobione | 11eaf3c |
 | M3.2 | `make m3` (37 kontroli infrastruktury + scenariusz Authenticatora z SKIP), `make otp`, `make reset-authenticator`, grupa `mcp-jira-destructive` dla alice, docs | zrobione | patrz git log |
-| M3.3 | integracja obrazow M3 (broker m3-6203b4b, BFF m3-c668b1e, gateway, mcp-jira z `delete_issue`), usuniecie `idp-relay` i `JAVA_TOOL_OPTIONS` BFF, pierwszy zielony scenariusz | czeka na obrazy gateway'a i serwera | |
+| M3.3 | integracja obrazow M3 (gateway m3-86bf670, broker m3-b4dd446, BFF m3-44dc221, web m3-de48d2f), bez `idp-relay`, Redis AOF + noeviction, wolumen stanu gateway'a, `MCP_POLICY_*` | zrobione; `make m2` 80/8 przez polityke klienta (nizej), mcp-jira bez `delete_issue` | patrz git log |
+
+Integracja M3.3 (2026-10-28), wyniki: `make proxy-test` 212; `make m1` 7 PASS; `make m3` 54 PASS / 0 FAIL / 2 SKIP (wykonanie
+`delete_issue` i powtorzenie kodu: `mcp-jira` bez narzedzia, kod przyjety, serwer odpowiada Invalid params); `make m2` 80 PASS /
+8 FAIL / 2 SKIP; `mcp-e2e/run-m2.sh` pada na F3, A5b, A7, A8, A13 i scenariuszach (ten sam powod).
+Przyczyna FAIL w m2 i run-m2: paczka polityk ws-09 (rewizja 20261028201639-742561e) ma `platform-client-not-allowed`
+(`forbid ... unless ["claude-code"].contains(context.client)`), a operacje C5 BFF-a (katalog, tworzenie linku) niosa `client` =
+`mcp-portal-bff`: gateway odpowiada `not_granted` w `virtual_server_change`, portal 403 `access_denied`, katalog pokazuje
+wszystkie narzedzia jako `denied`. Do rozstrzygniecia miedzy ws-05 (nie oceniac klienta dla operacji administracyjnych)
+a ws-09 (dopisac `mcp-portal-bff` albo ograniczyc regule do `Action::"call"`).
 
 Wartosci: `acr` MFA = `mfa` (zwykle logowanie `password`); `PORTAL_STEP_UP_ACR_VALUES=mfa` jest ustawione w compose.
 Zmiany na dzialajacym stosie bez `down`: ponowny przebieg `openbao-init`, `redis-sync-acl.sh`, odtworzony Keycloak

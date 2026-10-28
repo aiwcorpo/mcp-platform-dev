@@ -26,8 +26,18 @@ def seconds_left(at=None):
     return STEP - (time.time() if at is None else at) % STEP
 
 
+_last_step = {}
+
+
 def fresh_code(seed_base32, minimum_left=4):
-    """A code that stays valid for at least `minimum_left` seconds (waits for the next step otherwise)."""
+    """A code that stays valid for at least `minimum_left` seconds and was not handed out before in this process
+    (Keycloak and the broker accept every step once, so a second login in the same step would be refused; the call
+    waits for the next step instead)."""
     if seconds_left() < minimum_left:
         time.sleep(seconds_left() + 0.2)
+    step = int(time.time() // STEP)
+    if _last_step.get(seed_base32) == step:
+        time.sleep(seconds_left() + 0.2)
+        step += 1
+    _last_step[seed_base32] = step
     return code(seed_base32)

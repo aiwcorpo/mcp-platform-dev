@@ -26,7 +26,7 @@ Usługi mają nazwy usług i aliasy `*.internal`.
 | Portal (zarezerwowany) | `http://localhost:18090` | | redirect URI klienta `mcp-portal-bff` (BFF uruchomiony na hoście) |
 | Proxy (jedna domena, M2) | `https://localhost:18745` (adres publiczny), `http://localhost:18740` (te same trasy, bez TLS) | `proxy.internal:8080` | `make up-m2`; certyfikat CA "dev public" (`make trust-ca`); `/` web, `/api` BFF, `/s/` `/v/` `/.well-known/oauth-protected-resource*` gateway; patrz [m2.md](m2.md) |
 | Portal web (M2) | | `http://portal-web:8080` | statyczny serwer SPA za proxy |
-| Portal BFF (M2) | | `http://portal-bff.internal:8080` | za proxy, `PORTAL_PORT=8080`; działa w przestrzeni sieciowej `idp-relay` (patrz [m2.md](m2.md)) |
+| Portal BFF (M2) | | `http://portal-bff.internal:8080` | za proxy, `PORTAL_PORT=8080`; sieć `core`, OIDC bez discovery (patrz [m3.md](m3.md)) |
 | Mock GitLaba (OAuth + REST) | `http://localhost:18741` | `http://gitlab.internal:8080` | authorize otwiera przeglądarka (port hosta), reszta z sieci compose |
 | Mock Confluence | `http://localhost:18742` | `http://confluence.internal:8080` | |
 | Mock Service Desku | `http://localhost:18743` | `http://servicedesk.internal:8080` | sieć `servers` |
@@ -50,9 +50,8 @@ Usługi mają nazwy usług i aliasy `*.internal`.
   `https://localhost:18746/realms/corp`. W Spring Boot: `spring.security.oauth2.resourceserver.jwt.jwk-set-uri`
   plus `issuer-uri` (przy ustawionym `jwk-set-uri` Boot nie robi discovery, tylko sprawdza `iss`).
 - komponent uruchomiony na hoście może używać zwykłego `issuer-uri` (https, wymaga zaufania do `certs/public-ca/ca.crt`);
-- wyjątek: BFF portalu robi discovery pod adresem `iss`, więc działa w przestrzeni sieciowej `idp-relay`, który słucha
-  na `https://localhost:18746` w tym kontenerze; BFF dostaje `certs/public-ca/truststore.p12` przez `JAVA_TOOL_OPTIONS`
-  (OIDC używa domyślnego truststore JVM, `PORTAL_TLS_TRUSTSTORE` dotyczy tylko mTLS).
+- BFF portalu (M3) nie robi discovery: `PORTAL_OIDC_AUTHORIZATION_URI` to adres publiczny (dla przeglądarki), token, JWKS i
+  wylogowanie idą przez `http://keycloak:8080`, `PORTAL_OIDC_ISSUER_URI` jest tylko porównywany z `iss`.
 
 Metadane serwera autoryzacji (RFC 8414) są pod
 `https://localhost:18746/realms/corp/.well-known/oauth-authorization-server` i w wariancie z wstawioną ścieżką
