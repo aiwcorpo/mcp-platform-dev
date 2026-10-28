@@ -308,6 +308,22 @@ Przeglad Opus dev M3 (0 CRITICAL/HIGH, 3 MEDIUM, 11 LOW) i rotacja, poprawione w
 | L-4 gateway po http do paczek | bez zmian (ruch w sieci `core`, podpis chroni archiwum); do decyzji |
 | Rotacja | ziarna OTP i haslo admina Keycloaka wygenerowane na nowo, Keycloak odtworzony (`sub` bez zmian) |
 
+Poprawki po przegladzie 6e0e83c (przygotowane, NIE zastosowane na dzialajacym stosie do zgody koordynatora): N-2 usunieta flaga
+`INTERNAL_JWT_ALLOW_TEST_KEYS` z piatki serwerow (gateway podpisuje JWT kluczami efemerycznymi), N-3 komentarz o metryce `mcp_server_devstack_active`,
+N-4 i N-5 testy w `make m3` na efektywnej konfiguracji compose (`compose.sh config`) i na wartosciach ziaren, `make admin-password` zamiast hasla admina w
+`make users`, N-6 `registry-refresh.sh` z liczba serwerow z compose i kodem 1 przy niekompletnym wyniku, N-7 polecenie rotacji i uwaga o Linuksie w `docs/m3.md`.
+Zastosowanie: `scripts/compose.sh --profile full --profile m2 up -d --no-deps --wait mcp-jira mcp-confluence mcp-gitlab mcp-servicedesk mcp-opensearch`
+(odtworzy piatke serwerow bez zmiany stanu rejestru; potem sprawdzic `tools/list`, `make m3`).
+
+Otwarte:
+- Odrzucanie kluczy dev ws-09 po odcisku SPKI przez odbiorcow (starter, gateway): lista publikowana przez ws-09/ws-00, nie w beta-4. Dzis ochrone daje profil
+  `devstack` z podwojna zgoda i nazwa `test-*`.
+- Straznik profilu w gatewayu (N-1, MEDIUM, zlecone ws-05): `test-*`, `MCP_REGISTRY_BOOTSTRAP` i http do paczek pod jednym profilem z podwojna zgoda. Po nowym obrazie
+  gatewaya ustawie w compose nowe zmienne (dzis `MCP_POLICY_ALLOW_TEST_KEYS`, `MCP_REGISTRY_BOOTSTRAP`, `MCP_ALLOW_PLAIN_HTTP` sa ustawione bez zgody).
+- L-6: stuby healthchecku (`broker-mock`, `gateway-admin-mock`, profil `infra`) nadal uzywaja certyfikatu `mcp-portal-bff` jako klienta healthchecku; osobna
+  tozsamosc wymaga zmiany sprawdzania w stubach z `mcp-contracts` (CN spoza listy daje 403), nie zrobione.
+- Gateway pobiera paczki po http :8080 (ruch w sieci `core`); serwery po https :8443.
+
 Stan biezacy (serwery beta-4: jira m3-d2f296a, confluence m3-3c7e396, gitlab m3-fedd052, servicedesk m3-ae76954, opensearch m3-3cd6bfa): proxy-test 212,
 m1 7 PASS, m2 88/0/2 SKIP, m3 65 PASS / 0 FAIL / 0 SKIP, run-m2.sh wszystkie PASS. `make m3` i `mcp-e2e/e2e/m3.py` uzywaja tego samego Authenticatora alice:
 nie uruchamiaj ich rownolegle.

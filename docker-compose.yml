@@ -596,13 +596,14 @@ services:
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
-      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) and
-      # nothing else; it logs a warning and marks the manifest. Never set outside mcp-platform-dev.
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) for
+      # policy bundles and nothing else; it logs a warning at every start and sets the metric mcp_server_devstack_active
+      # (the C6 manifest has no field for the environment). The gateway signs the internal JWT with ephemeral keys, so
+      # INTERNAL_JWT_ALLOW_TEST_KEYS is not set. Never set outside mcp-platform-dev.
       SPRING_PROFILES_ACTIVE: devstack
       MCP_DEVSTACK_ACKNOWLEDGED: "true"
       AIWCORPO_MCP_PLATFORM_DEVSTACK_ACKNOWLEDGED: "true"
       AIWCORPO_MCP_PLATFORM_POLICY_ALLOW_TEST_KEYS: "true"
-      AIWCORPO_MCP_PLATFORM_INTERNAL_JWT_ALLOW_TEST_KEYS: "true"
       MCP_INTERNAL_URL: https://mcp-jira.internal:8443/mcp
       MCP_ACCEPTED_CREDENTIAL_TYPES: user-secret
     volumes:
@@ -755,13 +756,14 @@ services:
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
-      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) and
-      # nothing else; it logs a warning and marks the manifest. Never set outside mcp-platform-dev.
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) for
+      # policy bundles and nothing else; it logs a warning at every start and sets the metric mcp_server_devstack_active
+      # (the C6 manifest has no field for the environment). The gateway signs the internal JWT with ephemeral keys, so
+      # INTERNAL_JWT_ALLOW_TEST_KEYS is not set. Never set outside mcp-platform-dev.
       SPRING_PROFILES_ACTIVE: devstack
       MCP_DEVSTACK_ACKNOWLEDGED: "true"
       AIWCORPO_MCP_PLATFORM_DEVSTACK_ACKNOWLEDGED: "true"
       AIWCORPO_MCP_PLATFORM_POLICY_ALLOW_TEST_KEYS: "true"
-      AIWCORPO_MCP_PLATFORM_INTERNAL_JWT_ALLOW_TEST_KEYS: "true"
       MCP_INTERNAL_URL: https://mcp-confluence.internal:8443/mcp
       MCP_ACCEPTED_CREDENTIAL_TYPES: user-secret
     volumes:
@@ -797,13 +799,14 @@ services:
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
-      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) and
-      # nothing else; it logs a warning and marks the manifest. Never set outside mcp-platform-dev.
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) for
+      # policy bundles and nothing else; it logs a warning at every start and sets the metric mcp_server_devstack_active
+      # (the C6 manifest has no field for the environment). The gateway signs the internal JWT with ephemeral keys, so
+      # INTERNAL_JWT_ALLOW_TEST_KEYS is not set. Never set outside mcp-platform-dev.
       SPRING_PROFILES_ACTIVE: devstack
       MCP_DEVSTACK_ACKNOWLEDGED: "true"
       AIWCORPO_MCP_PLATFORM_DEVSTACK_ACKNOWLEDGED: "true"
       AIWCORPO_MCP_PLATFORM_POLICY_ALLOW_TEST_KEYS: "true"
-      AIWCORPO_MCP_PLATFORM_INTERNAL_JWT_ALLOW_TEST_KEYS: "true"
       MCP_INTERNAL_URL: https://mcp-gitlab.internal:8443/mcp
       MCP_ACCEPTED_CREDENTIAL_TYPES: user-secret,user-oauth
     volumes:
@@ -840,13 +843,14 @@ services:
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
-      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) and
-      # nothing else; it logs a warning and marks the manifest. Never set outside mcp-platform-dev.
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) for
+      # policy bundles and nothing else; it logs a warning at every start and sets the metric mcp_server_devstack_active
+      # (the C6 manifest has no field for the environment). The gateway signs the internal JWT with ephemeral keys, so
+      # INTERNAL_JWT_ALLOW_TEST_KEYS is not set. Never set outside mcp-platform-dev.
       SPRING_PROFILES_ACTIVE: devstack
       MCP_DEVSTACK_ACKNOWLEDGED: "true"
       AIWCORPO_MCP_PLATFORM_DEVSTACK_ACKNOWLEDGED: "true"
       AIWCORPO_MCP_PLATFORM_POLICY_ALLOW_TEST_KEYS: "true"
-      AIWCORPO_MCP_PLATFORM_INTERNAL_JWT_ALLOW_TEST_KEYS: "true"
       MCP_INTERNAL_URL: https://mcp-servicedesk.internal:8443/mcp
       MCP_ACCEPTED_CREDENTIAL_TYPES: service-account
     volumes:
@@ -882,13 +886,14 @@ services:
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
-      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) and
-      # nothing else; it logs a warning and marks the manifest. Never set outside mcp-platform-dev.
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) for
+      # policy bundles and nothing else; it logs a warning at every start and sets the metric mcp_server_devstack_active
+      # (the C6 manifest has no field for the environment). The gateway signs the internal JWT with ephemeral keys, so
+      # INTERNAL_JWT_ALLOW_TEST_KEYS is not set. Never set outside mcp-platform-dev.
       SPRING_PROFILES_ACTIVE: devstack
       MCP_DEVSTACK_ACKNOWLEDGED: "true"
       AIWCORPO_MCP_PLATFORM_DEVSTACK_ACKNOWLEDGED: "true"
       AIWCORPO_MCP_PLATFORM_POLICY_ALLOW_TEST_KEYS: "true"
-      AIWCORPO_MCP_PLATFORM_INTERNAL_JWT_ALLOW_TEST_KEYS: "true"
       MCP_INTERNAL_URL: https://mcp-opensearch.internal:8443/mcp
       MCP_ACCEPTED_CREDENTIAL_TYPES: user-secret
     volumes:

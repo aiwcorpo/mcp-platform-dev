@@ -118,12 +118,27 @@ def check_keycloak_mfa():
 
 
 def check_secrets_hygiene():
-    out = subprocess.run(["make", "-s", "users"], cwd=ROOT, capture_output=True, text=True).stdout.lower()
-    record("make users prints passwords but no OTP seed", "alice" in out and "otp_seed" not in out, "")
-    compose = (ROOT / "docker-compose.yml").read_text()
-    keys = set(re.findall(r"POLICY_KEYS_DIR:-([^}]+)\}/([\w.-]+\.pem)", compose))
-    record("compose: every policy key mounted into a container comes from the dev key directory of ws-09 (workaround, see docs/m3.md)",
-           bool(keys) and all(d == "../mcp-policies/keys/dev" and (POLICY_REPO / "keys" / "dev" / f).exists() for d, f in keys), str(sorted(keys))[:100])
+    out = subprocess.run(["make", "-s", "users"], cwd=ROOT, capture_output=True, text=True).stdout
+    seeds = [v for k, v in mcpdev.CONFIG.items() if k.startswith("KC_USER_") and k.endswith("_OTP_SEED")]
+    record("make users prints the passwords, no OTP seed value, no otpauth URI, no admin password",
+           "alice" in out and len(seeds) >= 3 and not any(seed in out for seed in seeds) and "otpauth" not in out
+           and mcpdev.CONFIG.get("KC_BOOTSTRAP_ADMIN_PASSWORD", "-") not in out, "")
+    config = json.loads(subprocess.run([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2", "config", "--format", "json"],
+                                       capture_output=True, text=True).stdout)
+    dev_keys = (POLICY_REPO / "keys" / "dev").resolve()
+    servers = {name: svc for name, svc in config["services"].items() if "MCP_INTERNAL_URL" in (svc.get("environment") or {})}
+    problems = []
+    for name, svc in servers.items():
+        env = svc["environment"]
+        mount = next((v for v in svc.get("volumes", []) if v.get("target") == env.get("MCP_POLICY_PUBLIC_KEY_FILE")), None)
+        if not env.get("MCP_POLICY_KEY_ID", "").startswith("test-"):
+            problems.append(f"{name}: key id {env.get('MCP_POLICY_KEY_ID')}")
+        if mount is None or (ROOT / mount["source"]).resolve().parent != dev_keys:
+            problems.append(f"{name}: key file not from mcp-policies/keys/dev")
+        if env.get("SPRING_PROFILES_ACTIVE") != "devstack" or "AIWCORPO_MCP_PLATFORM_INTERNAL_JWT_ALLOW_TEST_KEYS" in env:
+            problems.append(f"{name}: profile or JWT test key flag")
+    record("compose (effective configuration): every MCP server runs devstack, with a test-* id and a key file from the dev keys of ws-09, "
+           "without the internal JWT test key flag", len(servers) >= 5 and not problems, "; ".join(problems)[:200])
 
 
 def check_policy_server():

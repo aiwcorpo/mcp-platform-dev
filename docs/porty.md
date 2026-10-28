@@ -12,7 +12,7 @@ Usługi mają nazwy usług i aliasy `*.internal`.
 | --- | --- | --- | --- |
 | Keycloak (realm `corp`, adres publiczny) | `https://localhost:18746` (`KEYCLOAK_TLS_PORT`) | `https://keycloak:8443` (tylko dla nazwy `localhost`, praktycznie niepotrzebny) | `iss` zawsze `https://localhost:18746/realms/corp`; certyfikat CA "dev public"; przeglądarki i Claude Code |
 | Keycloak (http) | `http://localhost:18080` | `http://keycloak:8080` | backchannel kontenerów (JWKS, token) i skrypty (`make token`, admin API); formularze logowania stąd działają, ale `iss` i adresy w discovery są https |
-| Konsola admina Keycloak | `https://localhost:18746/admin` | | login z `make users` |
+| Konsola admina Keycloak | `https://localhost:18746/admin` | | login z `make admin-password` |
 | OpenBao (dev) | `http://localhost:18200` | `http://openbao:8200` | root token: `BAO_ROOT_TOKEN` w `.secrets/dev.env`; audyt na stdout kontenera |
 | Redis | `localhost:16379` | `redis:6379` | ACL per komponent, patrz [integracja.md](integracja.md#redis-użytkownicy-i-prefiksy-propozycja-ws-01-dla-ws-02-ws-05-ws-06) |
 | PostgreSQL | `localhost:15432` | `postgres:5432` | bazy `gateway` i `broker`, użytkownicy o tych samych nazwach |

@@ -14,7 +14,7 @@ COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira
 
 .PHONY: help secrets certs contracts up up-core up-full down reset clean ps logs token claims exchange pat seed \
         smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test trust-ca mocks-test m2 mock-auth \
-        m3 otp reset-authenticator registry-refresh
+        m3 otp reset-authenticator registry-refresh admin-password
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -98,8 +98,7 @@ smoke: ## smoke test of the running profile infra
 
 users: ## test users and their generated passwords (NOT FOR PRODUCTION)
 	@grep -E '^KC_USER_[A-Z]+_PASSWORD=' .secrets/dev.env | sed -E 's/^KC_USER_([A-Z]+)_PASSWORD=/\1 /' | tr 'A-Z' 'a-z' | awk '{printf "  %-8s %s\n", $$1, $$2}'
-	@grep '^KC_BOOTSTRAP_ADMIN' .secrets/dev.env | sed 's/^/  /'
-	@echo '  (OTP of the test users: make otp USER=alice prints the current code, never the seed)'
+	@echo '  (OTP of the test users: make otp USER=alice prints the current code, never the seed; admin console: make admin-password)'
 
 images-m2: ## build the images of profile m2 (portal BFF and web, MCP servers of ws-04) from HEAD of the sibling repos
 	@./scripts/build-images-m2.sh
@@ -143,3 +142,6 @@ reset-authenticator: ## remove the Authenticator registration of USER at the bro
 
 registry-refresh: ## dev only: drop the manifests the gateway took over by bootstrap and let it fetch them again (after a tool definition changed)
 	@./scripts/registry-refresh.sh
+
+admin-password: ## login and password of the Keycloak admin console (master realm; it can change the step-up flow, so it is not part of make users)
+	@grep '^KC_BOOTSTRAP_ADMIN' .secrets/dev.env | sed 's/^/  /'
