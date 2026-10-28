@@ -3,7 +3,9 @@
 # Layout used by the credential broker (ws-06):
 #   KV v2  secret/        connections: secret/data/mcp/connections/<sub>/<system>
 #   KV v2  secret/data/mcp/oauth-clients/<system>: OAuth client of the broker at a provider (read only for the broker)
-#   Transit transit/      key mcp-credential-broker (envelope encryption of stored secrets)
+#   Transit transit/      key mcp-credential-broker (encryption of stored secrets)
+#   Transit transit/      key mcp-authenticators (TOTP seeds of the Authenticator, contracts 3.0.1 C4: Transit only, no
+#                         envelope); ciphertext under secret/data/mcp/authenticators/<sha256(sub)>[/...]
 #   AppRole mcp-credential-broker with policy limited to the above
 #   (audit device to stdout is declared in openbao/audit.hcl; OpenBao 2.x refuses it via API)
 # Secrets go through stdin (`key=-`), never argv.
@@ -17,6 +19,9 @@ bao secrets list -format=json | grep -q '"secret/"' || bao secrets enable -path=
 bao secrets list -format=json | grep -q '"transit/"' || bao secrets enable transit
 bao read transit/keys/mcp-credential-broker >/dev/null 2>&1 \
   || bao write -f transit/keys/mcp-credential-broker type=aes256-gcm96
+# A separate key: seeds can be rotated or revoked without touching stored credentials.
+bao read transit/keys/mcp-authenticators >/dev/null 2>&1 \
+  || bao write -f transit/keys/mcp-authenticators type=aes256-gcm96
 
 bao policy write mcp-credential-broker - <<'HCL'
 path "secret/data/mcp/connections/*"     { capabilities = ["create", "read", "update", "delete"] }
@@ -24,6 +29,10 @@ path "secret/metadata/mcp/connections/*" { capabilities = ["read", "list", "dele
 path "secret/data/mcp/oauth-clients/gitlab" { capabilities = ["read"] }
 path "transit/encrypt/mcp-credential-broker" { capabilities = ["update"] }
 path "transit/decrypt/mcp-credential-broker" { capabilities = ["update"] }
+path "secret/data/mcp/authenticators/*"     { capabilities = ["create", "read", "update", "delete"] }
+path "secret/metadata/mcp/authenticators/*" { capabilities = ["read", "list", "delete"] }
+path "transit/encrypt/mcp-authenticators" { capabilities = ["update"] }
+path "transit/decrypt/mcp-authenticators" { capabilities = ["update"] }
 HCL
 
 bao auth list -format=json | grep -q '"approle/"' || bao auth enable approle
@@ -45,4 +54,4 @@ fi
 # Client of the GitLab mock (mocks/systems/gitlab.py); the same secret is in the mock's environment.
 printf '%s' "$GITLAB_OAUTH_CLIENT_SECRET" | bao kv put secret/mcp/oauth-clients/gitlab client_id=mcp-broker client_secret=- >/dev/null
 
-echo "openbao-init: kv v2 at secret/, transit key mcp-credential-broker, approle mcp-credential-broker ready"
+echo "openbao-init: kv v2 at secret/, transit keys mcp-credential-broker and mcp-authenticators, approle mcp-credential-broker ready"

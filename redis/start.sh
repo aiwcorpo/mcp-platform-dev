@@ -14,7 +14,10 @@ umask 077
 {
   echo "user default off resetkeys resetchannels -@all"
   echo "user admin on >$REDIS_ADMIN_PASSWORD ~* &* +@all"
-  echo "user gateway on >$REDIS_GATEWAY_PASSWORD resetkeys ~gw:* resetchannels &credential.invalidated $data_cmds +subscribe +unsubscribe"
+  # Confirmations (C11: pending calls, traces per sub, counters) need sets, sorted sets, WATCH and scripts for the
+  # atomic steps the contract requires; scripts are checked against ~gw:* key by key, and without +script and
+  # +function nothing can be loaded or flushed. Rules shared with scripts/redis-sync-acl.sh, mounted at /gateway.rules.
+  echo "user gateway on >$REDIS_GATEWAY_PASSWORD $(cat /gateway.rules)"
   # EVAL/EVALSHA for the atomic lock release; Redis checks the keys a script touches against ~broker:*, and
   # without +script and +function nothing can be loaded or flushed.
   echo "user broker on >$REDIS_BROKER_PASSWORD $(cat /broker.rules)"

@@ -8,6 +8,8 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/.secrets/dev.env"
 
 rnd() { openssl rand -hex "${1:-24}"; }
+# 160-bit TOTP seed in Base32 (RFC 4648, as authenticator apps expect it)
+seed32() { python3 -c 'import base64, os; print(base64.b32encode(os.urandom(20)).decode())'; }
 
 wanted() {
   cat <<EOF
@@ -17,6 +19,9 @@ KC_USER_ALICE_PASSWORD=alice-$(rnd 6)
 KC_USER_BOB_PASSWORD=bob-$(rnd 6)
 KC_USER_CAROL_PASSWORD=carol-$(rnd 6)
 KC_USER_MALLORY_PASSWORD=mallory-$(rnd 6)
+KC_USER_ALICE_OTP_SEED=$(seed32)
+KC_USER_BOB_OTP_SEED=$(seed32)
+KC_USER_CAROL_OTP_SEED=$(seed32)
 KC_CLIENT_MCP_GATEWAY_SECRET=$(rnd)
 KC_CLIENT_MCP_PORTAL_BFF_SECRET=$(rnd)
 KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET=$(rnd)

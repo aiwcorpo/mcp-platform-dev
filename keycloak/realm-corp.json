@@ -887,6 +887,12 @@
           "type": "password",
           "value": "${KC_USER_ALICE_PASSWORD}",
           "temporary": false
+        },
+        {
+          "type": "otp",
+          "userLabel": "dev authenticator (seed in .secrets/dev.env)",
+          "secretData": "{\"value\":\"${KC_USER_ALICE_OTP_SEED}\"}",
+          "credentialData": "{\"subType\":\"totp\",\"digits\":6,\"period\":30,\"algorithm\":\"HmacSHA1\",\"secretEncoding\":\"BASE32\"}"
         }
       ],
       "requiredActions": [],
@@ -917,6 +923,12 @@
           "type": "password",
           "value": "${KC_USER_BOB_PASSWORD}",
           "temporary": false
+        },
+        {
+          "type": "otp",
+          "userLabel": "dev authenticator (seed in .secrets/dev.env)",
+          "secretData": "{\"value\":\"${KC_USER_BOB_OTP_SEED}\"}",
+          "credentialData": "{\"subType\":\"totp\",\"digits\":6,\"period\":30,\"algorithm\":\"HmacSHA1\",\"secretEncoding\":\"BASE32\"}"
         }
       ],
       "requiredActions": [],
@@ -941,6 +953,12 @@
           "type": "password",
           "value": "${KC_USER_CAROL_PASSWORD}",
           "temporary": false
+        },
+        {
+          "type": "otp",
+          "userLabel": "dev authenticator (seed in .secrets/dev.env)",
+          "secretData": "{\"value\":\"${KC_USER_CAROL_OTP_SEED}\"}",
+          "credentialData": "{\"subType\":\"totp\",\"digits\":6,\"period\":30,\"algorithm\":\"HmacSHA1\",\"secretEncoding\":\"BASE32\"}"
         }
       ],
       "requiredActions": [],
@@ -1265,5 +1283,126 @@
         "config": {}
       }
     ]
-  }
+  },
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "otpPolicyLookAheadWindow": 1,
+  "attributes": {
+    "acr.loa.map": "{\"password\":1,\"mfa\":2}"
+  },
+  "authenticationFlows": [
+    {
+      "alias": "browser-corp",
+      "description": "Browser login with step-up: level 1 password, level 2 password and OTP",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "authenticatorFlow": false,
+          "authenticator": "auth-cookie"
+        },
+        {
+          "requirement": "ALTERNATIVE",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "authenticatorFlow": true,
+          "flowAlias": "browser-corp forms"
+        }
+      ]
+    },
+    {
+      "alias": "browser-corp forms",
+      "description": "Level conditions",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "CONDITIONAL",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "authenticatorFlow": true,
+          "flowAlias": "browser-corp level 1"
+        },
+        {
+          "requirement": "CONDITIONAL",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "authenticatorFlow": true,
+          "flowAlias": "browser-corp level 2"
+        }
+      ]
+    },
+    {
+      "alias": "browser-corp level 1",
+      "description": "Password",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "authenticatorFlow": false,
+          "authenticator": "conditional-level-of-authentication",
+          "authenticatorConfig": "corp-loa-1"
+        },
+        {
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "authenticatorFlow": false,
+          "authenticator": "auth-username-password-form"
+        }
+      ]
+    },
+    {
+      "alias": "browser-corp level 2",
+      "description": "OTP",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "authenticatorFlow": false,
+          "authenticator": "conditional-level-of-authentication",
+          "authenticatorConfig": "corp-loa-2"
+        },
+        {
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "authenticatorFlow": false,
+          "authenticator": "auth-otp-form"
+        }
+      ]
+    }
+  ],
+  "authenticatorConfig": [
+    {
+      "alias": "corp-loa-1",
+      "config": {
+        "loa-condition-level": "1",
+        "loa-max-age": "36000"
+      }
+    },
+    {
+      "alias": "corp-loa-2",
+      "config": {
+        "loa-condition-level": "2",
+        "loa-max-age": "0"
+      }
+    }
+  ],
+  "browserFlow": "browser-corp"
 }

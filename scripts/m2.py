@@ -335,15 +335,24 @@ class Portal:
             return status, headers, raw, url
         raise mcpdev.Fail("too many redirects")
 
-    def login(self, user):
-        status, _, raw, url = self.follow(f"{PROXY}/api/v1/auth/login?returnPath=/")
+    def login(self, user, step_up=False):
+        """OIDC login through the BFF. step_up=True is the BFF's step-up (max_age=0 and the acr of the realm), which
+        makes Keycloak ask for the OTP; the code comes from the dev seed of the user."""
+        status, _, raw, url = self.follow(f"{PROXY}/api/v1/auth/login?returnPath=/" + ("&stepUp=true" if step_up else ""))
         form = mcpdev.LoginFormParser()
         form.feed(raw.decode("utf-8", "replace"))
         if not form.action:
             raise mcpdev.Fail(f"no Keycloak login form (HTTP {status} at {url.split('?')[0]})")
         body = urllib.parse.urlencode({"username": user, "password": mcpdev.user_password(user), "credentialId": ""}).encode()
         req = urllib.request.Request(form.action, data=body, method="POST")
-        status, headers, _ = self._raw(req)
+        status, headers, raw = self._raw(req)
+        if status == 200:
+            otp_form = mcpdev.LoginFormParser("kc-otp-login-form")
+            otp_form.feed(raw.decode("utf-8", "replace"))
+            if not (step_up and otp_form.action):
+                raise mcpdev.Fail(f"Keycloak login of {user}: unexpected form (HTTP 200)")
+            body = urllib.parse.urlencode({"otp": mcpdev.totp.fresh_code(mcpdev.otp_seed(user)), "login": "Sign In"}).encode()
+            status, headers, raw = self._raw(urllib.request.Request(otp_form.action, data=body, method="POST"))
         if status not in (302, 303):
             raise mcpdev.Fail(f"Keycloak login of {user}: HTTP {status}")
         return self.follow(urllib.parse.urljoin(form.action, headers["Location"]))

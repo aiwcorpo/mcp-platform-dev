@@ -209,6 +209,14 @@ data.append({"name": "transition not valid", "priority": 7,
              "request": {"method": "POST", "urlPathPattern": transitions_path, "headers": auth_required},
              "response": {"status": 400, "headers": JSON,
                           "jsonBody": {"errorMessages": ["Transition id is not valid for this issue."], "errors": {}}}})
+# DELETE issue (DESTRUCTIVE tool `delete_issue`): 204 as in Jira DC; the issue stays readable afterwards, the
+# request journal of the mock is the evidence that the call reached Jira.
+data.append({"name": "delete issue", "priority": 5,
+             "request": {"method": "DELETE", "urlPathPattern": f"/rest/api/2/issue/({issue_idents})", "headers": auth_required},
+             "response": {"status": 204}})
+data.append({"name": "delete unknown issue", "priority": 9,
+             "request": {"method": "DELETE", "urlPathPattern": "/rest/api/2/issue/[^/]+", "headers": auth_required},
+             "response": not_found})
 data.append({"name": "comment or transitions of unknown issue", "priority": 9,
              "request": {"urlPathPattern": "/rest/api/2/issue/[^/]+/(comment|transitions)", "headers": auth_required},
              "response": not_found})

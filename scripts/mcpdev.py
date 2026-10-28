@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Dev helper for mcp-platform-dev (stdlib only).
 
-  token USER [--client C] [--claims]         access token via authorization code + PKCE (headless login)
+  token USER [--client C] [--claims] [--acr mfa]
+                                             access token via authorization code + PKCE (headless login)
+  otp USER [--uri]                           current TOTP code of a test user (dev seed), or the otpauth URI
   exchange USER --audience A [--requester R] token exchange (RFC 8693) of USER's token to audience A
   put-secret USER SYSTEM                     store a PAT for USER through the broker API (C4 PUT .../secret);
                                              the PAT comes from $MCP_PAT, default <user>-pat
@@ -36,6 +38,8 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import totp  # noqa: E402
 REALM = "corp"
 
 
@@ -117,13 +121,16 @@ class LoopbackCookiePolicy(http.cookiejar.DefaultCookiePolicy):
 
 
 class LoginFormParser(html.parser.HTMLParser):
-    def __init__(self):
+    """Action of the Keycloak form with the given id: kc-form-login (password) or kc-otp-login-form (OTP)."""
+
+    def __init__(self, form_id="kc-form-login"):
         super().__init__()
+        self.form_id = form_id
         self.action = None
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
-        if tag == "form" and attrs.get("id") == "kc-form-login":
+        if tag == "form" and attrs.get("id") == self.form_id:
             self.action = attrs.get("action")
 
 
@@ -158,15 +165,22 @@ def user_password(user):
     return os.environ.get("MCP_DEV_PASSWORD") or cfg(f"KC_USER_{user.upper()}_PASSWORD")
 
 
-def login(user, client_id="claude-code", scope="openid", password=None):
-    """Authorization code + PKCE S256, filling the Keycloak login form without a browser."""
+def otp_seed(user):
+    return cfg(f"KC_USER_{user.upper()}_OTP_SEED")
+
+
+def login(user, client_id="claude-code", scope="openid", password=None, acr_values=None, otp=False, max_age=None):
+    """Authorization code + PKCE S256, filling the Keycloak login form without a browser.
+
+    acr_values="mfa" asks for the step-up level of the realm (password + OTP); the OTP is generated from the seed of
+    the user in .secrets/dev.env (otp=True does the same when the realm asks for it without acr_values)."""
     client = CLIENTS[client_id]
     if not client["redirect_uri"]:
         raise Fail(f"client {client_id} has no browser flow")
     verifier = b64url(secrets.token_bytes(32))
     challenge = b64url(hashlib.sha256(verifier.encode()).digest())
     state = b64url(secrets.token_bytes(16))
-    query = urllib.parse.urlencode({
+    params = {
         "client_id": client_id,
         "response_type": "code",
         "redirect_uri": client["redirect_uri"],
@@ -174,7 +188,12 @@ def login(user, client_id="claude-code", scope="openid", password=None):
         "state": state,
         "code_challenge": challenge,
         "code_challenge_method": "S256",
-    })
+    }
+    if acr_values:
+        params["acr_values"] = acr_values
+    if max_age is not None:
+        params["max_age"] = str(max_age)
+    query = urllib.parse.urlencode(params)
     jar = http.cookiejar.CookieJar(policy=LoopbackCookiePolicy())
     browser = urllib.request.build_opener(HTTPS, urllib.request.HTTPCookieProcessor(jar),
                                           StopAtRedirectUri(client["redirect_uri"]))
@@ -186,14 +205,28 @@ def login(user, client_id="claude-code", scope="openid", password=None):
         raise Fail("no login form in Keycloak response (invalid client or redirect_uri?)")
 
     no_redirect = urllib.request.build_opener(HTTPS, urllib.request.HTTPCookieProcessor(jar), NoRedirect)
-    body = urllib.parse.urlencode({"username": user, "password": password or user_password(user), "credentialId": ""}).encode()
-    try:
-        no_redirect.open(form.action, data=body)
-        raise Fail(f"login of {user} failed (wrong password or required action)")
-    except urllib.error.HTTPError as e:
-        if e.code not in (302, 303):
-            raise Fail(f"login of {user} failed: HTTP {e.code}") from None
-        location = e.headers["Location"]
+
+    def submit(action, fields):
+        """(Location of the redirect, None) or (None, HTML of the next form)."""
+        try:
+            with no_redirect.open(action, data=urllib.parse.urlencode(fields).encode()) as resp:
+                return None, resp.read().decode()
+        except urllib.error.HTTPError as e:
+            if e.code not in (302, 303):
+                raise Fail(f"login of {user} failed: HTTP {e.code}") from None
+            return e.headers["Location"], None
+
+    location, page = submit(form.action, {"username": user, "password": password or user_password(user), "credentialId": ""})
+    if location is None:
+        otp_form = LoginFormParser("kc-otp-login-form")
+        otp_form.feed(page)
+        if not otp_form.action:
+            raise Fail(f"login of {user} failed (wrong password or required action)")
+        if not (acr_values or otp):
+            raise Fail(f"Keycloak asked {user} for an OTP; pass acr_values/otp")
+        location, page = submit(otp_form.action, {"otp": totp.fresh_code(otp_seed(user)), "login": "Sign In"})
+        if location is None:
+            raise Fail(f"OTP of {user} rejected")
     params = urllib.parse.parse_qs(urllib.parse.urlparse(location).query)
     if not location.startswith(client["redirect_uri"]) or params.get("state") != [state] or "code" not in params:
         raise Fail(f"unexpected redirect after login: {location.split('?')[0]}")
@@ -386,6 +419,11 @@ def main():
     p.add_argument("user")
     p.add_argument("--client", default="claude-code", choices=["claude-code", "mcp-portal-bff"])
     p.add_argument("--claims", action="store_true", help="print decoded claims instead of the token")
+    p.add_argument("--acr", help="acr_values to request, e.g. mfa (password + OTP of the dev seed)")
+
+    p = sub.add_parser("otp")
+    p.add_argument("user")
+    p.add_argument("--uri", action="store_true", help="print the otpauth URI of the seed (to add it to a real app) instead of the code")
 
     p = sub.add_parser("exchange")
     p.add_argument("user")
@@ -411,8 +449,14 @@ def main():
     args = parser.parse_args()
     try:
         if args.cmd == "token":
-            token = login(args.user, args.client)
+            token = login(args.user, args.client, acr_values=args.acr)
             print(json.dumps(decode_jwt(token), indent=2) if args.claims else token)
+        elif args.cmd == "otp":
+            if args.uri:
+                print(f"otpauth://totp/MCP%20Platform%20dev:{args.user}?secret={otp_seed(args.user)}&issuer=MCP%20Platform%20dev"
+                      "&algorithm=SHA1&digits=6&period=30")
+            else:
+                print(f"{totp.fresh_code(otp_seed(args.user))}  (valid for {int(totp.seconds_left())} s)")
         elif args.cmd == "exchange":
             # The gateway exchanges the AI client's token; the BFF exchanges its own session token.
             subject_client = "claude-code" if args.requester == "mcp-gateway" else "mcp-portal-bff"

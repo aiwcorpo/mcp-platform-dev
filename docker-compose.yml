@@ -78,6 +78,9 @@ services:
       KC_USER_BOB_PASSWORD: ${KC_USER_BOB_PASSWORD:?run make secrets}
       KC_USER_CAROL_PASSWORD: ${KC_USER_CAROL_PASSWORD:?run make secrets}
       KC_USER_MALLORY_PASSWORD: ${KC_USER_MALLORY_PASSWORD:?run make secrets}
+      KC_USER_ALICE_OTP_SEED: ${KC_USER_ALICE_OTP_SEED:?run make secrets}
+      KC_USER_BOB_OTP_SEED: ${KC_USER_BOB_OTP_SEED:?run make secrets}
+      KC_USER_CAROL_OTP_SEED: ${KC_USER_CAROL_OTP_SEED:?run make secrets}
       KC_CLIENT_MCP_GATEWAY_SECRET: ${KC_CLIENT_MCP_GATEWAY_SECRET:?run make secrets}
       KC_CLIENT_MCP_PORTAL_BFF_SECRET: ${KC_CLIENT_MCP_PORTAL_BFF_SECRET:?run make secrets}
       KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET: ${KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET:?run make secrets}
@@ -160,6 +163,7 @@ services:
       - ./redis/start.sh:/start.sh:ro
       - ./redis/portal-bff.rules:/portal-bff.rules:ro
       - ./redis/broker.rules:/broker.rules:ro
+      - ./redis/gateway.rules:/gateway.rules:ro
     ports:
       - 127.0.0.1:${REDIS_PORT}:6379
     networks:
@@ -287,6 +291,29 @@ services:
     networks:
       servers:
         aliases: [opensearch.internal]
+
+  # Policy bundle server (ws-09 publishes into POLICY_REPOSITORY_DIR, read-only here). In both networks: the
+  # gateway pulls from core, MCP servers (starter) from servers.
+  policies:
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    user: "101:101"
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ./policies/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${POLICY_REPOSITORY_DIR:-../mcp-policies/out/repository}:/srv/policies:ro
+    ports:
+      - 127.0.0.1:${POLICIES_PORT}:8080
+    networks:
+      core:
+        aliases: [policies.internal]
+      servers:
+        aliases: [policies.internal]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/__health"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
 
   # Contract stub of the credential broker (C4), served only over mTLS like the real broker.
   # It does not check the client CN or token contents (see mcp-contracts README). The request journal is
@@ -647,6 +674,9 @@ services:
       # X-Forwarded-* are trusted from the proxy only: the entrypoint resolves this name to its address.
       PORTAL_TRUSTED_PROXY_HOST: proxy.internal
       PORTAL_IGA_MOCK_FILE: /dev-data/iga-mock.yaml
+      # Step-up (registering the Authenticator): the realm reports the level reached in `acr`; "mfa" is the level 2 of
+      # keycloak/realm-corp.json (password + OTP).
+      PORTAL_STEP_UP_ACR_VALUES: mfa
       SPRING_PROFILES_ACTIVE: dev
     volumes:
       - ./certs/mcp-portal-bff:/certs/mcp-portal-bff:ro
