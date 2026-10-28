@@ -63,7 +63,7 @@ Compose zawsze przez `make` albo `scripts/compose.sh`: skrypt podaje `.env` i `.
 Stan: `make up-full` uruchamia prawdziwy gateway, broker i `mcp-jira`; `make m1` przechodzi F1, A1, A2, A3, A9 i A15
 (patrz [STATUS.md](STATUS.md)). Logowania w przeglądarce nie da się zautomatyzować, więc ta część jest dla człowieka.
 Sprawdzone bez przeglądarki: nagłówek 401 z `resource_metadata`, metadane RFC 9728 gateway'a
-(`authorization_servers = http://localhost:18080/realms/corp`), metadane RFC 8414 Keycloaka, żądanie autoryzacji
+(`authorization_servers = https://localhost:18746/realms/corp`), metadane RFC 8414 Keycloaka, żądanie autoryzacji
 klienta `claude-code` z PKCE i `resource` (formularz logowania), odrzucenie obcego redirect URI (400).
 
 Anonimowa dynamiczna rejestracja klienta (DCR) jest w tym realmie zablokowana (`403`), więc Claude Code używa

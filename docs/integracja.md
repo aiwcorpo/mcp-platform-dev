@@ -37,8 +37,8 @@ repo nie wpływają na środowisko.
 
 | Potrzeba | Skąd |
 | --- | --- |
-| walidacja tokenu C1 | JWKS `http://keycloak:8080/realms/corp/protocol/openid-connect/certs` (z hosta `http://localhost:18080/...`), `iss` `http://localhost:18080/realms/corp`, `aud` `mcp-gateway` |
-| RFC 9728 `authorization_servers` | `http://localhost:18080/realms/corp` (adres widziany przez Claude Code na hoście) |
+| walidacja tokenu C1 | JWKS `http://keycloak:8080/realms/corp/protocol/openid-connect/certs` (z hosta `http://localhost:18080/...`), `iss` `https://localhost:18746/realms/corp`, `aud` `mcp-gateway` |
+| RFC 9728 `authorization_servers` | `https://localhost:18746/realms/corp` (adres widziany przez Claude Code na hoście) |
 | `subjectToken` dla `resolve` (C4) | klient `mcp-gateway`, sekret `KC_CLIENT_MCP_GATEWAY_SECRET`, `audience=mcp-credential-broker` + `scope=mcp-credential-broker-audience`; innych audience gateway nie dostanie |
 | klient mTLS do brokera i serwerów MCP | `certs/mcp-gateway/keystore.p12` (CN `mcp-gateway`, EKU serverAuth+clientAuth), zaufanie `certs/ca/truststore.p12` |
 | nazwa brokera do weryfikacji | `MCP_BROKER_TLS_NAME` |

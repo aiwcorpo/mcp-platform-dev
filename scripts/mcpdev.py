@@ -10,7 +10,7 @@
   jira-auth                                  credentials that reached the Jira mock (from its request journal)
 
 Configuration comes from .env and .secrets/dev.env; environment variables override:
-  KEYCLOAK_URL         default http://localhost:$KEYCLOAK_PORT
+  KEYCLOAK_URL         default https://localhost:$KEYCLOAK_TLS_PORT (certificate of certs/public-ca)
   BROKER_URL           default https://localhost:$BROKER_MOCK_PORT (contract stub); real broker: https://localhost:$BROKER_PORT
   MCP_BROKER_TLS_NAME  name verified in the broker certificate, whatever host BROKER_URL uses (CC-035)
   MCP_CERTS_DIR        default ./certs
@@ -60,8 +60,14 @@ def cfg(key, default=None):
     return value
 
 
-KEYCLOAK_URL = cfg("KEYCLOAK_URL", f"http://localhost:{cfg('KEYCLOAK_PORT', '18080')}")
+KEYCLOAK_URL = cfg("KEYCLOAK_URL", f"https://localhost:{cfg('KEYCLOAK_TLS_PORT', '18746')}")
 OIDC = f"{KEYCLOAK_URL}/realms/{REALM}/protocol/openid-connect"
+
+# The public address of Keycloak has a certificate of the "dev public" CA; urlopen and the opener below trust it.
+_public_ca = ROOT / "certs" / "public-ca" / "ca.crt"
+HTTPS = urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=str(_public_ca)) if _public_ca.exists()
+                                    else ssl.create_default_context())
+urllib.request.install_opener(urllib.request.build_opener(HTTPS))
 
 # Redirect URIs registered in keycloak/realm-corp.json. They are never actually served: the login stops at
 # the redirect and reads the code from the Location header, like a browser handing it to the client.
@@ -170,7 +176,7 @@ def login(user, client_id="claude-code", scope="openid", password=None):
         "code_challenge_method": "S256",
     })
     jar = http.cookiejar.CookieJar(policy=LoopbackCookiePolicy())
-    browser = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar),
+    browser = urllib.request.build_opener(HTTPS, urllib.request.HTTPCookieProcessor(jar),
                                           StopAtRedirectUri(client["redirect_uri"]))
     with browser.open(f"{OIDC}/auth?{query}") as resp:
         page = resp.read().decode()
@@ -179,7 +185,7 @@ def login(user, client_id="claude-code", scope="openid", password=None):
     if not form.action:
         raise Fail("no login form in Keycloak response (invalid client or redirect_uri?)")
 
-    no_redirect = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect)
+    no_redirect = urllib.request.build_opener(HTTPS, urllib.request.HTTPCookieProcessor(jar), NoRedirect)
     body = urllib.parse.urlencode({"username": user, "password": password or user_password(user), "credentialId": ""}).encode()
     try:
         no_redirect.open(form.action, data=body)

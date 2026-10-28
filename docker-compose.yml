@@ -60,10 +60,16 @@ services:
     image: quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b
     command: ["start-dev", "--import-realm"]
     environment:
-      # Fixed frontend URL: `iss` is the same for tokens obtained from the host and from containers.
-      # Containers reach the backchannel (token, JWKS) at http://keycloak:8080.
-      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT}
+      # Fixed https frontend URL (Safari drops the Secure cookies of a plain-http Keycloak): `iss` is the same for
+      # tokens obtained from the host and from containers. Browsers use https://localhost:${KEYCLOAK_TLS_PORT}
+      # (certificate of the "dev public" CA, plain-http port 8080 stays for scripts and the backchannel); containers
+      # reach token and JWKS at http://keycloak:8080 without trusting any CA.
+      KC_HOSTNAME: https://localhost:${KEYCLOAK_TLS_PORT}
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTPS_CERTIFICATE_FILE: /certs/keycloak/tls.crt
+      KC_HTTPS_CERTIFICATE_KEY_FILE: /certs/keycloak/tls.key
+      # With https enabled the management interface (health, port 9000) switches to https as well; the healthcheck below is plain.
+      KC_HTTP_MANAGEMENT_SCHEME: http
       KC_HEALTH_ENABLED: "true"
       KC_LOG_LEVEL: info
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:?run make secrets}
@@ -83,8 +89,11 @@ services:
       PROXY_TLS_PORT: ${PROXY_TLS_PORT}
     volumes:
       - ./keycloak/realm-corp.json:/opt/keycloak/data/import/realm-corp.json:ro
+      - ./certs/keycloak/tls.crt:/certs/keycloak/tls.crt:ro
+      - ./certs/keycloak/tls.key:/certs/keycloak/tls.key:ro
     ports:
       - 127.0.0.1:${KEYCLOAK_PORT}:8080
+      - 127.0.0.1:${KEYCLOAK_TLS_PORT}:8443
     networks:
       core:
         aliases: [keycloak.internal]
@@ -270,6 +279,7 @@ services:
     <<: *system-mock
     environment:
       MOCK_SYSTEM: opensearch
+      MOCK_OPENSEARCH_ISSUER: https://localhost:${KEYCLOAK_TLS_PORT}/realms/corp
       PYTHONDONTWRITEBYTECODE: "1"
       MOCK_ADMIN_PASSWORD: ${MOCK_ADMIN_PASSWORD:?run make secrets}
     ports:
@@ -356,7 +366,7 @@ services:
     image: ${MCP_GATEWAY_IMAGE}
     pull_policy: never
     environment:
-      MCP_OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/corp
+      MCP_OIDC_ISSUER: https://localhost:${KEYCLOAK_TLS_PORT}/realms/corp
       MCP_OIDC_JWKS_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/certs
       MCP_OIDC_TOKEN_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/token
       MCP_OIDC_AUDIENCE: mcp-gateway
@@ -420,7 +430,7 @@ services:
     image: ${MCP_CREDENTIAL_BROKER_IMAGE}
     pull_policy: never
     environment:
-      MCP_OIDC_ISSUER: http://localhost:${KEYCLOAK_PORT}/realms/corp
+      MCP_OIDC_ISSUER: https://localhost:${KEYCLOAK_TLS_PORT}/realms/corp
       MCP_OIDC_JWKS_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/certs
       MCP_OIDC_TOKEN_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/token
       MCP_OIDC_AUDIENCE: mcp-credential-broker
@@ -585,13 +595,24 @@ services:
     user: "101:101"
     read_only: true
     tmpfs: [/tmp]
+    environment:
+      KEYCLOAK_TLS_PORT: ${KEYCLOAK_TLS_PORT}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        printf 'listen 127.0.0.1:%s ssl;\n' "$$KEYCLOAK_TLS_PORT" > /tmp/relay-listen.conf
+        exec nginx -g 'daemon off;'
     volumes:
       - ./proxy/idp-relay.conf:/etc/nginx/nginx.conf:ro
+      - ./certs/keycloak/tls.crt:/etc/nginx/tls/tls.crt:ro
+      - ./certs/keycloak/tls.key:/etc/nginx/tls/tls.key:ro
+      - ./certs/public-ca/ca.crt:/etc/nginx/tls/ca.crt:ro
     networks:
       core:
         aliases: [portal-bff.internal]
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:18080/realms/corp/.well-known/openid-configuration"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null --no-check-certificate --header \"Host: localhost:$$KEYCLOAK_TLS_PORT\" https://127.0.0.1:$$KEYCLOAK_TLS_PORT/realms/corp/.well-known/openid-configuration"]
       interval: 3s
       timeout: 3s
       retries: 40
@@ -604,8 +625,11 @@ services:
     pull_policy: never
     environment:
       PORTAL_PORT: "8080"
-      # Discovery runs at the issuer address; the idp-relay sharing this network namespace answers there.
-      PORTAL_OIDC_ISSUER_URI: http://localhost:${KEYCLOAK_PORT}/realms/corp
+      # Discovery runs at the issuer address; the idp-relay sharing this network namespace answers there. The
+      # OIDC client uses the JVM default truststore (portal.tls.truststore is for mTLS only), so the JVM gets the
+      # "dev public" CA through the standard javax.net.ssl properties.
+      PORTAL_OIDC_ISSUER_URI: https://localhost:${KEYCLOAK_TLS_PORT}/realms/corp
+      JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/certs/public-ca/truststore.p12 -Djavax.net.ssl.trustStoreType=PKCS12 -Djavax.net.ssl.trustStorePassword=${TLS_STORE_PASSWORD:?run make secrets}
       PORTAL_OIDC_CLIENT_ID: mcp-portal-bff
       PORTAL_OIDC_CLIENT_SECRET: ${KC_CLIENT_MCP_PORTAL_BFF_SECRET:?run make secrets}
       PORTAL_BROKER_URL: https://${MCP_BROKER_TLS_NAME}:8443
@@ -627,6 +651,7 @@ services:
     volumes:
       - ./certs/mcp-portal-bff:/certs/mcp-portal-bff:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
+      - ./certs/public-ca/truststore.p12:/certs/public-ca/truststore.p12:ro
       - ../mcp-portal/bff/dev:/dev-data:ro
     network_mode: service:idp-relay
     healthcheck:

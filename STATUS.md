@@ -214,7 +214,7 @@ Powód: Safari nie zapisuje ciasteczek `__Host-`/`Secure` z `http://localhost` (
   Realm ma publiczny klient `claude-code` z redirect `http://localhost:33418/callback`.
 - `make trust-ca` drukuje polecenia dla czlowieka (`security add-trusted-cert ...`, `NODE_EXTRA_CA_CERTS`); niczego nie uruchamia.
 - `scripts/m2.py` idzie przez https z CA "dev public". `make proxy-test`: 212 PASS. `make m2`: 88 PASS, 2 SKIP. `make m1`: F1, A1, A2, A3, A9, A9b, A15 PASS.
-- Keycloak zostal na http i ustawia ciasteczka `Secure`; Safari moze je odrzucic (docs/m2.md). Do ustalenia: Keycloak na https (nowy `iss`, zmiana u gateway'a, brokera i BFF).
+- Keycloak zostal wtedy na http (zalatwione w sekcji "Keycloak na https" ponizej).
 - Definicja kontenera Keycloaka zmienila sie (env `PROXY_TLS_PORT`), wiec najblizsze `make up-m2` go odtworzy (realm importowany od nowa z nowymi URI); w tym przebiegu
   przeladowalem tylko proxy, gateway, broker, BFF, mock GitLaba i serwery MCP (`up -d --no-deps`).
 - mcp-e2e (`run-m2.sh`): BLOCKED, bo harness jest na `http://localhost:18740` (`e2e/portal.py` PROXY/HOST, `e2e/m2.py` MCP_BASE, `raw_request` na http.client,
@@ -230,6 +230,40 @@ Na `m2-d65088f`: `make proxy-test` 212 PASS; `make m2` 88 PASS, 0 FAIL, 2 SKIP; 
 A5 FAIL: gateway odpowiada `not_found_or_denied` (a nie `tool_disabled`) na narzedzie spoza linku i nieistniejace; harness e2e oczekuje `tool_disabled`
 (sprawa ws-10 albo ws-05, jesli `tool_disabled` ma zostac w kontrakcie). `scripts/m2.py` przyjmuje juz `not_found_or_denied`.
 Komenda z portalu (`clientConfigs.claudeCode`): `claude mcp add --transport http --client-id claude-code --callback-port 33418 <slug> https://localhost:18745/v/<slug>/mcp`.
+
+### Keycloak na https (M3, 2026-10-28)
+
+Powod: Keycloak na `http://localhost:18080` ustawial `AUTH_SESSION_ID` i `KC_RESTART` z `Secure; SameSite=None`, a Safari nie zapisuje
+takich ciasteczek z http, wiec formularz logowania nie dzialal.
+
+Wybrana opcja (a): Keycloak na wlasnym porcie https, `https://localhost:18746` (`KEYCLOAK_TLS_PORT`), certyfikat z CA "dev public"
+(`certs/keycloak`, te same name constraints; `make certs` dopisuje go bez ponownego generowania CA, ktore czlowiek juz zaufal).
+Opcja (b), Keycloak za proxy pod prefiksem sciezki na `:18745`, wymagalaby nowej trasy proxy poza zestawem z C3 (`/`, `/api`, `/s/`, `/v/`,
+`/.well-known/oauth-protected-resource*`), czyli zmiany kontraktu, i przepisania adresow Keycloaka (prefiks sciezki, `KC_HTTP_RELATIVE_PATH`).
+Dodatkowo (b) daloby `iss` z prefiksem na tym samym origin co portal, a ciasteczka `__Host-` portalu i Keycloaka dzielilyby wtedy origin.
+
+Nowy `iss`: `https://localhost:18746/realms/corp` (`KC_HOSTNAME=https://localhost:18746`, `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`).
+Kontenery nadal ida do Keycloaka po http aliasu sieci (`http://keycloak:8080`: JWKS, token endpoint, token exchange), wiec zaden kontener
+Java nie potrzebuje CA w truststore, a `iss` jest tylko porownywany. Port http `18080` zostaje na hoscie dla skryptow (`make token`, admin API w
+`kc-sync-bff-client.sh`); `mcpdev.py` domyslnie uzywa https z `certs/public-ca/ca.crt`.
+
+Konfiguracja konsumentow (tylko zmienne srodowiskowe, kodu nie ruszano):
+- gateway: `MCP_OIDC_ISSUER` (C1 `iss` oraz `authorization_servers` w metadanych RFC 9728, sprawdzone: `["https://localhost:18746/realms/corp"]`);
+  JWKS i token URI bez zmian (http);
+- broker: `MCP_OIDC_ISSUER`, jw.;
+- BFF: `PORTAL_OIDC_ISSUER_URI`. BFF robi discovery pod adresem issuera, wiec `idp-relay` (ten sam namespace sieciowy) slucha teraz
+  na `127.0.0.1:18746` po https (certyfikat `certs/keycloak`, port generowany z `KEYCLOAK_TLS_PORT`) i przekazuje do `https://keycloak:8443`
+  z tym samym `Host`; Java BFF ufa CA "dev public" przez `JAVA_TOOL_OPTIONS` z `certs/public-ca/truststore.p12`, bo klient OIDC nie uzywa
+  `PORTAL_TLS_TRUSTSTORE` (to tylko mTLS). Blokady w kodzie BFF nie ma;
+- serwery MCP nie sprawdzaja issuera Keycloaka (weryfikuja tokeny gateway'a, `iss=https://mcp-gateway.internal`), bez zmian;
+- mock OpenSearch (ten repozytorium) mial na sztywno `iss`; teraz `MOCK_OPENSEARCH_ISSUER` z compose.
+
+Keycloak byl odtworzony (zmiana srodowiska kontenera), realm importowany od nowa. Zeby `sub` uzytkownikow (a z nim polaczenia PAT/OAuth w brokerze)
+przetrwal, `keycloak/realm-corp.json` ma teraz stale `id` czterech uzytkownikow (wartosci `sub` sprzed zmiany, sprawdzone po odtworzeniu).
+Sesje SSO Keycloaka i sesje portalu zostaly zerwane; tokeny Claude Code sprzed zmiany maja stary `iss` i gateway je odrzuci.
+
+Testy: `make proxy-test` 212/0; `make m2` 88 passed, 0 failed, 2 skipped; `make m1` F1, A1, A2, A3, A9, A9b, A15 PASS; `make mocks-test` 174 OK.
+`make smoke` wymaga profilu infra ze stubami (nie biegnie przy `up-full`), nie uruchamiany.
 
 ## Propozycje CC
 
@@ -250,7 +284,7 @@ Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktó
   `scope=<audience>-audience` obok `audience`.
 - `make token` nie używa ROPC: skrypt przechodzi prawdziwy authorization code + PKCE.
 - Komponenty w kontenerach muszą używać JWKS `http://keycloak:8080/...` i oczekiwanego `iss`
-  `http://localhost:18080/realms/corp` zamiast discovery z `issuer-uri` (`docs/porty.md`).
+  `https://localhost:18746/realms/corp` zamiast discovery z `issuer-uri` (`docs/porty.md`).
 - Hasło keystore'ów stubów WireMock i hasło admina mocka Jiry są w argumentach procesu Javy w kontenerze
   (WireMock przyjmuje je tylko jako opcje); chronią testowe klucze i mock.
 

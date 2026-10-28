@@ -875,6 +875,7 @@
   ],
   "users": [
     {
+      "id": "97f13d74-813f-4e2d-891e-425587f7a803",
       "username": "alice",
       "enabled": true,
       "email": "alice@corp.test",
@@ -904,6 +905,7 @@
       ]
     },
     {
+      "id": "ba962794-7a33-4cc7-946e-4d6707e3fe51",
       "username": "bob",
       "enabled": true,
       "email": "bob@corp.test",
@@ -927,6 +929,7 @@
       ]
     },
     {
+      "id": "c9ee1d88-d5cf-4c10-9ce8-eca7080b29ed",
       "username": "carol",
       "enabled": true,
       "email": "carol@corp.test",
@@ -947,6 +950,7 @@
       ]
     },
     {
+      "id": "8ee610c3-2c1f-4d5f-9221-987a7664f620",
       "username": "mallory",
       "enabled": true,
       "email": "mallory@corp.test",

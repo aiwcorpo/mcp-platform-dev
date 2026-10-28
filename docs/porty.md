@@ -10,8 +10,9 @@ Usługi mają nazwy usług i aliasy `*.internal`.
 
 | Usługa | Z hosta | Z sieci compose | Uwagi |
 | --- | --- | --- | --- |
-| Keycloak (realm `corp`) | `http://localhost:18080` | `http://keycloak:8080` | `iss` zawsze `http://localhost:18080/realms/corp` (patrz niżej) |
-| Konsola admina Keycloak | `http://localhost:18080/admin` | | login z `make users` |
+| Keycloak (realm `corp`, adres publiczny) | `https://localhost:18746` (`KEYCLOAK_TLS_PORT`) | `https://keycloak:8443` (tylko dla nazwy `localhost`, praktycznie niepotrzebny) | `iss` zawsze `https://localhost:18746/realms/corp`; certyfikat CA "dev public"; przeglądarki i Claude Code |
+| Keycloak (http) | `http://localhost:18080` | `http://keycloak:8080` | backchannel kontenerów (JWKS, token) i skrypty (`make token`, admin API); formularze logowania stąd działają, ale `iss` i adresy w discovery są https |
+| Konsola admina Keycloak | `https://localhost:18746/admin` | | login z `make users` |
 | OpenBao (dev) | `http://localhost:18200` | `http://openbao:8200` | root token: `BAO_ROOT_TOKEN` w `.secrets/dev.env`; audyt na stdout kontenera |
 | Redis | `localhost:16379` | `redis:6379` | ACL per komponent, patrz [integracja.md](integracja.md#redis-użytkownicy-i-prefiksy-propozycja-ws-01-dla-ws-02-ws-05-ws-06) |
 | PostgreSQL | `localhost:15432` | `postgres:5432` | bazy `gateway` i `broker`, użytkownicy o tych samych nazwach |
@@ -35,20 +36,26 @@ Usługi mają nazwy usług i aliasy `*.internal`.
 
 ## Keycloak: issuer i backchannel
 
-`KC_HOSTNAME=http://localhost:18080` z `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`. Skutek:
+`KC_HOSTNAME=https://localhost:18746` z `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`; Keycloak sam obsługuje https na 8443
+(`KC_HTTPS_CERTIFICATE_FILE`, certyfikat `certs/keycloak` z CA "dev public", SAN `localhost`) i zostawia http na 8080. Skutek:
 
-- `iss` w każdym tokenie to `http://localhost:18080/realms/corp`, także gdy token wydał kontener przez
+- `iss` w każdym tokenie to `https://localhost:18746/realms/corp`, także gdy token wydał kontener przez
   `http://keycloak:8080` (sprawdza to `make smoke`);
-- discovery pobrane z sieci compose podaje `jwks_uri` i `token_endpoint` pod `http://keycloak:8080/...`;
+- discovery pobrane z sieci compose po http podaje `jwks_uri` i `token_endpoint` pod `http://keycloak:8080/...`;
+- kontenery Java (gateway, broker) nie łączą się z Keycloakiem po https, więc nie potrzebują CA w truststore:
+  JWKS i token endpoint idą po http aliasu sieci, a `iss` jest tylko porównywany jako napis;
 - komponent w kontenerze **nie może** używać `issuer-uri` z discovery (w kontenerze `localhost` to on sam).
   Konfiguracja: JWKS `http://keycloak:8080/realms/corp/protocol/openid-connect/certs`, oczekiwany `iss`
-  `http://localhost:18080/realms/corp`. W Spring Boot: `spring.security.oauth2.resourceserver.jwt.jwk-set-uri`
+  `https://localhost:18746/realms/corp`. W Spring Boot: `spring.security.oauth2.resourceserver.jwt.jwk-set-uri`
   plus `issuer-uri` (przy ustawionym `jwk-set-uri` Boot nie robi discovery, tylko sprawdza `iss`).
-- komponent uruchomiony na hoście może używać zwykłego `issuer-uri`.
+- komponent uruchomiony na hoście może używać zwykłego `issuer-uri` (https, wymaga zaufania do `certs/public-ca/ca.crt`);
+- wyjątek: BFF portalu robi discovery pod adresem `iss`, więc działa w przestrzeni sieciowej `idp-relay`, który słucha
+  na `https://localhost:18746` w tym kontenerze; BFF dostaje `certs/public-ca/truststore.p12` przez `JAVA_TOOL_OPTIONS`
+  (OIDC używa domyślnego truststore JVM, `PORTAL_TLS_TRUSTSTORE` dotyczy tylko mTLS).
 
 Metadane serwera autoryzacji (RFC 8414) są pod
-`http://localhost:18080/realms/corp/.well-known/oauth-authorization-server` i w wariancie z wstawioną ścieżką
-`http://localhost:18080/.well-known/oauth-authorization-server/realms/corp`.
+`https://localhost:18746/realms/corp/.well-known/oauth-authorization-server` i w wariancie z wstawioną ścieżką
+`https://localhost:18746/.well-known/oauth-authorization-server/realms/corp`.
 
 ## Certyfikaty (`certs/`, generuje `make certs`)
 
@@ -61,6 +68,8 @@ Metadane serwera autoryzacji (RFC 8414) są pod
 | `certs/untrusted/mcp-gateway/` | CN `mcp-gateway` podpisany innym CA, do testów negatywnych |
 | `certs/public-ca/ca.crt`, `ca.key` | osobne CA "dev public" dla adresu publicznego (`scripts/gen-public-cert.sh`); name constraints: tylko `localhost`, `127.0.0.1`, `::1`; klucz zostaje na hoście, nigdzie niemontowany |
 | `certs/proxy/tls.crt`, `tls.key`, `chain.crt` | certyfikat serwera proxy (SAN `localhost`, `127.0.0.1`, `::1`, 397 dni), montowany do kontenera `proxy` |
+| `certs/keycloak/tls.crt`, `tls.key`, `chain.crt` | certyfikat Keycloaka (to samo CA, te same SAN i czas życia), montowany do `keycloak` i `idp-relay` |
+| `certs/public-ca/truststore.p12` | tylko CA "dev public" jako PKCS12 dla Javy (BFF); hasło `TLS_STORE_PASSWORD` |
 
 | Nazwa | EKU | SAN |
 | --- | --- | --- |

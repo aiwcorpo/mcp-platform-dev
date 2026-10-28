@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import common  # noqa: E402
 import opensearch  # noqa: E402
 
-ISS = "http://localhost:18080/realms/corp"
+ISS = "https://localhost:18746/realms/corp"
 
 
 def b64(obj):

@@ -22,13 +22,14 @@ permission check (the mock favours clear test signals over hiding existence).
 Query support is the subset the server sends plus a few obvious neighbours; aggregations are not supported.
 """
 import fnmatch
+import os
 import re
 import time
 from datetime import datetime, timezone
 
 import common
 
-ISSUER = "http://localhost:18080/realms/corp"
+ISSUER = os.environ.get("MOCK_OPENSEARCH_ISSUER", "https://localhost:18746/realms/corp")
 AUDIENCE = "opensearch"
 
 # Index prefix -> logins that may read it when the token carries no groups claim.

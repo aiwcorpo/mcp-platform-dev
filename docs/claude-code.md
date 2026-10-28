@@ -18,8 +18,9 @@ Przebieg:
 
 1. Claude Code wywołuje gateway bez tokenu i dostaje `401` z
    `WWW-Authenticate: Bearer resource_metadata=".../.well-known/oauth-protected-resource/s/mcp-jira/mcp"`.
-2. Z metadanych zasobu bierze `authorization_servers = ["http://localhost:18080/realms/corp"]` i pobiera
-   `http://localhost:18080/.well-known/oauth-authorization-server/realms/corp`.
+2. Z metadanych zasobu bierze `authorization_servers = ["https://localhost:18746/realms/corp"]` i pobiera
+   `https://localhost:18746/.well-known/oauth-authorization-server/realms/corp` (w trybie M1 z `make up-full` Keycloak jest
+   od 2026-10-28 też po https; zaufanie do CA: `make trust-ca`).
 3. Otwiera przeglądarkę na logowanie Keycloak (login i hasło: `make users`), odbiera kod na
    `http://localhost:33418/callback`, wymienia go z `code_verifier`.
 4. Token ma `aud=mcp-gateway`, `azp=claude-code`, `groups`; gateway go weryfikuje. Na stacji nie ma PAT:
@@ -42,6 +43,6 @@ claude mcp add --transport http --client-id claude-code --callback-port 33418 \
 
 Wirtualny serwer z portalu ma ten sam kształt (`https://localhost:18745/v/<slug>/mcp`); portal pokazuje gotową komendę
 (BFF dostaje `PORTAL_CLIENT_CONFIGS_CLAUDE_CODE_CLIENT_ID=claude-code` i `..._CALLBACK_PORT=33418` z `docker-compose.yml`).
-Metadane zasobu i wyzwanie 401 wskazują adres https; serwer autoryzacji to nadal `http://localhost:18080/realms/corp`,
-więc przeglądarka logowania pokazuje Keycloaka po http (ostrzeżenie o Safari: docs/m2.md, "Keycloak zostaje na http").
+Metadane zasobu i wyzwanie 401 wskazują adres https; serwer autoryzacji to Keycloak po https, `https://localhost:18746/realms/corp`
+(certyfikat tego samego CA "dev public", więc Safari zapisuje ciasteczka logowania; docs/m2.md, "Keycloak na https").
 Klient `claude-code` w realmie `corp` jest publiczny, z redirect URI `http://localhost:33418/callback`.
