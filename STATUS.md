@@ -186,6 +186,17 @@ w przebiegu) i Claude Code z linkiem (wymaga człowieka). Zero SKIP blokuje: prz
 `http://localhost:18740`) oraz człowiek z Claude Code.
 
 Do zrobienia: poświadczenie `service-account` service desku i `token-exchange` OpenSearch w brokerze (kroki spoza
+
+### Serwery MCP ze starterem 3.0.0-alpha-11 (2026-10-28)
+
+Obrazy przebudowane z HEAD przez `scripts/build-images-m2.sh` (confluence, gitlab, servicedesk, opensearch) i
+`ONLY=jira scripts/build-images.sh`: jira `m1-7ec295e`, confluence `m2-ae9fe3a`, gitlab `m2-9ef55d3`, servicedesk
+`m2-63e56cb`, opensearch `m2-7619dd4`; tagi w `.env`, wdrozone przez `make up-m2` (odtworzone tylko te piec uslug).
+Starter alpha-10+ odmawia profilu dev w kontenerze: zadna z pieciu uslug nie ma `SPRING_PROFILES_ACTIVE` (maja
+`MCP_<SYSTEM>_ALLOW_PLAIN_HTTP`); profil dev ma tylko `portal-bff`, ktory nie uzywa startera. Wyniki: `make m1` 7 PASS,
+`make m2` 88 passed, 0 failed, 2 skipped, `mcp-e2e/run-m2.sh` wszystkie PASS. Zmiany ksztaltu odpowiedzi (opensearch
+`data` jako lista, budzet wyniku; gitlab `hiddenCharactersRemoved`; servicedesk escapowanie notatki) nie wymagaly zmian
+asercji w `make m2` (sprawdza `noteId`, status 201 po stronie mocka, `credential_required`).
 `make m2`); BFF potrzebuje osobnego ustawienia backchannel OIDC zamiast `idp-relay` (propozycja poniżej).
 
 ## Propozycje CC
