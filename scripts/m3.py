@@ -141,6 +141,23 @@ def check_secrets_hygiene():
            "without the internal JWT test key flag", len(servers) >= 5 and not problems, "; ".join(problems)[:200])
 
 
+def check_gateway_devstack():
+    config = json.loads(subprocess.run([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2", "config", "--format", "json"],
+                                       capture_output=True, text=True).stdout)
+    gateway = config["services"]["mcp-gateway"]
+    env = gateway["environment"]
+    record("compose: the gateway runs profile devstack with both acknowledgements, registry mode required, no JWT test key flag",
+           env.get("SPRING_PROFILES_ACTIVE") == "devstack" and env.get("MCP_DEVSTACK_ACKNOWLEDGED") == "true"
+           and env.get("AIWCORPO_MCP_PLATFORM_DEVSTACK_ACKNOWLEDGED") == "true" and env.get("MCP_REGISTRY_MODE", "required") == "required"
+           and "MCP_INTERNAL_JWT_ALLOW_TEST_KEYS" not in env, "")
+    running = subprocess.run(["docker", "inspect", "mcp-dev-mcp-gateway-1", "-f", "{{.Config.Image}}"], capture_output=True, text=True).stdout.strip()
+    if running != gateway["image"]:
+        skip("gateway: the running container logs event=devstack_profile", f"compose not applied yet (running {running}, compose {gateway['image']}): scripts/apply-m3-switch.sh")
+        return
+    log = subprocess.run(["docker", "logs", "mcp-dev-mcp-gateway-1"], capture_output=True, text=True)
+    record("gateway: the running container logs event=devstack_profile", "event=devstack_profile" in log.stdout + log.stderr, running)
+
+
 def check_policy_server():
     status, headers, raw = http("GET", f"{POLICIES}/policies/main/latest.json")
     latest = jbody(raw)
@@ -393,7 +410,7 @@ class Scenario:
 
 
 def run():
-    for part in (check_openbao, check_redis_gateway, check_keycloak_mfa, check_secrets_hygiene, check_policy_server, check_misc, check_registry_tools, check_broker_knows_systems, lambda: Scenario().run()):
+    for part in (check_openbao, check_redis_gateway, check_keycloak_mfa, check_secrets_hygiene, check_gateway_devstack, check_policy_server, check_misc, check_registry_tools, check_broker_knows_systems, lambda: Scenario().run()):
         try:
             part()
         except (mcpdev.Fail, OSError, KeyError, ValueError) as e:

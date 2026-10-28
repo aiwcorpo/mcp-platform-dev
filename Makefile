@@ -14,7 +14,7 @@ COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira
 
 .PHONY: help secrets certs contracts up up-core up-full down reset clean ps logs token claims exchange pat seed \
         smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test trust-ca mocks-test m2 mock-auth \
-        m3 otp reset-authenticator registry-refresh admin-password
+        m3 otp reset-authenticator registry-refresh admin-password m3-switch
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -145,3 +145,6 @@ registry-refresh: ## dev only: drop the manifests the gateway took over by boots
 
 admin-password: ## login and password of the Keycloak admin console (master realm; it can change the step-up flow, so it is not part of make users)
 	@grep '^KC_BOOTSTRAP_ADMIN' .secrets/dev.env | sed 's/^/  /'
+
+m3-switch: ## apply the prepared M3 switch to the running stack (broker, MCP servers, gateway recreated from .env; state is kept)
+	@./scripts/apply-m3-switch.sh
