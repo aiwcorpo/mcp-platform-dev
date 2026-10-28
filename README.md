@@ -38,6 +38,8 @@ make audit RID=<requestId> [LOGS="a.log b.log"]  # zdarzenia C8 jednego żądani
 make jira-auth                                 # jakie poświadczenia dotarły do mocka Jiry
 make m1                                        # scenariusze M1 (F1 A1 A2 A3 A9 A15) na stosie z make up-full
 make images                                    # obrazy gateway, broker, mcp-jira z commitów repozytoriów obok
+make images-m2 | make up-m2                    # M2: proxy (jedna domena), BFF, web, serwery ws-04; docs/m2.md
+make proxy-test | make mocks-test | make m2    # testy proxy, mocków i szkielet scenariusza M2
 make down | make reset | make clean
 ```
 

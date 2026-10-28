@@ -268,6 +268,28 @@ def put_secret(user, system, secret, expires_at=None, identity="mcp-portal-bff",
         return resp.status, {"raw": raw[:200]}
 
 
+def broker_request(user, method, path, body=None, broker_url=None, tls_name=None):
+    """A C4 call as the portal BFF makes it for `user` (session token exchanged for aud=mcp-credential-broker, mTLS
+    with the BFF certificate). Returns (HTTP status, JSON body or {})."""
+    broker_token = exchange(login(user, "mcp-portal-bff"), "mcp-portal-bff", "mcp-credential-broker")
+    url = urllib.parse.urlparse((broker_url or cfg("BROKER_URL", f"https://localhost:{cfg('BROKER_PORT', '18100')}")).rstrip("/"))
+    tls_name = tls_name or cfg("MCP_BROKER_TLS_NAME", "mcp-credential-broker.internal")
+    conn = PinnedNameHTTPSConnection(url.hostname, url.port or 443, tls_name, mtls_context("mcp-portal-bff"))
+    try:
+        conn.request(method, f"{url.path}{path}", body=json.dumps(body).encode() if body is not None else None,
+                     headers={"Content-Type": "application/json; charset=utf-8", "Authorization": f"Bearer {broker_token}"})
+        resp = conn.getresponse()
+        raw = resp.read().decode(errors="replace")
+    except (OSError, ssl.SSLError, http.client.HTTPException) as e:
+        raise Fail(f"broker unreachable or rejected TLS: {getattr(e, 'reason', None) or e}") from None
+    finally:
+        conn.close()
+    try:
+        return resp.status, json.loads(raw) if raw else {}
+    except ValueError:
+        return resp.status, {"raw": raw[:200]}
+
+
 AUDIT_COMPONENTS = {"gateway": "mcp-gateway", "broker": "mcp-credential-broker", "server": "mcp-jira"}
 AUDIT_REQUIRED = ("ts", "requestId", "component", "componentId", "event")
 

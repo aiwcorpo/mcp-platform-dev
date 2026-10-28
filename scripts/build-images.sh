@@ -2,6 +2,7 @@
 # Builds the three component images of profile "full" from git refs of the sibling repositories without
 # touching their working trees (git archive into a temporary directory, jars via ./mvnw, docker build).
 # Usage: scripts/build-images.sh [gateway-ref broker-ref jira-ref]   (defaults: the refs below)
+# ONLY=gateway,broker,jira builds a subset (default: all three).
 # Needs a JDK 25 in JAVA_HOME. Prints the image tags to put into .env.
 set -euo pipefail
 
@@ -24,6 +25,7 @@ build() { # repo ref image-prefix
   echo "$image:m1-$short"
 }
 
-echo "MCP_GATEWAY_IMAGE=$(build mcp-gateway "$gw_ref" mcp-gateway)"
-echo "MCP_CREDENTIAL_BROKER_IMAGE=$(build mcp-credential-broker "$broker_ref" mcp-credential-broker)"
-echo "MCP_JIRA_IMAGE=$(build mcp-server-jira "$jira_ref" mcp-server-jira)"
+want() { [[ -z "${ONLY:-}" || ",$ONLY," == *",$1,"* ]]; }
+! want gateway || echo "MCP_GATEWAY_IMAGE=$(build mcp-gateway "$gw_ref" mcp-gateway)"
+! want broker || echo "MCP_CREDENTIAL_BROKER_IMAGE=$(build mcp-credential-broker "$broker_ref" mcp-credential-broker)"
+! want jira || echo "MCP_JIRA_IMAGE=$(build mcp-server-jira "$jira_ref" mcp-server-jira)"

@@ -121,6 +121,42 @@ zasobu (`authorization_servers` = Keycloak), metadane RFC 8414, żądanie autory
 (formularz logowania), obcy redirect URI -> 400, anonimowy DCR -> 403 (więc `--client-id claude-code
 --callback-port 33418`). Samo logowanie i wywołanie narzędzia z Claude Code nie były wykonane.
 
+## M2 (2026-10-28): jedna domena, mocki, profil m2
+
+Opis: [docs/m2.md](docs/m2.md). Kamienie pośrednie:
+
+| Kamień | Zakres | Stan |
+| --- | --- | --- |
+| M2.1 | reverse proxy nginx (`proxy/`), `make proxy-test` (106 sprawdzeń, dodatnie i ujemne dla każdej reguły CC-089) | zrobione |
+| M2.2 | mocki GitLab (OAuth + `/api/v4/user` + REST), Confluence, Service Desk, OpenSearch (`mocks/systems/`, `make mocks-test` 165 testów); usługi w compose bez profilu | zrobione, mocki działają na stosie |
+| M2.3 | Keycloak: redirect BFF `http://localhost:18740/api/v1/auth/callback` (realm i działający Keycloak przez `scripts/kc-sync-bff-client.sh`, bez restartu); Redis: użytkownik `portal-bff`; OpenBao: `secret/mcp/oauth-clients/gitlab` + odczyt w polityce brokera; broker z HEAD (8e7f037) z GitLabem i Confluence; profil `m2` z proxy, web, BFF i czterema serwerami ws-04 (`make images-m2`, `make up-m2`) | zrobione; BFF nie uruchomiony (czeka na M2 ws-07) |
+| M2.4 | `make m2`: 50 sprawdzeń (mocki, OAuth z mockiem, prawdziwy broker, Keycloak), 7 SKIP z nazwą brakującego elementu | zrobione; integracja końcowa po M2 ws-05/07/08 |
+
+Sprawdzone: `make m1` przechodzi po zmianach (jedno nieudane F1/A9 zaraz po poprzednim `make m1`, gdy broker dopiero
+wstawał po A15; powtórka zielona). Przepływ "Połącz przez OAuth" z prawdziwym brokerem (`oauth/start` -> mock ->
+`oauth/complete`): connected jako alice, `identity_mismatch` (konto bob), `flow_invalid` (zły state), odmowa
+(`access_denied` w callbacku), rozłączenie z odwołaniem tokenu.
+
+Decyzje i odstępstwa:
+
+- Adres `http://localhost:18740` bez TLS: `localhost` jest zaufanym originem dla ciasteczek `__Host-`/`Secure` w
+  Chrome i Firefoksie; Safari ich nie przyjmuje po http.
+- Mocki są w Pythonie (stdlib), nie w WireMocku: OAuth potrzebuje stanu (kody, rotacja refresh tokenów, PKCE).
+  Mock Jiry zostaje na WireMocku.
+- Mock Confluence zwraca dane każdemu znanemu PAT (bez 403); ograniczenia przestrzeni wynikają z polityki
+  gateway'a. Mock GitLaba odmawia dostępu do grup spoza tabeli `GROUP_ACCESS` jako 404.
+- Mock OpenSearch nie sprawdza podpisu JWT (tylko `iss`, `aud`, `exp`); prawdziwy OpenSearch z JWT backendem jest poza M2.
+- Poziomy `acr` (step-up) nie są w realmie: od CC-090 zapis PAT nie wymaga MFA, a rejestracja Authenticatora to M3.
+- Redis `portal-bff` ma szerszy zestaw komend (`@keyspace`, `@scripting`) niż inne komponenty, na żądanie ws-07, ale tylko
+  dla `~portal:*` i bez pub/sub; BFF trzyma sesje w pamięci, więc użytkownik jest na zapas.
+- `make up` po tej zmianie odtworzy Keycloaka (nowa zmienna `PROXY_PORT`) i Redisa (nowy użytkownik): robi to
+  tylko ten, kto go uruchomi; `make up-m2` używa `--no-recreate`.
+
+Do zrobienia w integracji końcowej (po M2 ws-05/06/07/08): `MCP_SERVER_<X>_URL` czterech serwerów i `publicBaseUrl`
+w gateway'u, `MCP_CONNECT_URL` `mcp-jira` na adres proxy, konfiguracja OIDC BFF w kontenerze (backchannel
+`http://keycloak:8080`, issuer `localhost:18080`), `PORTAL_TRUSTED_PROXIES`, `service-account` service desku i
+`token-exchange` OpenSearch w brokerze, przebudowa obrazów BFF/web z nowego HEAD.
+
 ## Propozycje CC
 
 Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktów tu nie zmieniano.

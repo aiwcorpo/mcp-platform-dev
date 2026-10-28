@@ -13,6 +13,31 @@
 
 name: ${COMPOSE_PROJECT_NAME:-mcp-dev}
 
+x-system-mock: &system-mock
+  image: python:3.12-alpine@sha256:0687a6bc9716edc2a6ee0fbfb0f87e7ee358b262b67c9215de91bc9b2d38ba71
+  command: ["python3", "/mocks/server.py"]
+  user: "65534:65534"
+  read_only: true
+  tmpfs: [/tmp]
+  environment: {}
+  volumes:
+    - ./mocks/systems:/mocks:ro
+  healthcheck:
+    test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/__mock/health', timeout=2)"]
+    interval: 3s
+    timeout: 3s
+    retries: 30
+
+x-mcp-server-env: &mcp-server-env
+  MCP_GATEWAY_JWKS_URI: https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json
+  MCP_GATEWAY_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
+  MCP_GATEWAY_ISSUER: https://mcp-gateway.internal
+  MCP_CONNECT_URL: http://localhost:${PROXY_PORT}/connections?system={system}
+  MCP_REDIS_HOST: redis
+  MCP_REDIS_PORT: "6379"
+  MCP_TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
+  MCP_TLS_TRUSTSTORE: /certs/ca/truststore.p12
+
 networks:
   core:
     name: ${COMPOSE_PROJECT_NAME:-mcp-dev}-core
@@ -46,6 +71,7 @@ services:
       KC_CLIENT_OPENSEARCH_SECRET: ${KC_CLIENT_OPENSEARCH_SECRET:?run make secrets}
       CLAUDE_CODE_CALLBACK_PORT: ${CLAUDE_CODE_CALLBACK_PORT}
       PORTAL_PORT: ${PORTAL_PORT}
+      PROXY_PORT: ${PROXY_PORT}
     volumes:
       - ./keycloak/realm-corp.json:/opt/keycloak/data/import/realm-corp.json:ro
     ports:
@@ -89,6 +115,7 @@ services:
       BAO_ROOT_TOKEN: ${BAO_ROOT_TOKEN:?run make secrets}
       BAO_BROKER_ROLE_ID: ${BAO_BROKER_ROLE_ID:?run make secrets}
       BAO_BROKER_SECRET_ID: ${BAO_BROKER_SECRET_ID:?run make secrets}
+      GITLAB_OAUTH_CLIENT_SECRET: ${GITLAB_OAUTH_CLIENT_SECRET:?run make secrets}
     volumes:
       - ./openbao/init.sh:/init.sh:ro
     networks: [core]
@@ -105,6 +132,7 @@ services:
       REDIS_ADMIN_PASSWORD: ${REDIS_ADMIN_PASSWORD:?run make secrets}
       REDIS_GATEWAY_PASSWORD: ${REDIS_GATEWAY_PASSWORD:?run make secrets}
       REDIS_BROKER_PASSWORD: ${REDIS_BROKER_PASSWORD:?run make secrets}
+      REDIS_PORTAL_BFF_PASSWORD: ${REDIS_PORTAL_BFF_PASSWORD:?run make secrets}
       REDIS_MCP_JIRA_PASSWORD: ${REDIS_MCP_JIRA_PASSWORD:?run make secrets}
       REDIS_MCP_CONFLUENCE_PASSWORD: ${REDIS_MCP_CONFLUENCE_PASSWORD:?run make secrets}
       REDIS_MCP_GITLAB_PASSWORD: ${REDIS_MCP_GITLAB_PASSWORD:?run make secrets}
@@ -175,6 +203,69 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
+
+  # ---- System mocks written in Python (mocks/systems). One image, MOCK_SYSTEM selects the module.
+  # Like the Jira mock they sit in "core" (the broker calls whoami and the OAuth token endpoint) and
+  # "servers" (MCP servers call the REST API). /__mock/journal needs Basic auth admin:$MOCK_ADMIN_PASSWORD.
+
+  gitlab-mock:
+    <<: *system-mock
+    environment:
+      MOCK_SYSTEM: gitlab
+      PYTHONDONTWRITEBYTECODE: "1"
+      MOCK_ADMIN_PASSWORD: ${MOCK_ADMIN_PASSWORD:?run make secrets}
+      MOCK_GITLAB_CLIENT_ID: mcp-broker
+      MOCK_GITLAB_CLIENT_SECRET: ${GITLAB_OAUTH_CLIENT_SECRET:?run make secrets}
+      # Lifetime of access tokens in seconds; lower it (GITLAB_MOCK_TOKEN_TTL=60 in .env) to watch the broker refresh.
+      MOCK_GITLAB_TOKEN_TTL: ${GITLAB_MOCK_TOKEN_TTL:-7200}
+      # The broker's callback is the BFF (C12) on the single public origin; 18090 is the BFF run on the host.
+      MOCK_GITLAB_REDIRECT_URIS: http://localhost:${PROXY_PORT}/api/v1/oauth/callback,http://localhost:${PORTAL_PORT}/api/v1/oauth/callback
+    ports:
+      - 127.0.0.1:${GITLAB_MOCK_PORT}:8080
+    networks:
+      core:
+        aliases: [gitlab.internal]
+      servers:
+        aliases: [gitlab.internal]
+
+  confluence-mock:
+    <<: *system-mock
+    environment:
+      MOCK_SYSTEM: confluence
+      PYTHONDONTWRITEBYTECODE: "1"
+      MOCK_ADMIN_PASSWORD: ${MOCK_ADMIN_PASSWORD:?run make secrets}
+    ports:
+      - 127.0.0.1:${CONFLUENCE_MOCK_PORT}:8080
+    networks:
+      core:
+        aliases: [confluence.internal]
+      servers:
+        aliases: [confluence.internal]
+
+  servicedesk-mock:
+    <<: *system-mock
+    environment:
+      MOCK_SYSTEM: servicedesk
+      PYTHONDONTWRITEBYTECODE: "1"
+      MOCK_ADMIN_PASSWORD: ${MOCK_ADMIN_PASSWORD:?run make secrets}
+      MOCK_SERVICEDESK_API_KEY: ${SERVICEDESK_API_KEY:?run make secrets}
+    ports:
+      - 127.0.0.1:${SERVICEDESK_MOCK_PORT}:8080
+    networks:
+      servers:
+        aliases: [servicedesk.internal]
+
+  opensearch-mock:
+    <<: *system-mock
+    environment:
+      MOCK_SYSTEM: opensearch
+      PYTHONDONTWRITEBYTECODE: "1"
+      MOCK_ADMIN_PASSWORD: ${MOCK_ADMIN_PASSWORD:?run make secrets}
+    ports:
+      - 127.0.0.1:${OPENSEARCH_MOCK_PORT}:8080
+    networks:
+      servers:
+        aliases: [opensearch.internal]
 
   # Contract stub of the credential broker (C4), served only over mTLS like the real broker.
   # It does not check the client CN or token contents (see mcp-contracts README). The request journal is
@@ -313,9 +404,24 @@ services:
       MCP_BAO_ROLE_ID: ${BAO_BROKER_ROLE_ID:?run make secrets}
       MCP_BAO_SECRET_ID: ${BAO_BROKER_SECRET_ID:?run make secrets}
       MCP_JIRA_URL: http://jira.internal:8080
-      MCP_PORTAL_URL: http://localhost:${PORTAL_PORT}
+      # Single public origin (profile m2): connectUrl and the OAuth redirect_uri <MCP_PORTAL_URL>/api/v1/oauth/callback.
+      MCP_PORTAL_URL: http://localhost:${PROXY_PORT}
       # Dev only: OpenBao and the Jira mock speak plain http here; the broker requires https otherwise.
       MCP_ALLOW_PLAIN_HTTP: "true"
+      # Systems beyond Jira (mocks of this stack, plain http). GitLab: "Polacz przez OAuth"; the browser opens the
+      # authorize URL on the published port of the mock, the broker calls token and whoami inside the network.
+      BROKER_SYSTEMS_CONFLUENCE_BASEURL: http://confluence.internal:8080
+      BROKER_SYSTEMS_CONFLUENCE_ADAPTER: atlassian-dc
+      BROKER_SYSTEMS_CONFLUENCE_SUPPORTEDTYPES: user-secret
+      BROKER_SYSTEMS_CONFLUENCE_DEFAULTTYPE: user-secret
+      BROKER_SYSTEMS_GITLAB_BASEURL: http://gitlab.internal:8080
+      BROKER_SYSTEMS_GITLAB_ADAPTER: gitlab
+      BROKER_SYSTEMS_GITLAB_SUPPORTEDTYPES: user-oauth,user-secret
+      BROKER_SYSTEMS_GITLAB_DEFAULTTYPE: user-oauth
+      BROKER_SYSTEMS_GITLAB_OAUTHSCOPES: read_api
+      BROKER_SYSTEMS_GITLAB_OAUTH_CLIENTID: mcp-broker
+      BROKER_SYSTEMS_GITLAB_OAUTH_CLIENTSECRET: ${GITLAB_OAUTH_CLIENT_SECRET:?run make secrets}
+      BROKER_SYSTEMS_GITLAB_OAUTH_AUTHORIZEURL: http://localhost:${GITLAB_MOCK_PORT}/oauth/authorize
       MCP_REDIS_HOST: redis
       MCP_REDIS_PORT: "6379"
       MCP_REDIS_USER: broker
@@ -380,3 +486,175 @@ services:
     depends_on:
       redis: {condition: service_healthy}
       jira-mock: {condition: service_healthy}
+
+  # ---- Profile "m2": single public origin, portal and the remaining MCP servers (images: .env, built by
+  # scripts/build-images-m2.sh). Started by `make up-m2` on top of `make up-full`.
+
+  # The only published entry for browsers and MCP clients: http://localhost:${PROXY_PORT}. Rules: proxy/nginx.conf,
+  # tests: `make proxy-test`. It reaches the gateway's public listener (8080) only; the gateway's mTLS listener
+  # (C5, JWKS) has no route here and no client certificate.
+  proxy:
+    profiles: [m2]
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    user: "101:101"
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./proxy/proxy-common.conf:/etc/nginx/proxy-common.conf:ro
+      - ./proxy/to-bff.conf:/etc/nginx/to-bff.conf:ro
+      - ./proxy/to-gateway.conf:/etc/nginx/to-gateway.conf:ro
+      - ./proxy/to-web.conf:/etc/nginx/to-web.conf:ro
+      - ./proxy/gateway-headers.conf:/etc/nginx/gateway-headers.conf:ro
+      - ./proxy/errors:/etc/nginx/errors:ro
+    ports:
+      - 127.0.0.1:${PROXY_PORT}:8080
+    networks:
+      core:
+        aliases: [proxy.internal]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/__proxy/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  portal-web:
+    profiles: [m2]
+    image: ${MCP_PORTAL_WEB_IMAGE}
+    pull_policy: never
+    read_only: true
+    tmpfs: [/tmp]
+    networks:
+      core:
+        aliases: [portal-web.internal]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/__web/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  portal-bff:
+    profiles: [m2]
+    image: ${MCP_PORTAL_BFF_IMAGE}
+    pull_policy: never
+    environment:
+      PORTAL_PORT: "8080"
+      # iss of every token; the BFF must reach Keycloak's backchannel at http://keycloak:8080 (docs/porty.md).
+      PORTAL_OIDC_ISSUER_URI: http://localhost:${KEYCLOAK_PORT}/realms/corp
+      PORTAL_OIDC_CLIENT_ID: mcp-portal-bff
+      PORTAL_OIDC_CLIENT_SECRET: ${KC_CLIENT_MCP_PORTAL_BFF_SECRET:?run make secrets}
+      PORTAL_BROKER_URL: https://${MCP_BROKER_TLS_NAME}:8443
+      PORTAL_BROKER_TLS_NAME: ${MCP_BROKER_TLS_NAME}
+      PORTAL_GATEWAY_ADMIN_URL: https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443
+      PORTAL_GATEWAY_ADMIN_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
+      PORTAL_GATEWAY_PUBLIC_URL: http://localhost:${PROXY_PORT}
+      PORTAL_TLS_KEYSTORE: /certs/mcp-portal-bff/keystore.p12
+      PORTAL_TLS_KEYSTORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
+      PORTAL_TLS_TRUSTSTORE: /certs/ca/truststore.p12
+      PORTAL_TLS_TRUSTSTORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
+      # Forwarded headers are trusted from the proxy only; compose assigns private addresses to the network.
+      PORTAL_TRUSTED_PROXIES: '172\.(1[6-9]|2[0-9]|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+'
+      PORTAL_IGA_MOCK_FILE: /dev-data/iga-mock.yaml
+      SPRING_PROFILES_ACTIVE: dev
+    volumes:
+      - ./certs/mcp-portal-bff:/certs/mcp-portal-bff:ro
+      - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
+      - ../mcp-portal/bff/dev:/dev-data:ro
+    networks:
+      core:
+        aliases: [portal-bff.internal]
+    depends_on:
+      keycloak: {condition: service_healthy}
+
+  mcp-confluence:
+    profiles: [m2]
+    image: ${MCP_CONFLUENCE_IMAGE}
+    pull_policy: never
+    environment:
+      <<: *mcp-server-env
+      MCP_REDIS_USER: mcp-confluence
+      MCP_REDIS_PASSWORD: ${REDIS_MCP_CONFLUENCE_PASSWORD:?run make secrets}
+      MCP_REDIS_KEY_PREFIX: "jti:mcp-confluence:"
+      MCP_TLS_KEYSTORE: /certs/mcp-confluence/keystore.p12
+      # The Confluence mock speaks plain http; dev only (the PAT would travel in clear text).
+      MCP_CONFLUENCE_URL: http://confluence.internal:8080
+      MCP_CONFLUENCE_ALLOW_PLAIN_HTTP: "true"
+    volumes:
+      - ./certs/mcp-confluence:/certs/mcp-confluence:ro
+      - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
+    networks:
+      servers:
+        aliases: [mcp-confluence.internal]
+    depends_on:
+      redis: {condition: service_healthy}
+      confluence-mock: {condition: service_healthy}
+
+  mcp-gitlab:
+    profiles: [m2]
+    image: ${MCP_GITLAB_IMAGE}
+    pull_policy: never
+    environment:
+      <<: *mcp-server-env
+      MCP_REDIS_USER: mcp-gitlab
+      MCP_REDIS_PASSWORD: ${REDIS_MCP_GITLAB_PASSWORD:?run make secrets}
+      MCP_REDIS_KEY_PREFIX: "jti:mcp-gitlab:"
+      MCP_TLS_KEYSTORE: /certs/mcp-gitlab/keystore.p12
+      MCP_GITLAB_URL: http://gitlab.internal:8080
+      MCP_GITLAB_ALLOW_PLAIN_HTTP: "true"
+      MCP_GITLAB_FILE_MAX_BYTES: "524288"
+    volumes:
+      - ./certs/mcp-gitlab:/certs/mcp-gitlab:ro
+      - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
+    networks:
+      servers:
+        aliases: [mcp-gitlab.internal]
+    depends_on:
+      redis: {condition: service_healthy}
+      gitlab-mock: {condition: service_healthy}
+
+  mcp-servicedesk:
+    profiles: [m2]
+    image: ${MCP_SERVICEDESK_IMAGE}
+    pull_policy: never
+    environment:
+      <<: *mcp-server-env
+      MCP_REDIS_USER: mcp-servicedesk
+      MCP_REDIS_PASSWORD: ${REDIS_MCP_SERVICEDESK_PASSWORD:?run make secrets}
+      MCP_REDIS_KEY_PREFIX: "jti:mcp-servicedesk:"
+      MCP_TLS_KEYSTORE: /certs/mcp-servicedesk/keystore.p12
+      MCP_SERVICEDESK_URL: http://servicedesk.internal:8080
+      MCP_SERVICEDESK_ALLOW_PLAIN_HTTP: "true"
+      MCP_SERVICEDESK_CREDENTIAL_MODE: service-account
+      MCP_SERVICEDESK_ALLOWED_QUEUES: IT
+    volumes:
+      - ./certs/mcp-servicedesk:/certs/mcp-servicedesk:ro
+      - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
+    networks:
+      servers:
+        aliases: [mcp-servicedesk.internal]
+    depends_on:
+      redis: {condition: service_healthy}
+      servicedesk-mock: {condition: service_healthy}
+
+  mcp-opensearch:
+    profiles: [m2]
+    image: ${MCP_OPENSEARCH_IMAGE}
+    pull_policy: never
+    environment:
+      <<: *mcp-server-env
+      MCP_REDIS_USER: mcp-opensearch
+      MCP_REDIS_PASSWORD: ${REDIS_MCP_OPENSEARCH_PASSWORD:?run make secrets}
+      MCP_REDIS_KEY_PREFIX: "jti:mcp-opensearch:"
+      MCP_TLS_KEYSTORE: /certs/mcp-opensearch/keystore.p12
+      MCP_OPENSEARCH_URL: http://opensearch.internal:8080
+      MCP_OPENSEARCH_ALLOW_PLAIN_HTTP: "true"
+      MCP_OPENSEARCH_INDEX_PREFIXES: logs-team-a,logs-team-b,hr
+    volumes:
+      - ./certs/mcp-opensearch:/certs/mcp-opensearch:ro
+      - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
+    networks:
+      servers:
+        aliases: [mcp-opensearch.internal]
+    depends_on:
+      redis: {condition: service_healthy}
+      opensearch-mock: {condition: service_healthy}

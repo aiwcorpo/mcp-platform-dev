@@ -1045,7 +1045,7 @@
       "attributes": {
         "standard.token.exchange.enabled": "true",
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:${PORTAL_PORT}/*"
+        "post.logout.redirect.uris": "http://localhost:${PORTAL_PORT}/*##http://localhost:${PROXY_PORT}/*"
       },
       "defaultClientScopes": [
         "basic",
@@ -1061,7 +1061,8 @@
       "description": "Portal BFF: OIDC login, exchanges the session token for broker and gateway admin (C4, C5).",
       "redirectUris": [
         "http://localhost:${PORTAL_PORT}/login/oauth2/code/*",
-        "http://localhost:${PORTAL_PORT}/api/v1/oauth/callback"
+        "http://localhost:${PORTAL_PORT}/api/v1/oauth/callback",
+        "http://localhost:${PROXY_PORT}/api/v1/auth/callback"
       ],
       "webOrigins": []
     },

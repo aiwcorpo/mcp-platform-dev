@@ -16,6 +16,9 @@ umask 077
   echo "user admin on >$REDIS_ADMIN_PASSWORD ~* &* +@all"
   echo "user gateway on >$REDIS_GATEWAY_PASSWORD resetkeys ~gw:* resetchannels &credential.invalidated $data_cmds +subscribe +unsubscribe"
   echo "user broker on >$REDIS_BROKER_PASSWORD resetkeys ~broker:* ~jti:mcp-credential-broker:* resetchannels &credential.invalidated $data_cmds +publish"
+  # Spring Session of the portal BFF (ws-07): wider command set than the other components, key prefix portal:*, no pub/sub.
+  # Only needed with several BFF instances; the BFF keeps sessions in memory until then.
+  echo "user portal-bff on >$REDIS_PORTAL_BFF_PASSWORD resetkeys ~portal:* resetchannels -@all +@read +@write +@keyspace +@hash +@string +@scripting +ping +auth +hello +client|setname +client|setinfo +multi +exec +discard"
   for server in jira confluence gitlab servicedesk opensearch; do
     var="REDIS_MCP_$(echo "$server" | tr a-z A-Z)_PASSWORD"
     eval "pw=\${$var}"

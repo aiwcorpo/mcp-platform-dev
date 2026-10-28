@@ -2,6 +2,7 @@
 # One-shot setup of the dev OpenBao (in-memory, so it runs on every `make up`). Idempotent.
 # Layout used by the credential broker (ws-06):
 #   KV v2  secret/        connections: secret/data/mcp/connections/<sub>/<system>
+#   KV v2  secret/data/mcp/oauth-clients/<system>: OAuth client of the broker at a provider (read only for the broker)
 #   Transit transit/      key mcp-credential-broker (envelope encryption of stored secrets)
 #   AppRole mcp-credential-broker with policy limited to the above
 #   (audit device to stdout is declared in openbao/audit.hcl; OpenBao 2.x refuses it via API)
@@ -20,6 +21,7 @@ bao read transit/keys/mcp-credential-broker >/dev/null 2>&1 \
 bao policy write mcp-credential-broker - <<'HCL'
 path "secret/data/mcp/connections/*"     { capabilities = ["create", "read", "update", "delete"] }
 path "secret/metadata/mcp/connections/*" { capabilities = ["read", "list", "delete"] }
+path "secret/data/mcp/oauth-clients/*"   { capabilities = ["read"] }
 path "transit/encrypt/mcp-credential-broker" { capabilities = ["update"] }
 path "transit/decrypt/mcp-credential-broker" { capabilities = ["update"] }
 HCL
@@ -39,5 +41,8 @@ else
   printf '%s' "$BAO_BROKER_SECRET_ID" \
     | bao write auth/approle/role/mcp-credential-broker/custom-secret-id secret_id=- >/dev/null
 fi
+
+# Client of the GitLab mock (mocks/systems/gitlab.py); the same secret is in the mock's environment.
+printf '%s' "$GITLAB_OAUTH_CLIENT_SECRET" | bao kv put secret/mcp/oauth-clients/gitlab client_id=mcp-broker client_secret=- >/dev/null
 
 echo "openbao-init: kv v2 at secret/, transit key mcp-credential-broker, approle mcp-credential-broker ready"

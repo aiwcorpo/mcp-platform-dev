@@ -13,7 +13,7 @@ STUBS := broker-mock gateway-admin-mock
 COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira
 
 .PHONY: help secrets certs contracts up up-core up-full down reset clean ps logs token claims exchange pat seed \
-        smoke users audit jira-auth images m1
+        smoke users audit jira-auth images m1 images-m2 up-m2 proxy-test mocks-test m2 mock-auth
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -45,21 +45,21 @@ up-full: certs ## start profile full (needs images of gateway, broker, mcp-jira 
 	@./scripts/wait-init.sh
 
 down: ## stop everything, keep volumes, secrets and certificates
-	$(COMPOSE) --profile infra --profile full down
+	$(COMPOSE) --profile infra --profile full --profile m2 down
 
 reset: ## drop containers and volumes (realm and databases are recreated), then start infra again
-	$(COMPOSE) --profile infra --profile full down -v
+	$(COMPOSE) --profile infra --profile full --profile m2 down -v
 	$(MAKE) up
 
 clean: ## reset plus removal of generated secrets, certificates and extracted contracts
-	-$(COMPOSE) --profile infra --profile full down -v
+	-$(COMPOSE) --profile infra --profile full --profile m2 down -v
 	rm -rf .secrets certs out
 
 ps: ## container status
-	$(COMPOSE) --profile infra --profile full ps -a
+	$(COMPOSE) --profile infra --profile full --profile m2 ps -a
 
 logs: ## follow logs (SERVICE=keycloak to narrow)
-	$(COMPOSE) --profile infra --profile full logs -f $(SERVICE)
+	$(COMPOSE) --profile infra --profile full --profile m2 logs -f $(SERVICE)
 
 token: ## access token of USER for claude-code (authorization code + PKCE)
 	@$(PY) scripts/mcpdev.py token $(USER)
@@ -97,3 +97,22 @@ smoke: ## smoke test of the running profile infra
 users: ## test users and their generated passwords (NOT FOR PRODUCTION)
 	@grep '^KC_USER_' .secrets/dev.env | sed -E 's/^KC_USER_([A-Z]+)_PASSWORD=/\1 /' | tr 'A-Z' 'a-z' | awk '{printf "  %-8s %s\n", $$1, $$2}'
 	@grep '^KC_BOOTSTRAP_ADMIN' .secrets/dev.env | sed 's/^/  /'
+
+images-m2: ## build the images of profile m2 (portal BFF and web, MCP servers of ws-04) from HEAD of the sibling repos
+	@./scripts/build-images-m2.sh
+
+# --no-recreate: running M1 services (and Keycloak, whose env gained PROXY_PORT) are left alone.
+up-m2: certs ## start profile m2 (proxy, portal BFF and web, MCP servers) on top of make up-full
+	$(COMPOSE) --profile full --profile m2 up -d --wait --no-recreate
+
+proxy-test: ## rules of the reverse proxy against stand-in upstreams (isolated network, does not touch the stack)
+	@./scripts/proxy-test.sh
+
+mocks-test: ## unit tests of the system mocks (GitLab, Confluence, Service Desk, OpenSearch)
+	@cd mocks/systems && $(PY) -I -m unittest discover -s tests
+
+m2: ## M2 scenario skeleton: the steps that can be checked on mocks and Keycloak; the rest is listed as SKIP
+	@$(PY) scripts/m2.py run
+
+mock-auth: ## credentials that reached a mock (never values): make mock-auth SYSTEM=gitlab
+	@$(PY) scripts/m2.py mock-auth $(SYSTEM)
