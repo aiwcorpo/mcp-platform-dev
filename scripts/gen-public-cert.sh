@@ -47,7 +47,7 @@ leaf() {
     -days 397 -sha256 -extfile "$dir/ext.cnf" -out "$dir/tls.crt" 2>/dev/null
   cat "$dir/tls.crt" public-ca/ca.crt > "$dir/chain.crt"
   rm -f "$dir/tls.csr" "$dir/ext.cnf" public-ca/ca.srl
-  chmod 644 "$dir/tls.key"
+  chmod 600 "$dir/tls.key"
   echo "certs: wrote $dir"
 }
 leaf proxy

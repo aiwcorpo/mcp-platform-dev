@@ -109,7 +109,21 @@ def check_keycloak_mfa():
         mcpdev.login("mallory", acr_values="mfa")
         record("keycloak: mallory (no OTP configured) cannot reach acr 'mfa'", False, "token issued")
     except mcpdev.Fail as e:
-        record("keycloak: mallory (no OTP configured) is sent to OTP setup, no token", "required-action" in str(e), str(e)[:100])
+        refused = "required-action" not in str(e) and "failed" in str(e)
+        record("keycloak: step-up for a user without OTP is refused, with no self-service OTP setup", refused, str(e)[:100])
+    record("keycloak: mallory still logs in at level 1 (password)", mcpdev.decode_jwt(mcpdev.login("mallory")).get("acr") == "password")
+    realm = json.loads((ROOT / "keycloak" / "realm-corp.json").read_text())
+    record("keycloak: brute force protection is on and CONFIGURE_TOTP is disabled in the realm",
+           realm.get("bruteForceProtected") is True and any(a["alias"] == "CONFIGURE_TOTP" and a["enabled"] is False for a in realm["requiredActions"]))
+
+
+def check_secrets_hygiene():
+    out = subprocess.run(["make", "-s", "users"], cwd=ROOT, capture_output=True, text=True).stdout.lower()
+    record("make users prints passwords but no OTP seed", "alice" in out and "otp_seed" not in out, "")
+    compose = (ROOT / "docker-compose.yml").read_text()
+    keys = set(re.findall(r"POLICY_KEYS_DIR:-([^}]+)\}/([\w.-]+\.pem)", compose))
+    record("compose: every policy key mounted into a container comes from the dev key directory of ws-09 (workaround, see docs/m3.md)",
+           bool(keys) and all(d == "../mcp-policies/keys/dev" and (POLICY_REPO / "keys" / "dev" / f).exists() for d, f in keys), str(sorted(keys))[:100])
 
 
 def check_policy_server():
@@ -336,7 +350,7 @@ class Scenario:
 
 
 def run():
-    for part in (check_openbao, check_redis_gateway, check_keycloak_mfa, check_policy_server, check_misc, check_registry_tools, lambda: Scenario().run()):
+    for part in (check_openbao, check_redis_gateway, check_keycloak_mfa, check_secrets_hygiene, check_policy_server, check_misc, check_registry_tools, lambda: Scenario().run()):
         try:
             part()
         except (mcpdev.Fail, OSError, KeyError, ValueError) as e:

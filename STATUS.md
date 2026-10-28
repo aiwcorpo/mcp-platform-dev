@@ -292,11 +292,31 @@ Runda 3 (serwery beta-3: jira m3-198c8ca, confluence m3-759efc6, gitlab m3-c234e
 0 SKIP (w tym DELETE na mocku Jiry po kodzie i odrzucenie powtorzonego kodu, tools/list przez gateway dla pieciu serwerow), run-m2.sh wszystkie PASS.
 Dopisane: `policies` na https (:8443), `server-state-init`, mock Confluence `space/{key}`, `gen-certs.sh` dopisuje nowe tozsamosci bez ruszania CA.
 
+Przeglad Opus dev M3 (0 CRITICAL/HIGH, 3 MEDIUM, 11 LOW) i rotacja, poprawione w jednym kamieniu:
+
+| Znalezisko | Co zrobione |
+| --- | --- |
+| M-1 `make users` drukowal ziarna OTP | filtr tylko `KC_USER_*_PASSWORD`; test w `make m3`; ziarno tylko przez `make otp URI=1` |
+| M-2 klucz dev pod id `policies-main-dev` | serwery na starterze beta-4 z profilem `devstack` i zgodami, id z powrotem `test-policies-main-dev`; test w `make m3`, ze klucze w compose pochodza z `mcp-policies/keys/dev` |
+| M-3 step-up bez OTP przez samodzielna konfiguracje | `CONFIGURE_TOTP` wylaczone w realmie: mallory z `acr_values=mfa` dostaje 400 bez tokenu (test negatywny sprawdza odmowe); `bruteForceProtected` wlaczone (prog 30) |
+| L-1, L-2 Redis | reguly wczytywane przed zapisem ACL (blad zamiast uzytkownika bez komend), kontener Redisa odtworzony z montowaniem `gateway.rules` i wolumenem `redis-data` |
+| L-3 Transit bez derywacji | opisane jako decyzja w `docs/m3.md`, bez zmiany |
+| L-5, L-6 klucze | `gen-public-cert.sh` ustawia 600; gateway, BFF i serwery montuja tylko `keystore.p12`; stuby healthchecku nadal maja certyfikat BFF (osobna tozsamosc: nie zrobione) |
+| L-7 brute force | patrz M-3 |
+| L-8 bootstrap rejestru | `make registry-refresh` zamiast recznego SQL; brak straznika w gatewayu zgloszony do ws-05 |
+| L-9, L-10, L-11 docs | ostrzezenie o ziarnach i kodach, sciezka od zera, poprawione sprzeczne zdanie, STATUS, `porty.md` (listener https), README |
+| L-4 gateway po http do paczek | bez zmian (ruch w sieci `core`, podpis chroni archiwum); do decyzji |
+| Rotacja | ziarna OTP i haslo admina Keycloaka wygenerowane na nowo, Keycloak odtworzony (`sub` bez zmian) |
+
+Stan biezacy (serwery beta-4: jira m3-d2f296a, confluence m3-3c7e396, gitlab m3-fedd052, servicedesk m3-ae76954, opensearch m3-3cd6bfa): proxy-test 212,
+m1 7 PASS, m2 88/0/2 SKIP, m3 65 PASS / 0 FAIL / 0 SKIP, run-m2.sh wszystkie PASS. `make m3` i `mcp-e2e/e2e/m3.py` uzywaja tego samego Authenticatora alice:
+nie uruchamiaj ich rownolegle.
+
 Wartosci: `acr` MFA = `mfa` (zwykle logowanie `password`); `PORTAL_STEP_UP_ACR_VALUES=mfa` jest ustawione w compose.
 Zmiany na dzialajacym stosie bez `down`: ponowny przebieg `openbao-init`, `redis-sync-acl.sh`, odtworzony Keycloak
 (sesje zerwane, `sub` bez zmian), `portal-bff` z `PORTAL_STEP_UP_ACR_VALUES`, restart `jira-mock`, nowa usluga `policies`,
 alice dodana do `mcp-jira-destructive` przez kcadm. Redis nie byl odtwarzany (compose ma nowy wolumen `gateway.rules`,
-nastepne `make up` go odtworzy). `idp-relay` zostaje do przestawienia BFF na `m3-c668b1e`.
+nastepne `make up` go odtworzy). (`idp-relay` usuniety w M3.3.)
 Wyniki po zmianach: `make proxy-test` 212, `make m2` 88 PASS / 0 FAIL / 2 SKIP, `make m1` 7 PASS, `make m3` 37 PASS / 8 SKIP.
 Nie zweryfikowane: scenariusz M3 na prawdziwych komponentach, zachowanie step-up Keycloaka z istniejaca sesja SSO w przegladarce.
 
@@ -325,10 +345,10 @@ Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktó
 
 ## Poza M1 (nie zrobione)
 
-- step-up flow z poziomami `acr` (hasło / hasło+OTP); teraz `acr` = `1` dla każdego logowania,
+- (zrobione w M3) step-up flow z poziomami `acr`: `password` / `mfa`,
 - OpenSearch z security pluginem, JWT backend, indeksy, DLS/FLS i dwa punkty DoD o OpenSearch,
 - mocki Confluence, GitLaba, service desku oraz serwery OAuth (authorize/token/refresh) dla GitLaba i Jiry,
-- repozytorium paczek polityk (MinIO/nginx) i testowy klucz Ed25519,
+- (zrobione w M3) repozytorium paczek polityk (nginx `policies`, klucze dev ws-09),
 - kolektor audytu ("SIEM"); w M1 `make audit` czyta logi kontenerów,
 - mock Jiry: uprawnienia per użytkownik, endpointy zapisu, `project in (A, B)` w JQL (L10).
 
@@ -346,6 +366,6 @@ Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktó
   `MCP_BROKER_TLS_NAME` i `MCP_GATEWAY_INTERNAL_TLS_NAME`.
 - Prefiksy kluczy Redis (`gw:`, `broker:`, `jti:<serverId>:`) są propozycją ws-01 do potwierdzenia przez
   ws-02, ws-05, ws-06.
-- Jakie wartości `acr` oznaczają MFA dla claimu `mfa` w C2 - do ustalenia przed step-up flow w realmie.
+- (rozstrzygniete w M3) `acr` MFA to `mfa`, bez MFA `password`.
 - Stub `resolve` zwraca ten sam PAT (`jkowalski`) dla każdego użytkownika; demo M1 z tożsamością `alice`
   w Jirze wymaga prawdziwego brokera.

@@ -8,7 +8,7 @@
   "rememberMe": false,
   "verifyEmail": false,
   "loginWithEmailAllowed": false,
-  "bruteForceProtected": false,
+  "bruteForceProtected": true,
   "accessTokenLifespan": 900,
   "ssoSessionIdleTimeout": 3600,
   "ssoSessionMaxLifespan": 36000,
@@ -1405,5 +1405,22 @@
       }
     }
   ],
-  "browserFlow": "browser-corp"
+  "browserFlow": "browser-corp",
+  "permanentLockout": false,
+  "failureFactor": 30,
+  "waitIncrementSeconds": 60,
+  "minimumQuickLoginWaitSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "requiredActions": [
+    {
+      "alias": "CONFIGURE_TOTP",
+      "name": "Configure OTP",
+      "providerId": "CONFIGURE_TOTP",
+      "enabled": false,
+      "defaultAction": false,
+      "priority": 10
+    }
+  ]
 }

@@ -14,7 +14,7 @@ COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira
 
 .PHONY: help secrets certs contracts up up-core up-full down reset clean ps logs token claims exchange pat seed \
         smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test trust-ca mocks-test m2 mock-auth \
-        m3 otp reset-authenticator
+        m3 otp reset-authenticator registry-refresh
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -97,8 +97,9 @@ smoke: ## smoke test of the running profile infra
 	@$(PY) scripts/smoke.py
 
 users: ## test users and their generated passwords (NOT FOR PRODUCTION)
-	@grep '^KC_USER_' .secrets/dev.env | sed -E 's/^KC_USER_([A-Z]+)_PASSWORD=/\1 /' | tr 'A-Z' 'a-z' | awk '{printf "  %-8s %s\n", $$1, $$2}'
+	@grep -E '^KC_USER_[A-Z]+_PASSWORD=' .secrets/dev.env | sed -E 's/^KC_USER_([A-Z]+)_PASSWORD=/\1 /' | tr 'A-Z' 'a-z' | awk '{printf "  %-8s %s\n", $$1, $$2}'
 	@grep '^KC_BOOTSTRAP_ADMIN' .secrets/dev.env | sed 's/^/  /'
+	@echo '  (OTP of the test users: make otp USER=alice prints the current code, never the seed)'
 
 images-m2: ## build the images of profile m2 (portal BFF and web, MCP servers of ws-04) from HEAD of the sibling repos
 	@./scripts/build-images-m2.sh
@@ -139,3 +140,6 @@ otp: ## current TOTP code of a test user (USER=alice; seed from .secrets/dev.env
 
 reset-authenticator: ## remove the Authenticator registration of USER at the broker (mTLS CN=mcp-offboarding); BROKER_URL as for pat
 	@$(PY) scripts/mcpdev.py reset-authenticator $(USER)
+
+registry-refresh: ## dev only: drop the manifests the gateway took over by bootstrap and let it fetch them again (after a tool definition changed)
+	@./scripts/registry-refresh.sh

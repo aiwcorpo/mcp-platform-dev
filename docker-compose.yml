@@ -63,6 +63,7 @@ networks:
 volumes:
   postgres-data:
   gateway-state:
+  redis-data:
   mcp-opensearch-state:
   mcp-servicedesk-state:
   mcp-gitlab-state:
@@ -193,6 +194,8 @@ services:
       - ./redis/portal-bff.rules:/portal-bff.rules:ro
       - ./redis/broker.rules:/broker.rules:ro
       - ./redis/gateway.rules:/gateway.rules:ro
+      # AOF (confirmations, counters and locks of the gateway survive a recreate of the container).
+      - redis-data:/data
     ports:
       - 127.0.0.1:${REDIS_PORT}:6379
     networks:
@@ -474,7 +477,7 @@ services:
       - gateway-state:/app/state
       - ${POLICY_KEYS_DIR:-../mcp-policies/keys/dev}/test-policies-main-dev.public.pem:/keys/test-policies-main-dev.public.pem:ro
       - ${POLICY_KEYS_DIR:-../mcp-policies/keys/dev}/test-policies-overrides-dev.public.pem:/keys/test-policies-overrides-dev.public.pem:ro
-      - ./certs/mcp-gateway:/certs/mcp-gateway:ro
+      - ./certs/mcp-gateway/keystore.p12:/certs/mcp-gateway/keystore.p12:ro
       - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
     ports:
@@ -589,18 +592,23 @@ services:
       MCP_TLS_TRUSTSTORE: /certs/ca/truststore.p12
       # Signed policy bundle (C7), the same the gateway evaluates, and the manifest the registry takes (C6).
       MCP_POLICY_URL: https://policies.internal:8443/policies/main/latest.json
-      # Outside the dev profile the starter refuses key ids starting with test- ; the dev key of ws-09 is configured
-      # under a neutral id (the id is a label of the configuration, the signature is checked with the key file).
-      MCP_POLICY_KEY_ID: policies-main-dev
+      MCP_POLICY_KEY_ID: test-policies-main-dev
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) and
+      # nothing else; it logs a warning and marks the manifest. Never set outside mcp-platform-dev.
+      SPRING_PROFILES_ACTIVE: devstack
+      MCP_DEVSTACK_ACKNOWLEDGED: "true"
+      AIWCORPO_MCP_PLATFORM_DEVSTACK_ACKNOWLEDGED: "true"
+      AIWCORPO_MCP_PLATFORM_POLICY_ALLOW_TEST_KEYS: "true"
+      AIWCORPO_MCP_PLATFORM_INTERNAL_JWT_ALLOW_TEST_KEYS: "true"
       MCP_INTERNAL_URL: https://mcp-jira.internal:8443/mcp
       MCP_ACCEPTED_CREDENTIAL_TYPES: user-secret
     volumes:
       - mcp-jira-state:/app/state
       - ${POLICY_KEYS_DIR:-../mcp-policies/keys/dev}/test-policies-main-dev.public.pem:/keys/test-policies-main-dev.public.pem:ro
-      - ./certs/mcp-jira:/certs/mcp-jira:ro
+      - ./certs/mcp-jira/keystore.p12:/certs/mcp-jira/keystore.p12:ro
       - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
     # Published only so that tests from the host can attack the server directly (A1, A3); every request still
@@ -712,7 +720,7 @@ services:
       PORTAL_STEP_UP_ACR_VALUES: mfa
       SPRING_PROFILES_ACTIVE: dev
     volumes:
-      - ./certs/mcp-portal-bff:/certs/mcp-portal-bff:ro
+      - ./certs/mcp-portal-bff/keystore.p12:/certs/mcp-portal-bff/keystore.p12:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
       - ../mcp-portal/bff/dev:/dev-data:ro
     networks:
@@ -743,18 +751,23 @@ services:
       MCP_CONFLUENCE_ALLOW_PLAIN_HTTP: "true"
       # Signed policy bundle (C7), the same the gateway evaluates, and the manifest the registry takes (C6).
       MCP_POLICY_URL: https://policies.internal:8443/policies/main/latest.json
-      # Outside the dev profile the starter refuses key ids starting with test- ; the dev key of ws-09 is configured
-      # under a neutral id (the id is a label of the configuration, the signature is checked with the key file).
-      MCP_POLICY_KEY_ID: policies-main-dev
+      MCP_POLICY_KEY_ID: test-policies-main-dev
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) and
+      # nothing else; it logs a warning and marks the manifest. Never set outside mcp-platform-dev.
+      SPRING_PROFILES_ACTIVE: devstack
+      MCP_DEVSTACK_ACKNOWLEDGED: "true"
+      AIWCORPO_MCP_PLATFORM_DEVSTACK_ACKNOWLEDGED: "true"
+      AIWCORPO_MCP_PLATFORM_POLICY_ALLOW_TEST_KEYS: "true"
+      AIWCORPO_MCP_PLATFORM_INTERNAL_JWT_ALLOW_TEST_KEYS: "true"
       MCP_INTERNAL_URL: https://mcp-confluence.internal:8443/mcp
       MCP_ACCEPTED_CREDENTIAL_TYPES: user-secret
     volumes:
       - mcp-confluence-state:/app/state
       - ${POLICY_KEYS_DIR:-../mcp-policies/keys/dev}/test-policies-main-dev.public.pem:/keys/test-policies-main-dev.public.pem:ro
-      - ./certs/mcp-confluence:/certs/mcp-confluence:ro
+      - ./certs/mcp-confluence/keystore.p12:/certs/mcp-confluence/keystore.p12:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
     networks:
       servers:
@@ -780,18 +793,23 @@ services:
       MCP_GITLAB_FILE_MAX_BYTES: "262144"
       # Signed policy bundle (C7), the same the gateway evaluates, and the manifest the registry takes (C6).
       MCP_POLICY_URL: https://policies.internal:8443/policies/main/latest.json
-      # Outside the dev profile the starter refuses key ids starting with test- ; the dev key of ws-09 is configured
-      # under a neutral id (the id is a label of the configuration, the signature is checked with the key file).
-      MCP_POLICY_KEY_ID: policies-main-dev
+      MCP_POLICY_KEY_ID: test-policies-main-dev
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) and
+      # nothing else; it logs a warning and marks the manifest. Never set outside mcp-platform-dev.
+      SPRING_PROFILES_ACTIVE: devstack
+      MCP_DEVSTACK_ACKNOWLEDGED: "true"
+      AIWCORPO_MCP_PLATFORM_DEVSTACK_ACKNOWLEDGED: "true"
+      AIWCORPO_MCP_PLATFORM_POLICY_ALLOW_TEST_KEYS: "true"
+      AIWCORPO_MCP_PLATFORM_INTERNAL_JWT_ALLOW_TEST_KEYS: "true"
       MCP_INTERNAL_URL: https://mcp-gitlab.internal:8443/mcp
       MCP_ACCEPTED_CREDENTIAL_TYPES: user-secret,user-oauth
     volumes:
       - mcp-gitlab-state:/app/state
       - ${POLICY_KEYS_DIR:-../mcp-policies/keys/dev}/test-policies-main-dev.public.pem:/keys/test-policies-main-dev.public.pem:ro
-      - ./certs/mcp-gitlab:/certs/mcp-gitlab:ro
+      - ./certs/mcp-gitlab/keystore.p12:/certs/mcp-gitlab/keystore.p12:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
     networks:
       servers:
@@ -818,18 +836,23 @@ services:
       MCP_SERVICEDESK_ALLOWED_QUEUES: IT
       # Signed policy bundle (C7), the same the gateway evaluates, and the manifest the registry takes (C6).
       MCP_POLICY_URL: https://policies.internal:8443/policies/main/latest.json
-      # Outside the dev profile the starter refuses key ids starting with test- ; the dev key of ws-09 is configured
-      # under a neutral id (the id is a label of the configuration, the signature is checked with the key file).
-      MCP_POLICY_KEY_ID: policies-main-dev
+      MCP_POLICY_KEY_ID: test-policies-main-dev
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) and
+      # nothing else; it logs a warning and marks the manifest. Never set outside mcp-platform-dev.
+      SPRING_PROFILES_ACTIVE: devstack
+      MCP_DEVSTACK_ACKNOWLEDGED: "true"
+      AIWCORPO_MCP_PLATFORM_DEVSTACK_ACKNOWLEDGED: "true"
+      AIWCORPO_MCP_PLATFORM_POLICY_ALLOW_TEST_KEYS: "true"
+      AIWCORPO_MCP_PLATFORM_INTERNAL_JWT_ALLOW_TEST_KEYS: "true"
       MCP_INTERNAL_URL: https://mcp-servicedesk.internal:8443/mcp
       MCP_ACCEPTED_CREDENTIAL_TYPES: service-account
     volumes:
       - mcp-servicedesk-state:/app/state
       - ${POLICY_KEYS_DIR:-../mcp-policies/keys/dev}/test-policies-main-dev.public.pem:/keys/test-policies-main-dev.public.pem:ro
-      - ./certs/mcp-servicedesk:/certs/mcp-servicedesk:ro
+      - ./certs/mcp-servicedesk/keystore.p12:/certs/mcp-servicedesk/keystore.p12:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
     networks:
       servers:
@@ -855,18 +878,23 @@ services:
       MCP_OPENSEARCH_INDEX_PREFIXES: logs-team-a,logs-team-b,hr
       # Signed policy bundle (C7), the same the gateway evaluates, and the manifest the registry takes (C6).
       MCP_POLICY_URL: https://policies.internal:8443/policies/main/latest.json
-      # Outside the dev profile the starter refuses key ids starting with test- ; the dev key of ws-09 is configured
-      # under a neutral id (the id is a label of the configuration, the signature is checked with the key file).
-      MCP_POLICY_KEY_ID: policies-main-dev
+      MCP_POLICY_KEY_ID: test-policies-main-dev
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) and
+      # nothing else; it logs a warning and marks the manifest. Never set outside mcp-platform-dev.
+      SPRING_PROFILES_ACTIVE: devstack
+      MCP_DEVSTACK_ACKNOWLEDGED: "true"
+      AIWCORPO_MCP_PLATFORM_DEVSTACK_ACKNOWLEDGED: "true"
+      AIWCORPO_MCP_PLATFORM_POLICY_ALLOW_TEST_KEYS: "true"
+      AIWCORPO_MCP_PLATFORM_INTERNAL_JWT_ALLOW_TEST_KEYS: "true"
       MCP_INTERNAL_URL: https://mcp-opensearch.internal:8443/mcp
       MCP_ACCEPTED_CREDENTIAL_TYPES: user-secret
     volumes:
       - mcp-opensearch-state:/app/state
       - ${POLICY_KEYS_DIR:-../mcp-policies/keys/dev}/test-policies-main-dev.public.pem:/keys/test-policies-main-dev.public.pem:ro
-      - ./certs/mcp-opensearch:/certs/mcp-opensearch:ro
+      - ./certs/mcp-opensearch/keystore.p12:/certs/mcp-opensearch/keystore.p12:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
     networks:
       servers:

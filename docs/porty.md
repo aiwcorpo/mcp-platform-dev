@@ -32,7 +32,7 @@ Usługi mają nazwy usług i aliasy `*.internal`.
 | Mock Service Desku | `http://localhost:18743` | `http://servicedesk.internal:8080` | sieć `servers` |
 | Mock OpenSearch | `http://localhost:18744` | `http://opensearch.internal:8080` | sieć `servers` |
 | `mcp-confluence`, `mcp-gitlab`, `mcp-servicedesk`, `mcp-opensearch` | | `https://<nazwa>.internal:8443` | profil `m2`, bez portów hosta |
-| Serwer paczek polityk (M3) | `http://localhost:18747` (`POLICIES_PORT`) | `http://policies.internal:8080` | nginx, tylko odczyt; `/policies/{main,overrides}/`; sieci `core` i `servers`; patrz [m3.md](m3.md) |
+| Serwer paczek polityk (M3) | `http://localhost:18747` (`POLICIES_PORT`) | `http://policies.internal:8080`, `https://policies.internal:8443` (serwery MCP; certyfikat CA wewnetrznego) | nginx, tylko odczyt; `/policies/{main,overrides}/`; sieci `core` i `servers`; patrz [m3.md](m3.md) |
 | Callback Claude Code | `http://localhost:33418/callback` | | redirect URI klienta `claude-code` |
 
 ## Keycloak: issuer i backchannel
