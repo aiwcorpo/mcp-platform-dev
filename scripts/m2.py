@@ -79,7 +79,7 @@ def pkce():
 
 def authorize(challenge, state, **extra):
     query = {"client_id": CLIENT["client_id"], "response_type": "code", "redirect_uri": CALLBACK, "state": state,
-             "code_challenge": challenge, "code_challenge_method": "S256", "scope": "read_api", **extra}
+             "code_challenge": challenge, "code_challenge_method": "S256", "scope": "api", **extra}
     status, headers, _ = http("GET", f"{GITLAB}/oauth/authorize?{urllib.parse.urlencode(query)}")
     location = headers.get("Location")
     params = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(location).query).items()} if location else {}
@@ -473,9 +473,26 @@ def check_portal():
         _, reply = call("tools/call", {"name": "gitlab__get_merge_request", "arguments": {"project": "team-a/app", "iid": 7}})
         record("MCP client: a GitLab tool works with the OAuth connection made in the portal", "result" in reply and "error" not in reply
                and not reply["result"].get("isError"), tool_text(reply)[:120])
-        _, reply = call("tools/call", {"name": "gitlab__comment_merge_request", "arguments": {"project": "team-a/app", "iid": 7, "body": "m2 check"}})
-        record("MCP client: writing through a read_api OAuth connection fails (the mock enforces the scope like GitLab)",
-               "error" in reply or reply.get("result", {}).get("isError"), tool_text(reply)[:120])
+        write_slug = slug + "w"
+        status, _, raw = portal.request("POST", f"{PROXY}/api/v1/virtual-servers", {
+            "slug": write_slug, "displayName": "m2 write", "tools": ["gitlab__comment_merge_request"]})
+        write_link = f"{PROXY}/v/{write_slug}/mcp"
+        record("portal: create a link with gitlab__comment_merge_request", status == 201 and jbody(raw).get("url") == write_link, f"HTTP {status} {raw[:120]!r}")
+        write_call = mcp_session(write_link, token_alice)
+        write_call("initialize", {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "m2", "version": "1"}})
+        write_call("notifications/initialized", notify=True)
+        note = "m2 note " + secrets.token_hex(3)
+        _, reply = write_call("tools/call", {"name": "gitlab__comment_merge_request", "arguments": {"project": "team-a/app", "iid": 7, "body": note}})
+        record("MCP client: gitlab__comment_merge_request through the link succeeds on the OAuth connection (scope api)",
+               "result" in reply and "error" not in reply and not reply["result"].get("isError"), tool_text(reply)[:120])
+        journal_status, _, journal_raw = http("GET", f"http://localhost:{PORTS['gitlab']}/__mock/journal", {"Authorization": "Basic " + base64.b64encode(
+            f"admin:{cfg('MOCK_ADMIN_PASSWORD')}".encode()).decode()})
+        notes = [row for row in (jbody(journal_raw) if journal_status == 200 else []) if isinstance(row, dict) and row.get("method") == "POST"
+                 and "/merge_requests/7/notes" in row.get("path", "")]
+        record("gitlab mock: the note on the MR was accepted (201) after the call through the link", bool(notes) and notes[-1].get("status") == 201,
+               str(notes[-1] if notes else journal_status)[:120])
+        status, _, _ = portal.request("DELETE", f"{PROXY}/api/v1/virtual-servers/{write_slug}")
+        record("portal: delete the link with the write tool", status in (200, 204), f"HTTP {status}")
 
         status, _, _ = portal.request("DELETE", f"{PROXY}/api/v1/connections/gitlab")
         record("portal: disconnect GitLab", status in (200, 204), f"HTTP {status}")
