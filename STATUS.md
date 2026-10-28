@@ -221,6 +221,16 @@ Powód: Safari nie zapisuje ciasteczek `__Host-`/`Secure` z `http://localhost` (
   gniazdo surowe w m2.py, `h.McpClient(base=...)`). Dla ws-10: zmienic origin na `https://localhost:18745`, kontekst TLS z `certs/public-ca/ca.crt`
   (HTTPSConnection, ssl.wrap_socket dla surowych zadan), a regex "obcych portow" w m2.py:217 na `:18745`.
 
+### Integracja rundy domykajacej M2 (2026-10-28)
+
+Obrazy (`.env`): gateway `mcp-gateway:m2-d65088f` (wczesniej na `m2-e4608ea`, potem poprawka bezpieczenstwa), broker `mcp-credential-broker:m2-bcfec7a`,
+BFF `mcp-portal-bff:m2-93f0e9f` (mcp-portal 93f0e9f), web `mcp-portal-web:m2-2134a8e` (mcp-portal 2134a8e). Przeladowane `up -d --no-deps`; Keycloak nie ruszany.
+Na `m2-d65088f`: `make proxy-test` 212 PASS; `make m2` 88 PASS, 0 FAIL, 2 SKIP; `make m1` F1, A1, A2, A3, A9, A9b, A15 PASS;
+`run-m2.sh` (mcp-e2e 26da660, https): wszystkie PASS poza A5.
+A5 FAIL: gateway odpowiada `not_found_or_denied` (a nie `tool_disabled`) na narzedzie spoza linku i nieistniejace; harness e2e oczekuje `tool_disabled`
+(sprawa ws-10 albo ws-05, jesli `tool_disabled` ma zostac w kontrakcie). `scripts/m2.py` przyjmuje juz `not_found_or_denied`.
+Komenda z portalu (`clientConfigs.claudeCode`): `claude mcp add --transport http --client-id claude-code --callback-port 33418 <slug> https://localhost:18745/v/<slug>/mcp`.
+
 ## Propozycje CC
 
 Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktów tu nie zmieniano.

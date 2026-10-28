@@ -466,7 +466,8 @@ def check_portal():
         status, reply = call("tools/call", {"name": "jira__get_issue", "arguments": {"issueKey": "ABC-1"}})
         record("MCP client: tools/call through the link reaches Jira as alice", "ABC-1" in tool_text(reply), tool_text(reply)[:120])
         status, reply = call("tools/call", {"name": "gitlab__get_project", "arguments": {"project": "team-a/app"}})
-        record("MCP client: a tool outside the link is refused (tool_disabled)", "tool_disabled" in json.dumps(reply), json.dumps(reply)[:120])
+        # Gateway m2-d65088f answers not_found_or_denied for a tool outside the link, the same as for an unknown tool.
+        record("MCP client: a tool outside the link is refused (not_found_or_denied)", "not_found_or_denied" in json.dumps(reply), json.dumps(reply)[:120])
 
         call = mcp_session(f"{PROXY}/s/mcp-gitlab/mcp", token_alice)
         call("initialize", {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "m2", "version": "1"}})
