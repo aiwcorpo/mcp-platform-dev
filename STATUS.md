@@ -265,6 +265,24 @@ Sesje SSO Keycloaka i sesje portalu zostaly zerwane; tokeny Claude Code sprzed z
 Testy: `make proxy-test` 212/0; `make m2` 88 passed, 0 failed, 2 skipped; `make m1` F1, A1, A2, A3, A9, A9b, A15 PASS; `make mocks-test` 174 OK.
 `make smoke` wymaga profilu infra ze stubami (nie biegnie przy `up-full`), nie uruchamiany.
 
+## M3 (2026-10-28): infrastruktura dla Authenticatora, Cedar i logow aktywnosci
+
+Opis: [docs/m3.md](docs/m3.md). Kontrakty 3.0.1. Kamienie:
+
+| Kamien | Zakres | Stan | Commit |
+| --- | --- | --- | --- |
+| M3.1 | OpenBao (klucz Transit `mcp-authenticators`, polityka brokera), Redis (`redis/gateway.rules`), Keycloak (przeplyw `browser-corp`, `acr` `password`=1 / `mfa`=2, OTP dla alice/bob/carol, ziarna z `init-secrets.sh`), serwer paczek `policies` (:18747), mock Jiry `DELETE issue`, `scripts/totp.py` | zrobione | 11eaf3c |
+| M3.2 | `make m3` (37 kontroli infrastruktury + scenariusz Authenticatora z SKIP), `make otp`, `make reset-authenticator`, grupa `mcp-jira-destructive` dla alice, docs | zrobione | patrz git log |
+| M3.3 | integracja obrazow M3 (broker m3-6203b4b, BFF m3-c668b1e, gateway, mcp-jira z `delete_issue`), usuniecie `idp-relay` i `JAVA_TOOL_OPTIONS` BFF, pierwszy zielony scenariusz | czeka na obrazy gateway'a i serwera | |
+
+Wartosci: `acr` MFA = `mfa` (zwykle logowanie `password`); `PORTAL_STEP_UP_ACR_VALUES=mfa` jest ustawione w compose.
+Zmiany na dzialajacym stosie bez `down`: ponowny przebieg `openbao-init`, `redis-sync-acl.sh`, odtworzony Keycloak
+(sesje zerwane, `sub` bez zmian), `portal-bff` z `PORTAL_STEP_UP_ACR_VALUES`, restart `jira-mock`, nowa usluga `policies`,
+alice dodana do `mcp-jira-destructive` przez kcadm. Redis nie byl odtwarzany (compose ma nowy wolumen `gateway.rules`,
+nastepne `make up` go odtworzy). `idp-relay` zostaje do przestawienia BFF na `m3-c668b1e`.
+Wyniki po zmianach: `make proxy-test` 212, `make m2` 88 PASS / 0 FAIL / 2 SKIP, `make m1` 7 PASS, `make m3` 37 PASS / 8 SKIP.
+Nie zweryfikowane: scenariusz M3 na prawdziwych komponentach, zachowanie step-up Keycloaka z istniejaca sesja SSO w przegladarce.
+
 ## Propozycje CC
 
 Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktów tu nie zmieniano.

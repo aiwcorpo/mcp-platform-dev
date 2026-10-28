@@ -13,7 +13,8 @@ STUBS := broker-mock gateway-admin-mock
 COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira
 
 .PHONY: help secrets certs contracts up up-core up-full down reset clean ps logs token claims exchange pat seed \
-        smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test trust-ca mocks-test m2 mock-auth
+        smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test trust-ca mocks-test m2 mock-auth \
+        m3 otp reset-authenticator
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -129,3 +130,12 @@ m2: ## M2 scenario skeleton: the steps that can be checked on mocks and Keycloak
 
 mock-auth: ## credentials that reached a mock (never values): make mock-auth SYSTEM=gitlab
 	@$(PY) scripts/m2.py mock-auth $(SYSTEM)
+
+m3: ## M3 scenario skeleton: infrastructure checks plus the Authenticator / DESTRUCTIVE confirmation flow; SKIP where a component has no M3 yet
+	@$(PY) scripts/m3.py run
+
+otp: ## current TOTP code of a test user (USER=alice; seed from .secrets/dev.env); URI=1 prints the otpauth URI for a real app
+	@$(PY) scripts/mcpdev.py otp $(USER) $(if $(URI),--uri)
+
+reset-authenticator: ## remove the Authenticator registration of USER at the broker (mTLS CN=mcp-offboarding); BROKER_URL as for pat
+	@$(PY) scripts/mcpdev.py reset-authenticator $(USER)

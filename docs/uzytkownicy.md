@@ -7,13 +7,13 @@ trwałe, więc realm zawsze odpowiada plikowi). Hasła są w `.secrets/dev.env`,
 
 | Login | Grupy (C9) | Do czego |
 | --- | --- | --- |
-| `alice` | `mcp-jira-read`, `mcp-jira-write`, `mcp-jira-proj-ABC`, `mcp-confluence-read`, `mcp-confluence-space-ENG`, `mcp-gitlab-read`, `mcp-gitlab-write`, `mcp-gitlab-grp-team-a`, `mcp-opensearch-read`, `mcp-opensearch-idx-logs-team-a`, `mcp-client-claude-code` | główna ścieżka demo |
+| `alice` | `mcp-jira-read`, `mcp-jira-write`, `mcp-jira-destructive`, `mcp-jira-proj-ABC`, `mcp-confluence-read`, `mcp-confluence-space-ENG`, `mcp-gitlab-read`, `mcp-gitlab-write`, `mcp-gitlab-grp-team-a`, `mcp-opensearch-read`, `mcp-opensearch-idx-logs-team-a`, `mcp-client-claude-code` | główna ścieżka demo |
 | `bob` | `mcp-jira-read`, `mcp-jira-proj-ABC`, `mcp-opensearch-read`, `mcp-opensearch-idx-logs-team-a`, `mcp-client-claude-code` | tylko odczyt |
 | `carol` | `mcp-platform-admin`, `mcp-client-claude-code` | admin platformy |
 | `mallory` | brak | brak uprawnień |
 
 Adresy e-mail `<login>@corp.test`. Grupy bez użytkowników, przygotowane do testów zakresów:
-`mcp-jira-destructive`, `mcp-jira-proj-DEF`, `mcp-jira-proj-HR`, `mcp-confluence-write`,
+`mcp-jira-proj-DEF`, `mcp-jira-proj-HR`, `mcp-confluence-write`,
 `mcp-servicedesk-read`, `mcp-servicedesk-write`, `mcp-servicedesk-queue-IT`, `mcp-opensearch-idx-logs-team-b`.
 
 Claim `groups` zawiera nazwy bez ścieżki (`mcp-jira-read`, nie `/mcp-jira-read`): mapper
@@ -89,3 +89,6 @@ jednego ze znanych PAT z tabeli. Każde inne poświadczenie, w tym token z Keycl
 niezmiennik 2), cudzy PAT i `Basic`, dostaje `401`. `make jira-auth` pokazuje z dziennika żądań mocka (admin API z hasłem z `.secrets/dev.env`), jakie
 poświadczenie dotarło do Jiry (nazwa znanego PAT, oznaczony JWT z `iss`/`aud`, inne tylko długością).
 Mock nie sprawdza uprawnień per użytkownik.
+
+M3: `alice`, `bob` i `carol` mają OTP logowania (poziom `acr` `mfa`, patrz [m3.md](m3.md)); `mallory` nie. `alice` ma `mcp-jira-destructive`
+(bez niej `delete_issue` kończy się odmową Cedar przed kodem TOTP), `bob` nie (scenariusz odmowy).

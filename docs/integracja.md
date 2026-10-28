@@ -145,7 +145,7 @@ Klucze nie są w kontraktach. Środowisko zakłada poniższe prefiksy i egzekwuj
 
 | Użytkownik | Hasło (`.secrets/dev.env`) | Klucze | Kanały | Uwagi |
 | --- | --- | --- | --- | --- |
-| `gateway` | `REDIS_GATEWAY_PASSWORD` | `gw:*` (potwierdzenia C11, cache poświadczeń, limity) | `credential.invalidated`: tylko `SUBSCRIBE` | bez `PUBLISH` |
+| `gateway` | `REDIS_GATEWAY_PASSWORD` | `gw:*` (potwierdzenia C11, cache poświadczeń, limity) | `credential.invalidated`: tylko `SUBSCRIBE` | bez `PUBLISH`; lista komend w `redis/gateway.rules` (zbiory, zbiory posortowane, `WATCH`, `EVAL`/`EVALSHA`), opis w [m3.md](m3.md) |
 | `broker` | `REDIS_BROKER_PASSWORD` | `broker:*`, `jti:mcp-credential-broker:*` | `credential.invalidated`: tylko `PUBLISH` | broker też odbiera C2, więc pilnuje `jti`; `EVAL`/`EVALSHA` dla atomowego zwolnienia blokady (Redis sprawdza klucze skryptu względem ACL) |
 | `portal-bff` | `REDIS_PORTAL_BFF_PASSWORD` | `portal:*` (Spring Session) | brak | lista komend w `redis/portal-bff.rules`: `HSET`/`HGETALL`/`HDEL`/`DEL`/`EXPIRE`/`RENAME` itd., bez `FLUSHALL`, `KEYS`, `SCAN`, `SCRIPT`, `FUNCTION`, `MIGRATE`; `RedisIndexedSessionRepository` wymagałby też `SADD`/`SREM`/`SMEMBERS` i kanałów keyevent |
 | `mcp-<system>` | `REDIS_MCP_<SYSTEM>_PASSWORD` | `jti:mcp-<system>:*` | brak | starter (ws-02): prefiks `jti:<serverId>:` |

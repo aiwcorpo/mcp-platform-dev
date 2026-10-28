@@ -899,6 +899,7 @@
       "groups": [
         "/mcp-jira-read",
         "/mcp-jira-write",
+        "/mcp-jira-destructive",
         "/mcp-jira-proj-ABC",
         "/mcp-confluence-read",
         "/mcp-confluence-space-ENG",

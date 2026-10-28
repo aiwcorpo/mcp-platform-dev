@@ -7,6 +7,7 @@
   exchange USER --audience A [--requester R] token exchange (RFC 8693) of USER's token to audience A
   put-secret USER SYSTEM                     store a PAT for USER through the broker API (C4 PUT .../secret);
                                              the PAT comes from $MCP_PAT, default <user>-pat
+  reset-authenticator USER                   remove the Authenticator registration of USER at the broker (mTLS CN=mcp-offboarding)
   audit REQUEST_ID [--logs FILE]... [--compose]
                                              C8 audit events of one request from gateway, broker, mcp-jira logs
   jira-auth                                  credentials that reached the Jira mock (from its request journal)
@@ -169,7 +170,8 @@ def otp_seed(user):
     return cfg(f"KC_USER_{user.upper()}_OTP_SEED")
 
 
-def login(user, client_id="claude-code", scope="openid", password=None, acr_values=None, otp=False, max_age=None):
+def login(user, client_id="claude-code", scope="openid", password=None, acr_values=None, otp=False, max_age=None,
+          otp_code=None):
     """Authorization code + PKCE S256, filling the Keycloak login form without a browser.
 
     acr_values="mfa" asks for the step-up level of the realm (password + OTP); the OTP is generated from the seed of
@@ -224,7 +226,7 @@ def login(user, client_id="claude-code", scope="openid", password=None, acr_valu
             raise Fail(f"login of {user} failed (wrong password or required action)")
         if not (acr_values or otp):
             raise Fail(f"Keycloak asked {user} for an OTP; pass acr_values/otp")
-        location, page = submit(otp_form.action, {"otp": totp.fresh_code(otp_seed(user)), "login": "Sign In"})
+        location, page = submit(otp_form.action, {"otp": otp_code or totp.fresh_code(otp_seed(user)), "login": "Sign In"})
         if location is None:
             raise Fail(f"OTP of {user} rejected")
     params = urllib.parse.parse_qs(urllib.parse.urlparse(location).query)
@@ -327,6 +329,43 @@ def broker_request(user, method, path, body=None, broker_url=None, tls_name=None
         return resp.status, json.loads(raw) if raw else {}
     except ValueError:
         return resp.status, {"raw": raw[:200]}
+
+
+def offboarding_request(method, path, broker_url=None, tls_name=None):
+    """A C4 admin call as the offboarding / helpdesk client makes it: mTLS with CN=mcp-offboarding and no bearer token.
+    Returns (HTTP status, JSON body or {})."""
+    url = urllib.parse.urlparse((broker_url or cfg("BROKER_URL", f"https://localhost:{cfg('BROKER_PORT', '18100')}")).rstrip("/"))
+    tls_name = tls_name or cfg("MCP_BROKER_TLS_NAME", "mcp-credential-broker.internal")
+    conn = PinnedNameHTTPSConnection(url.hostname, url.port or 443, tls_name, mtls_context("mcp-offboarding"))
+    try:
+        conn.request(method, f"{url.path}{path}", headers={"X-Request-Id": str(uuid7())})
+        resp = conn.getresponse()
+        raw = resp.read().decode(errors="replace")
+    except (OSError, ssl.SSLError, http.client.HTTPException) as e:
+        raise Fail(f"broker unreachable or rejected TLS: {getattr(e, 'reason', None) or e}") from None
+    finally:
+        conn.close()
+    try:
+        return resp.status, json.loads(raw) if raw else {}
+    except ValueError:
+        return resp.status, {"raw": raw[:200]}
+
+
+def uuid7():
+    """UUIDv7 (RFC 9562) for X-Request-Id."""
+    import time
+    import uuid
+    ms = int(time.time() * 1000)
+    value = (ms << 80) | (0x7 << 76) | (secrets.randbits(12) << 64) | (0b10 << 62) | secrets.randbits(62)
+    return uuid.UUID(int=value)
+
+
+def reset_authenticator(user):
+    """POST /v1/admin/users/{sub}/authenticator/reset for a test user (lost phone and lost IdP factor): removes the
+    registration and a pending enrollment. A verification lock stays (it lifts only with time). `sub` comes from a
+    real login, so it is whatever the IdP issues, not a value copied from the realm file."""
+    sub = decode_jwt(login(user))["sub"]
+    return offboarding_request("POST", f"/v1/admin/users/{urllib.parse.quote(sub, safe='')}/authenticator/reset")
 
 
 AUDIT_COMPONENTS = {"gateway": "mcp-gateway", "broker": "mcp-credential-broker", "server": "mcp-jira"}
@@ -444,6 +483,9 @@ def main():
     p.add_argument("--compose", action="store_true",
                    help="also read container logs of gateway, broker and mcp-jira (default when no --logs)")
 
+    p = sub.add_parser("reset-authenticator")
+    p.add_argument("user")
+
     sub.add_parser("jira-auth")
 
     args = parser.parse_args()
@@ -467,6 +509,14 @@ def main():
             status, body = put_secret(args.user, args.system, secret, args.expires_at, args.identity)
             print(json.dumps({"httpStatus": status, **body}))
             return 0 if status == 200 else 1
+        elif args.cmd == "reset-authenticator":
+            status, body = reset_authenticator(args.user)
+            print(json.dumps({"httpStatus": status, **body}))
+            if status == 204:
+                return 0
+            if status in (404, 405):
+                print("this broker build has no Authenticator reset (M3, contracts 3.0.1)", file=sys.stderr)
+            return 1
         elif args.cmd == "audit":
             return audit(args.request_id, args.logs, True if args.compose else None)
         elif args.cmd == "jira-auth":
