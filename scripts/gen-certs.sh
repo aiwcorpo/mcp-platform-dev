@@ -15,11 +15,6 @@ env_value() { grep "^$1=" "$root/.env" | cut -d= -f2-; }
 broker_name="${MCP_BROKER_TLS_NAME:-$(env_value MCP_BROKER_TLS_NAME)}"
 gateway_name="${MCP_GATEWAY_INTERNAL_TLS_NAME:-$(env_value MCP_GATEWAY_INTERNAL_TLS_NAME)}"
 
-if [[ -f "$certs/ca/ca.crt" ]]; then
-  echo "certs: $certs/ca/ca.crt exists, keeping certificates"
-  exit 0
-fi
-
 mkdir -p "$certs"
 
 # <name>:<role>:<tls name>. CN=<name> is what the broker and gateway check on clients (C4: mcp-gateway,
@@ -38,6 +33,7 @@ identities=(
   "mcp-gitlab:server:mcp-gitlab.internal"
   "mcp-servicedesk:server:mcp-servicedesk.internal"
   "mcp-opensearch:server:mcp-opensearch.internal"
+  "policies:server:policies.internal"
 )
 
 docker run --rm -i --user "$(id -u):$(id -g)" \
@@ -79,19 +75,25 @@ issue() {
   rm -f "$dir/tls.csr" "$dir/ext.cnf"
 }
 
-new_ca ca "mcp-platform-dev internal CA"
-# -jdktrust marks the entry as trusted for Java; without it the JDK ignores certificates in PKCS12.
-openssl pkcs12 -export -nokeys -in ca/ca.crt -jdktrust anyExtendedKeyUsage -name mcp-dev-ca \
-  -passout env:STORE_PASSWORD -out ca/truststore.p12
+# An existing CA is never regenerated (trust is already distributed); identities added to the list later are issued
+# on the next run.
+if [ ! -f ca/ca.crt ]; then
+  new_ca ca "mcp-platform-dev internal CA"
+  # -jdktrust marks the entry as trusted for Java; without it the JDK ignores certificates in PKCS12.
+  openssl pkcs12 -export -nokeys -in ca/ca.crt -jdktrust anyExtendedKeyUsage -name mcp-dev-ca \
+    -passout env:STORE_PASSWORD -out ca/truststore.p12
+fi
 
 for spec in "$@"; do
   name="${spec%%:*}"; rest="${spec#*:}"; role="${rest%%:*}"; tls_name="${rest#*:}"
-  issue ca "$name" "$role" "$tls_name" "$name"
+  [ -f "$name/tls.crt" ] || issue ca "$name" "$role" "$tls_name" "$name"
 done
 
 # Same CN and SAN as the gateway, signed by an unrelated CA: negative mTLS tests must see it rejected.
-new_ca untrusted-ca "untrusted CA for negative tests"
-issue untrusted-ca mcp-gateway both "$GATEWAY_TLS_NAME" untrusted/mcp-gateway
+if [ ! -f untrusted-ca/ca.crt ]; then
+  new_ca untrusted-ca "untrusted CA for negative tests"
+  issue untrusted-ca mcp-gateway both "$GATEWAY_TLS_NAME" untrusted/mcp-gateway
+fi
 
 rm -f ca/ca.srl untrusted-ca/ca.srl
 chmod 600 */*.key */*.p12 untrusted/*/*.key untrusted/*/*.p12 2>/dev/null || true

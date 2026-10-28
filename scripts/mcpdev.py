@@ -424,11 +424,11 @@ def audit(request_id, logs_files=None, with_compose=None):
     return 0 if not absent and not incomplete else 1
 
 
-def jira_auth():
+def jira_auth(limit=50):
     """Summary of the Authorization headers the Jira mock received, newest first. Known test PATs are
     named, an IdP JWT is flagged (token passthrough, invariant 2), anything else is shown by length only."""
     known = {"alice-pat", "bob-pat", "carol-pat", "mallory-pat", "test-only-jira-pat-0000000000000000"}
-    url = f"http://localhost:{cfg('JIRA_MOCK_PORT', '18081')}/__admin/requests?limit=50"
+    url = f"http://localhost:{cfg('JIRA_MOCK_PORT', '18081')}/__admin/requests?limit={limit}"
     basic = base64.b64encode(f"admin:{cfg('JIRA_MOCK_ADMIN_PASSWORD')}".encode()).decode()
     with urllib.request.urlopen(urllib.request.Request(url, headers={"Authorization": f"Basic {basic}"})) as resp:
         journal = json.load(resp)

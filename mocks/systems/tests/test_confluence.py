@@ -214,5 +214,21 @@ class RoutingTest(unittest.TestCase):
         self.assertEqual(call("POST", "/rest/api/user/current")[0], 405)
 
 
+class SpaceLabels(unittest.TestCase):
+    def test_labels_are_complete_and_hr_is_restricted(self):
+        status, body = call("GET", "/rest/api/space/HR?expand=metadata.labels")
+        labels = body["metadata"]["labels"]
+        self.assertEqual(status, 200)
+        self.assertEqual([x["name"] for x in labels["results"]], ["restricted"])
+        self.assertEqual((labels["size"], labels["limit"]), (1, 200))
+
+    def test_personal_space_key_may_be_encoded_and_unknown_is_404(self):
+        self.assertEqual(call("GET", "/rest/api/space/%7Ealice?expand=metadata.labels")[0], 200)
+        self.assertEqual(call("GET", "/rest/api/space/NOPE")[0], 404)
+
+    def test_needs_a_known_pat(self):
+        self.assertEqual(call("GET", "/rest/api/space/ENG", token="unknown")[0], 401)
+
+
 if __name__ == "__main__":
     unittest.main()

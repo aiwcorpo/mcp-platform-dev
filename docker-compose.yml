@@ -36,6 +36,14 @@ x-tcp-8443-health: &tcp-8443-health
   retries: 40
   start_period: 5s
 
+# The server images of M3 are glibc images without nc: bash opens the socket.
+x-bash-8443-health: &bash-8443-health
+  test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8443"]
+  interval: 3s
+  timeout: 3s
+  retries: 40
+  start_period: 15s
+
 x-mcp-server-env: &mcp-server-env
   MCP_GATEWAY_JWKS_URI: https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json
   MCP_GATEWAY_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
@@ -55,6 +63,11 @@ networks:
 volumes:
   postgres-data:
   gateway-state:
+  mcp-opensearch-state:
+  mcp-servicedesk-state:
+  mcp-gitlab-state:
+  mcp-confluence-state:
+  mcp-jira-state:
 
 services:
   keycloak:
@@ -128,6 +141,21 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+
+  # Named volumes are created root-owned; the server images run as uid 999 and keep the accepted policy revision
+  # in /app/state (rollback protection), so the volumes are handed over once.
+  server-state-init:
+    profiles: [full]
+    image: python:3.12-alpine@sha256:0687a6bc9716edc2a6ee0fbfb0f87e7ee358b262b67c9215de91bc9b2d38ba71
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c", "chown -R 999:999 /state && chmod 700 /state/*"]
+    volumes:
+      - mcp-jira-state:/state/jira
+      - mcp-confluence-state:/state/confluence
+      - mcp-gitlab-state:/state/gitlab
+      - mcp-servicedesk-state:/state/servicedesk
+      - mcp-opensearch-state:/state/opensearch
+    restart: "no"
 
   openbao-init:
     image: openbao/openbao:2.7.2@sha256:5046911075e137e154ce49ab051502f4ec7cf367d484ae4a4dce665d9b90561f
@@ -302,6 +330,9 @@ services:
     tmpfs: [/tmp]
     volumes:
       - ./policies/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./policies/locations.conf:/etc/nginx/policies-locations.conf:ro
+      - ./certs/policies/tls.crt:/etc/nginx/tls/tls.crt:ro
+      - ./certs/policies/tls.key:/etc/nginx/tls/tls.key:ro
       - ${POLICY_REPOSITORY_DIR:-../mcp-policies/out/repository}:/srv/policies:ro
     ports:
       - 127.0.0.1:${POLICIES_PORT}:8080
@@ -435,9 +466,9 @@ services:
       MCP_POLICY_OVERRIDES_KEY_FILE: /keys/test-policies-overrides-dev.public.pem
       MCP_POLICY_ALLOW_TEST_KEYS: "true"
       MCP_POLICY_STATE_DIR: /app/state
-      # The MCP server images of this stack (starter alpha-11) do not serve /mcp-manifest yet, so no manifest can be
-      # approved or bootstrapped; static takes the tools from the gateway configuration. Back to required with starter beta-2.
-      MCP_REGISTRY_MODE: static
+      # Dev only: the gateway takes the first manifest of a server without a registry row from the server itself. The
+      # production path is the CI PUT (CN mcp-registry-ci) with a manifest approved in review.
+      MCP_REGISTRY_BOOTSTRAP: "true"
       MCP_ACTIVITY_CURSOR_KEY: ${MCP_ACTIVITY_CURSOR_KEY:?run make secrets}
     volumes:
       - gateway-state:/app/state
@@ -556,7 +587,19 @@ services:
       MCP_TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
       MCP_TLS_KEYSTORE: /certs/mcp-jira/keystore.p12
       MCP_TLS_TRUSTSTORE: /certs/ca/truststore.p12
+      # Signed policy bundle (C7), the same the gateway evaluates, and the manifest the registry takes (C6).
+      MCP_POLICY_URL: https://policies.internal:8443/policies/main/latest.json
+      # Outside the dev profile the starter refuses key ids starting with test- ; the dev key of ws-09 is configured
+      # under a neutral id (the id is a label of the configuration, the signature is checked with the key file).
+      MCP_POLICY_KEY_ID: policies-main-dev
+      MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
+      MCP_POLICY_STATE_DIR: /app/state
+      AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
+      MCP_INTERNAL_URL: https://mcp-jira.internal:8443/mcp
+      MCP_ACCEPTED_CREDENTIAL_TYPES: user-secret
     volumes:
+      - mcp-jira-state:/app/state
+      - ${POLICY_KEYS_DIR:-../mcp-policies/keys/dev}/test-policies-main-dev.public.pem:/keys/test-policies-main-dev.public.pem:ro
       - ./certs/mcp-jira:/certs/mcp-jira:ro
       - ./certs/ca/ca.crt:/certs/ca/ca.crt:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
@@ -567,8 +610,9 @@ services:
     networks:
       servers:
         aliases: [mcp-jira.internal]
-    healthcheck: *tcp-8443-health
+    healthcheck: *bash-8443-health
     depends_on:
+      server-state-init: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
       jira-mock: {condition: service_healthy}
 
@@ -697,14 +741,27 @@ services:
       # The Confluence mock speaks plain http; dev only (the PAT would travel in clear text).
       MCP_CONFLUENCE_URL: http://confluence.internal:8080
       MCP_CONFLUENCE_ALLOW_PLAIN_HTTP: "true"
+      # Signed policy bundle (C7), the same the gateway evaluates, and the manifest the registry takes (C6).
+      MCP_POLICY_URL: https://policies.internal:8443/policies/main/latest.json
+      # Outside the dev profile the starter refuses key ids starting with test- ; the dev key of ws-09 is configured
+      # under a neutral id (the id is a label of the configuration, the signature is checked with the key file).
+      MCP_POLICY_KEY_ID: policies-main-dev
+      MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
+      MCP_POLICY_STATE_DIR: /app/state
+      AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
+      MCP_INTERNAL_URL: https://mcp-confluence.internal:8443/mcp
+      MCP_ACCEPTED_CREDENTIAL_TYPES: user-secret
     volumes:
+      - mcp-confluence-state:/app/state
+      - ${POLICY_KEYS_DIR:-../mcp-policies/keys/dev}/test-policies-main-dev.public.pem:/keys/test-policies-main-dev.public.pem:ro
       - ./certs/mcp-confluence:/certs/mcp-confluence:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
     networks:
       servers:
         aliases: [mcp-confluence.internal]
-    healthcheck: *tcp-8443-health
+    healthcheck: *bash-8443-health
     depends_on:
+      server-state-init: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
       confluence-mock: {condition: service_healthy}
 
@@ -720,15 +777,28 @@ services:
       MCP_TLS_KEYSTORE: /certs/mcp-gitlab/keystore.p12
       MCP_GITLAB_URL: http://gitlab.internal:8080
       MCP_GITLAB_ALLOW_PLAIN_HTTP: "true"
-      MCP_GITLAB_FILE_MAX_BYTES: "524288"
+      MCP_GITLAB_FILE_MAX_BYTES: "262144"
+      # Signed policy bundle (C7), the same the gateway evaluates, and the manifest the registry takes (C6).
+      MCP_POLICY_URL: https://policies.internal:8443/policies/main/latest.json
+      # Outside the dev profile the starter refuses key ids starting with test- ; the dev key of ws-09 is configured
+      # under a neutral id (the id is a label of the configuration, the signature is checked with the key file).
+      MCP_POLICY_KEY_ID: policies-main-dev
+      MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
+      MCP_POLICY_STATE_DIR: /app/state
+      AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
+      MCP_INTERNAL_URL: https://mcp-gitlab.internal:8443/mcp
+      MCP_ACCEPTED_CREDENTIAL_TYPES: user-secret,user-oauth
     volumes:
+      - mcp-gitlab-state:/app/state
+      - ${POLICY_KEYS_DIR:-../mcp-policies/keys/dev}/test-policies-main-dev.public.pem:/keys/test-policies-main-dev.public.pem:ro
       - ./certs/mcp-gitlab:/certs/mcp-gitlab:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
     networks:
       servers:
         aliases: [mcp-gitlab.internal]
-    healthcheck: *tcp-8443-health
+    healthcheck: *bash-8443-health
     depends_on:
+      server-state-init: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
       gitlab-mock: {condition: service_healthy}
 
@@ -746,14 +816,27 @@ services:
       MCP_SERVICEDESK_ALLOW_PLAIN_HTTP: "true"
       MCP_SERVICEDESK_CREDENTIAL_MODE: service-account
       MCP_SERVICEDESK_ALLOWED_QUEUES: IT
+      # Signed policy bundle (C7), the same the gateway evaluates, and the manifest the registry takes (C6).
+      MCP_POLICY_URL: https://policies.internal:8443/policies/main/latest.json
+      # Outside the dev profile the starter refuses key ids starting with test- ; the dev key of ws-09 is configured
+      # under a neutral id (the id is a label of the configuration, the signature is checked with the key file).
+      MCP_POLICY_KEY_ID: policies-main-dev
+      MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
+      MCP_POLICY_STATE_DIR: /app/state
+      AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
+      MCP_INTERNAL_URL: https://mcp-servicedesk.internal:8443/mcp
+      MCP_ACCEPTED_CREDENTIAL_TYPES: service-account
     volumes:
+      - mcp-servicedesk-state:/app/state
+      - ${POLICY_KEYS_DIR:-../mcp-policies/keys/dev}/test-policies-main-dev.public.pem:/keys/test-policies-main-dev.public.pem:ro
       - ./certs/mcp-servicedesk:/certs/mcp-servicedesk:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
     networks:
       servers:
         aliases: [mcp-servicedesk.internal]
-    healthcheck: *tcp-8443-health
+    healthcheck: *bash-8443-health
     depends_on:
+      server-state-init: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
       servicedesk-mock: {condition: service_healthy}
 
@@ -770,13 +853,26 @@ services:
       MCP_OPENSEARCH_URL: http://opensearch.internal:8080
       MCP_OPENSEARCH_ALLOW_PLAIN_HTTP: "true"
       MCP_OPENSEARCH_INDEX_PREFIXES: logs-team-a,logs-team-b,hr
+      # Signed policy bundle (C7), the same the gateway evaluates, and the manifest the registry takes (C6).
+      MCP_POLICY_URL: https://policies.internal:8443/policies/main/latest.json
+      # Outside the dev profile the starter refuses key ids starting with test- ; the dev key of ws-09 is configured
+      # under a neutral id (the id is a label of the configuration, the signature is checked with the key file).
+      MCP_POLICY_KEY_ID: policies-main-dev
+      MCP_POLICY_PUBLIC_KEY_FILE: /keys/test-policies-main-dev.public.pem
+      MCP_POLICY_STATE_DIR: /app/state
+      AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
+      MCP_INTERNAL_URL: https://mcp-opensearch.internal:8443/mcp
+      MCP_ACCEPTED_CREDENTIAL_TYPES: user-secret
     volumes:
+      - mcp-opensearch-state:/app/state
+      - ${POLICY_KEYS_DIR:-../mcp-policies/keys/dev}/test-policies-main-dev.public.pem:/keys/test-policies-main-dev.public.pem:ro
       - ./certs/mcp-opensearch:/certs/mcp-opensearch:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
     networks:
       servers:
         aliases: [mcp-opensearch.internal]
-    healthcheck: *tcp-8443-health
+    healthcheck: *bash-8443-health
     depends_on:
+      server-state-init: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
       opensearch-mock: {condition: service_healthy}

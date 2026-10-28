@@ -287,6 +287,11 @@ Przyczyna FAIL w m2 i run-m2: paczka polityk ws-09 (rewizja 20261028201639-74256
 wszystkie narzedzia jako `denied`. Do rozstrzygniecia miedzy ws-05 (nie oceniac klienta dla operacji administracyjnych)
 a ws-09 (dopisac `mcp-portal-bff` albo ograniczyc regule do `Action::"call"`).
 
+Runda 3 (serwery beta-3: jira m3-198c8ca, confluence m3-759efc6, gitlab m3-c234e67, servicedesk m3-549cf02, opensearch m3-dae2b19; paczka
+20261028211441-689e217; rejestr `required` z bootstrapem manifestow): proxy-test 212, m1 7 PASS, m2 88/0/2 SKIP, mocks-test 177, m3 61 PASS / 0 FAIL /
+0 SKIP (w tym DELETE na mocku Jiry po kodzie i odrzucenie powtorzonego kodu, tools/list przez gateway dla pieciu serwerow), run-m2.sh wszystkie PASS.
+Dopisane: `policies` na https (:8443), `server-state-init`, mock Confluence `space/{key}`, `gen-certs.sh` dopisuje nowe tozsamosci bez ruszania CA.
+
 Wartosci: `acr` MFA = `mfa` (zwykle logowanie `password`); `PORTAL_STEP_UP_ACR_VALUES=mfa` jest ustawione w compose.
 Zmiany na dzialajacym stosie bez `down`: ponowny przebieg `openbao-init`, `redis-sync-acl.sh`, odtworzony Keycloak
 (sesje zerwane, `sub` bez zmian), `portal-bff` z `PORTAL_STEP_UP_ACR_VALUES`, restart `jira-mock`, nowa usluga `policies`,

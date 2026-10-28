@@ -160,6 +160,22 @@ def check_misc():
     record("jira mock: DELETE of an unknown issue -> 404", status == 404, f"HTTP {status}")
 
 
+def check_registry_tools():
+    """Every server has an approved manifest in the registry (bootstrap in dev) and lists its tools through the gateway."""
+    token = mcpdev.login("alice", "claude-code")
+    expected = {"jira": "jira__delete_issue", "confluence": None, "gitlab": None, "opensearch": None, "servicedesk": None}
+    for system, must_have in expected.items():
+        call = m2.mcp_session(f"{PROXY}/s/mcp-{system}/mcp", token)
+        call("initialize", {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "m3", "version": "1"}})
+        call("notifications/initialized", notify=True)
+        status, reply = call("tools/list")
+        names = sorted(t.get("name") for t in reply.get("result", {}).get("tools", []))
+        if system == "servicedesk":
+            record("registry: tools/list of mcp-servicedesk answers (alice has no servicedesk group, so the list may be empty)", status == 200 and "result" in reply, str(names))
+        else:
+            record(f"registry: tools/list of mcp-{system} through the gateway lists the tools alice may use", status == 200 and bool(names) and (must_have is None or must_have in names), ",".join(names)[:100])
+
+
 # ---- scenario ---------------------------------------------------------------------------------------------
 
 JIRA_DELETE = "jira__delete_issue"
@@ -168,8 +184,9 @@ SAME_ORIGIN = {"Sec-Fetch-Site": "same-origin"}
 
 
 def delete_journal():
-    """(method, url) of DELETE requests that reached the Jira mock with a known PAT."""
-    return [(r["method"], r["url"]) for r in mcpdev.jira_auth() if r["method"] == "DELETE" and r["status"] == 204]
+    """(method, url) of DELETE requests that reached the Jira mock with the PAT of alice (whole journal of the mock)."""
+    return [(r["method"], r["url"]) for r in mcpdev.jira_auth(1000)
+            if r["method"] == "DELETE" and r["status"] == 204 and r["credential"] == "PAT alice-pat"]
 
 
 def error_of(reply):
@@ -319,7 +336,7 @@ class Scenario:
 
 
 def run():
-    for part in (check_openbao, check_redis_gateway, check_keycloak_mfa, check_policy_server, check_misc, lambda: Scenario().run()):
+    for part in (check_openbao, check_redis_gateway, check_keycloak_mfa, check_policy_server, check_misc, check_registry_tools, lambda: Scenario().run()):
         try:
             part()
         except (mcpdev.Fail, OSError, KeyError, ValueError) as e:

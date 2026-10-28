@@ -4,6 +4,7 @@ Endpoints, exactly those the server calls (mcp-integration ConfluenceResourceAda
   GET  /rest/api/user/current                  -> {"username": ...}
   GET  /rest/api/content/{id}?expand=...       -> one content record (body.storage, space, version, ancestors)
   GET  /rest/api/content/search?cql=&limit=&expand=
+  GET  /rest/api/space/{key}?expand=metadata.labels -> space with its labels (HR is `restricted`)
   POST /rest/api/content                       -> 200 with the would-be page; nothing is stored
 
 Data is served only for the fixed PATs (common.PATS). Permissions are not modelled: every known PAT sees
@@ -11,6 +12,7 @@ every space, including HR. The server's own policy (personal spaces, parent in t
 the demo exercises. Errors have the Confluence DC shape {"statusCode", "message", "reason"}.
 """
 import re
+import urllib.parse
 
 import common
 
@@ -22,6 +24,9 @@ SPACES = {
     "OPS": {"id": 1003, "key": "OPS", "name": "Operations", "type": "global"},
     "~alice": {"id": 1004, "key": "~alice", "name": "Alice Tester", "type": "personal"},
 }
+
+# Labels are the classification the server reads (`restricted` hides a space from AI agents).
+SPACE_LABELS = {"ENG": ["engineering"], "HR": ["restricted"], "OPS": [], "~alice": []}
 
 DEPLOY_BODY = (
     '<p>Deploy runs from the <strong>main</strong> branch after the pipeline is green.</p>'
@@ -197,6 +202,17 @@ def _get_content(req, page_id):
     return common.json_response(200, _record(page, _expand(req)))
 
 
+def _get_space(req, key):
+    space = SPACES.get(urllib.parse.unquote(key))
+    if space is None:
+        return _error(404, "No space with key : %s" % key, "Not Found")
+    labels = [{"prefix": "global", "name": name, "id": str(2000 + i)} for i, name in enumerate(SPACE_LABELS.get(space["key"], []))]
+    out = {"id": space["id"], "key": space["key"], "name": space["name"], "type": space["type"]}
+    if "metadata.labels" in _expand(req):
+        out["metadata"] = {"labels": {"results": labels, "start": 0, "limit": 200, "size": len(labels)}}
+    return common.json_response(200, out)
+
+
 def _create(req):
     body = req.json()
     if not isinstance(body, dict):
@@ -242,4 +258,6 @@ def handle(req):
             return _create(req)
         if len(rest) == 1 and rest[0] != "search" and req.method == "GET":
             return _get_content(req, rest[0])
+    if segments[:3] == ["rest", "api", "space"] and len(segments) == 4 and req.method == "GET":
+        return _get_space(req, segments[3])
     return _error(404, "No resource found for " + path, "Not Found")
