@@ -315,6 +315,14 @@ N-4 i N-5 testy w `make m3` na efektywnej konfiguracji compose (`compose.sh conf
 Zastosowanie: `scripts/compose.sh --profile full --profile m2 up -d --no-deps --wait mcp-jira mcp-confluence mcp-gitlab mcp-servicedesk mcp-opensearch`
 (odtworzy piatke serwerow bez zmiany stanu rejestru; potem sprawdzic `tools/list`, `make m3`).
 
+Broker a systemy `opensearch` i `servicedesk` (diagnoza `search_logs` -> `internal_error`): broker stosu zna tylko `jira` (z `application.yml`), `confluence` i `gitlab`
+(`BROKER_SYSTEMS_*` w compose). Wywolanie narzedzia opensearch/servicedesk konczy sie 400 "system is not configured" u brokera, a gateway mapuje to na `internal_error`.
+Konfiguracji w compose nie dopisuje: broker ma tylko adaptery `atlassian-dc` i `gitlab` (whoami), a gateway wymaga dla `opensearch` typu `token-exchange`, dla `servicedesk`
+`service-account`; oba typy sa w brokerze przeniesione poza M3 (STATUS brokera). Zadanie dla ws-06: adapter/typy `token-exchange` (OpenSearch) i `service-account` (service desk, konto
+serwisowe z OpenBao). Uwaga dla ws-04/ws-05: manifest serwera opensearch w compose ma `MCP_ACCEPTED_CREDENTIAL_TYPES=user-secret`, a gateway `accepted-types: [token-exchange]`.
+`make m3` ma test `broker: the system <x> is configured` dla kazdego serwera z compose (katalog portalu ma wpis `credential`); dla `opensearch` i `servicedesk` jest SKIP ze znana
+przyczyna (`BROKER_GAPS` w `scripts/m3.py`), kazdy inny system bez wpisu to FAIL.
+
 Otwarte:
 - Odrzucanie kluczy dev ws-09 po odcisku SPKI przez odbiorcow (starter, gateway): lista publikowana przez ws-09/ws-00, nie w beta-4. Dzis ochrone daje profil
   `devstack` z podwojna zgoda i nazwa `test-*`.

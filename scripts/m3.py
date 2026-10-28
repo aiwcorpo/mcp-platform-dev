@@ -205,6 +205,34 @@ def check_registry_tools():
             record(f"registry: tools/list of mcp-{system} through the gateway lists the tools alice may use", status == 200 and bool(names) and (must_have is None or must_have in names), ",".join(names)[:100])
 
 
+# Systems whose credential type the broker does not implement yet (token-exchange, service-account: moved out of broker M3,
+# ws-06) and that have no adapter; they are reported as SKIP with this reason instead of failing the suite.
+BROKER_GAPS = {"opensearch": "token-exchange is not implemented in the broker and there is no adapter (ws-06)",
+               "servicedesk": "service-account is not implemented in the broker and there is no adapter (ws-06)"}
+
+
+def check_broker_knows_systems():
+    """Every MCP server of the compose file has its system configured in the broker: the portal catalog (built from C4
+    GET /v1/systems) carries a credential entry for it. A resolve for an unknown system is a 400 at the broker, which
+    the gateway reports to the agent as internal_error."""
+    config = json.loads(subprocess.run([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2", "config", "--format", "json"],
+                                       capture_output=True, text=True).stdout)
+    systems = sorted(name.removeprefix("mcp-") for name, svc in config["services"].items() if "MCP_INTERNAL_URL" in (svc.get("environment") or {}))
+    portal = m2.Portal()
+    portal.login("alice")
+    status, _, raw = portal.request("GET", f"{PROXY}/api/v1/catalog")
+    catalog = {item.get("system"): item for item in jbody(raw).get("servers", [])}
+    for system in systems:
+        known = bool(catalog.get(system, {}).get("credential"))
+        name = f"broker: the system {system} is configured (catalog has its credential types)"
+        if known:
+            record(name, True)
+        elif system in BROKER_GAPS:
+            skip(name, BROKER_GAPS[system])
+        else:
+            record(name, False, f"HTTP {status}: no credential entry for {system}")
+
+
 # ---- scenario ---------------------------------------------------------------------------------------------
 
 JIRA_DELETE = "jira__delete_issue"
@@ -365,7 +393,7 @@ class Scenario:
 
 
 def run():
-    for part in (check_openbao, check_redis_gateway, check_keycloak_mfa, check_secrets_hygiene, check_policy_server, check_misc, check_registry_tools, lambda: Scenario().run()):
+    for part in (check_openbao, check_redis_gateway, check_keycloak_mfa, check_secrets_hygiene, check_policy_server, check_misc, check_registry_tools, check_broker_knows_systems, lambda: Scenario().run()):
         try:
             part()
         except (mcpdev.Fail, OSError, KeyError, ValueError) as e:
