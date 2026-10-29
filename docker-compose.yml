@@ -168,6 +168,7 @@ services:
       BAO_BROKER_SECRET_ID: ${BAO_BROKER_SECRET_ID:?run make secrets}
       GITLAB_OAUTH_CLIENT_SECRET: ${GITLAB_OAUTH_CLIENT_SECRET:?run make secrets}
       SERVICEDESK_API_KEY: ${SERVICEDESK_API_KEY:?run make secrets}
+      KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET: ${KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET:?run make secrets}
     volumes:
       - ./openbao/init.sh:/init.sh:ro
     networks: [core]

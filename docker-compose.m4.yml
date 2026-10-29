@@ -1,0 +1,22 @@
+# Added by scripts/compose.sh while M4_ACTIVE=1 (make m4-switch). Settings of the M4 broker (mcp-contracts 4.0.0).
+services:
+  mcp-credential-broker:
+    environment:
+      # Dev mode needs both consents (CC-137): the profile and MCP_ALLOW_TEST_KEYS. Never outside mcp-platform-dev.
+      SPRING_PROFILES_ACTIVE: devstack
+      MCP_ALLOW_TEST_KEYS: "true"
+      # OpenSearch: token-exchange (RFC 8693) with the client of the broker; BASEURL is required by the schema, not called.
+      BROKER_SYSTEMS_OPENSEARCH_BASEURL: http://opensearch.internal:8080
+      BROKER_SYSTEMS_OPENSEARCH_ADAPTER: opensearch
+      BROKER_SYSTEMS_OPENSEARCH_SUPPORTEDTYPES: token-exchange
+      BROKER_SYSTEMS_OPENSEARCH_DEFAULTTYPE: token-exchange
+      BROKER_SYSTEMS_OPENSEARCH_TOKENEXCHANGE_CLIENTID: mcp-credential-broker
+      BROKER_SYSTEMS_OPENSEARCH_TOKENEXCHANGE_TOKENURL: http://keycloak:8080/realms/corp/protocol/openid-connect/token
+      BROKER_SYSTEMS_OPENSEARCH_TOKENEXCHANGE_AUDIENCE: opensearch
+      BROKER_SYSTEMS_OPENSEARCH_TOKENEXCHANGE_SCOPES: opensearch-audience
+      # Service Desk: service account of the platform, key from secret/mcp/service-accounts/servicedesk.
+      BROKER_SYSTEMS_SERVICEDESK_BASEURL: http://servicedesk.internal:8080
+      BROKER_SYSTEMS_SERVICEDESK_ADAPTER: generic-rest
+      BROKER_SYSTEMS_SERVICEDESK_SUPPORTEDTYPES: service-account
+      BROKER_SYSTEMS_SERVICEDESK_DEFAULTTYPE: service-account
+      BROKER_SYSTEMS_SERVICEDESK_SECRETSCHEME: Bearer

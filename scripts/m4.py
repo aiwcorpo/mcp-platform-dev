@@ -158,8 +158,12 @@ def check_service_account():
     status, body = bao("GET", path, token)
     if status == 200:
         data = body["data"]["data"]
-        record("openbao: the broker reads the service account of Service Desk (secret/mcp/service-accounts/servicedesk, key = the mock key)",
-               data.get("key") == key and data.get("scheme") == "Bearer")
+        record("openbao: the broker reads the service account of Service Desk (secret/mcp/service-accounts/servicedesk, value = the mock key)",
+               data.get("value") == key)
+        status, body = bao("GET", "secret/data/mcp/oauth-clients/opensearch", token)
+        record("openbao: the broker reads the token-exchange client secret (secret/mcp/oauth-clients/opensearch)",
+               status == 200 and body["data"]["data"].get("client_id") == "mcp-credential-broker"
+               and body["data"]["data"].get("client_secret") == cfg("KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET"))
         record("openbao: the broker cannot write, delete or list service accounts",
                bao("POST", path, token, {"data": {"key": "x"}})[0] == 403 and bao("DELETE", path, token)[0] == 403
                and bao("LIST", "secret/metadata/mcp/service-accounts", token)[0] == 403)
@@ -345,6 +349,30 @@ def check_service_account_through_gateway():
            ", ".join(sorted({f"{e['auth']}:{e['status']}" for e in fresh})))
 
 
+def check_opensearch_through_gateway():
+    name = "token-exchange: opensearch through the gateway (resolve of the broker) reaches the mock with a JWT of aud=opensearch"
+    if not switched():
+        skip(name, BEFORE_SWITCH)
+        return
+    password = cfg("MOCK_ADMIN_PASSWORD")
+    auth = {"Authorization": "Basic " + base64.b64encode(f"admin:{password}".encode()).decode()}
+    journal = lambda: jbody(http("GET", f"{OPENSEARCH}/__mock/journal", auth)[2]) or []
+    before = len(journal())
+    call = mcp_session(f"{PROXY}/s/mcp-opensearch/mcp", mcpdev.login("alice"))
+    call("initialize", {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "m4", "version": "1"}})
+    call("notifications/initialized", notify=True)
+    tools = call("tools/list")[1].get("result", {}).get("tools", [])
+    tool = next((t for t in tools if "search" in t["name"]), None)
+    if tool is None:
+        record(name, False, "no search tool in tools/list")
+        return
+    arguments = {key: ("logs-team-a-*" if "index" in key.lower() else "error") for key in tool["inputSchema"].get("required", [])}
+    call("tools/call", {"name": tool["name"], "arguments": arguments})
+    fresh = journal()[before:]
+    record(name, bool(fresh) and any(e["auth"] == "jwt" and e["status"] == 200 for e in fresh) and all(e["auth"] == "jwt" for e in fresh),
+           ", ".join(sorted({f"{e['auth']}:{e['status']}" for e in fresh})))
+
+
 def check_environment_dev():
     skip("environment=dev: a manifest with environment dev is rejected by a gateway without the dev mode (422 environment_mismatch)",
          "needs a second gateway in production mode (without profile devstack) on a host port; the stack gateway runs in dev mode by design")
@@ -370,7 +398,7 @@ def wait_bundle(seconds):
 
 def run():
     parts = (check_certificates, check_dev_keys, check_bundle_signature, check_service_account, check_token_exchange,
-             check_registry_certificates, check_offboarding, check_rate_limit, check_service_account_through_gateway, check_environment_dev)
+             check_registry_certificates, check_offboarding, check_rate_limit, check_service_account_through_gateway, check_opensearch_through_gateway, check_environment_dev)
     for part in parts:
         try:
             part()

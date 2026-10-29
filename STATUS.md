@@ -350,7 +350,7 @@ Nie zweryfikowane: scenariusz M3 na prawdziwych komponentach, zachowanie step-up
 
 ## M4 (2026-10-29): migracja do mcp-contracts 4.0.0, przygotowanie (stos M3 nietknięty)
 
-Opis: [docs/m4.md](docs/m4.md). W tej fazie nic nie zrestartowano na działającym stosie; wszystko jest w repo, a aktywacja to `make m4-switch`
+Opis: [docs/m4.md](docs/m4.md). Warstwa M4 compose (`docker-compose.m4.yml`, `m4.env`) działa tylko przy `M4_ACTIVE=1`, które ustawia `make m4-switch`; bez niego efektywna konfiguracja jest M3. W tej fazie nic nie zrestartowano na działającym stosie; wszystko jest w repo, a aktywacja to `make m4-switch`
 na polecenie koordynatora. Efektywny `compose config` różni się od poprzedniego tylko zmienną `SERVICEDESK_API_KEY` jednorazowego `openbao-init`.
 
 | Kamień | Zakres | Stan |
@@ -380,7 +380,7 @@ Czekam na (do przełączenia):
 
 Propozycje CC (nie zmieniano kontraktów):
 
-- Układ sekretu konta serwisowego w OpenBao (`key`, `scheme`) nie jest w kontrakcie; do doprecyzowania w opisie `resolve` C4 albo README ("service-account").
+- Układ sekretu konta serwisowego w OpenBao (`value`, `username`+`password`, `expires_at`) i klienta wymiany (`oauth-clients/<system>`, `client_secret`) nie jest w kontrakcie (to samo zgłasza ws-06 jako P2).
 - Test `environment_mismatch` wymaga gateway'a w trybie produkcyjnym; stos dev go nie ma. Do rozważenia: wektor lub test e2e uruchamiający drugi gateway bez `devstack`.
 
 ## Propozycje CC

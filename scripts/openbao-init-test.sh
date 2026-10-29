@@ -8,6 +8,7 @@ net="m4-bao-test-$$"
 server="$net-server"
 token="test-root-$$"
 secret="sd-test-$$"
+exchange_secret="kc-test-$$"
 failed=0
 
 cleanup() { docker rm -f "$server" >/dev/null 2>&1 || true; docker network rm "$net" >/dev/null 2>&1 || true; }
@@ -22,22 +23,25 @@ check() { if [ "$2" = ok ]; then echo "PASS $1"; else echo "FAIL $1"; failed=1; 
 for _ in $(seq 30); do bao "$token" status >/dev/null 2>&1 && break; sleep 1; done
 docker run --rm --network "$net" -v "$root/openbao/init.sh:/init.sh:ro" \
   -e BAO_ADDR=http://openbao:8200 -e BAO_ROOT_TOKEN="$token" -e BAO_BROKER_ROLE_ID=broker-role \
-  -e BAO_BROKER_SECRET_ID=broker-secret-id -e GITLAB_OAUTH_CLIENT_SECRET=gitlab-test -e SERVICEDESK_API_KEY="$secret" \
+  -e BAO_BROKER_SECRET_ID=broker-secret-id -e GITLAB_OAUTH_CLIENT_SECRET=gitlab-test -e SERVICEDESK_API_KEY="$secret" -e KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET="$exchange_secret" \
   --entrypoint /bin/sh "$image" /init.sh >/dev/null
 check "init.sh runs to the end" ok
 docker run --rm --network "$net" -v "$root/openbao/init.sh:/init.sh:ro" \
   -e BAO_ADDR=http://openbao:8200 -e BAO_ROOT_TOKEN="$token" -e BAO_BROKER_ROLE_ID=broker-role \
-  -e BAO_BROKER_SECRET_ID=broker-secret-id -e GITLAB_OAUTH_CLIENT_SECRET=gitlab-test -e SERVICEDESK_API_KEY="$secret" \
+  -e BAO_BROKER_SECRET_ID=broker-secret-id -e GITLAB_OAUTH_CLIENT_SECRET=gitlab-test -e SERVICEDESK_API_KEY="$secret" -e KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET="$exchange_secret" \
   --entrypoint /bin/sh "$image" /init.sh >/dev/null && check "init.sh is idempotent" ok || check "init.sh is idempotent" fail
 
 broker="$(printf '%s' broker-secret-id | bao "" write -field=token auth/approle/login role_id=broker-role secret_id=- 2>/dev/null || true)"
 [ -n "$broker" ] && check "broker AppRole logs in" ok || check "broker AppRole logs in" fail
 
-[ "$(bao "$broker" kv get -field=key secret/mcp/service-accounts/servicedesk 2>/dev/null)" = "$secret" ] \
-  && check "broker reads secret/mcp/service-accounts/servicedesk (key equals SERVICEDESK_API_KEY)" ok \
-  || check "broker reads secret/mcp/service-accounts/servicedesk (key equals SERVICEDESK_API_KEY)" fail
-[ "$(bao "$broker" kv get -field=scheme secret/mcp/service-accounts/servicedesk 2>/dev/null)" = "Bearer" ] \
-  && check "service account record has scheme Bearer" ok || check "service account record has scheme Bearer" fail
+[ "$(bao "$broker" kv get -field=value secret/mcp/service-accounts/servicedesk 2>/dev/null)" = "$secret" ] \
+  && check "broker reads secret/mcp/service-accounts/servicedesk (value equals SERVICEDESK_API_KEY)" ok \
+  || check "broker reads secret/mcp/service-accounts/servicedesk (value equals SERVICEDESK_API_KEY)" fail
+[ "$(bao "$broker" kv get -field=client_secret secret/mcp/oauth-clients/opensearch 2>/dev/null)" = "$exchange_secret" ] \
+  && check "broker reads the token-exchange client secret at secret/mcp/oauth-clients/opensearch" ok \
+  || check "broker reads the token-exchange client secret at secret/mcp/oauth-clients/opensearch" fail
+[ "$(bao "$broker" kv get -field=client_secret secret/mcp/oauth-clients/gitlab 2>/dev/null)" = "gitlab-test" ] \
+  && check "broker still reads secret/mcp/oauth-clients/gitlab" ok || check "broker still reads secret/mcp/oauth-clients/gitlab" fail
 if printf '%s' x | bao "$broker" kv put secret/mcp/service-accounts/servicedesk key=- >/dev/null 2>&1; then
   check "broker cannot write the service account" fail
 else check "broker cannot write the service account" ok; fi

@@ -7,8 +7,10 @@
 #
 # Preconditions (the script stops before touching anything when one is missing):
 #   - the images of .env exist locally: broker, gateway, five MCP servers, BFF, web;
-#   - the dev- public keys of ws-09 exist in mcp-policies/keys/dev (dev-policies-main, dev-policies-overrides); the script sets
-#     POLICY_KEY_MAIN_ID and POLICY_KEY_OVERRIDES_ID in .env;
+#   - the dev- public keys of ws-09 exist in mcp-policies/keys/dev (dev-policies-main, dev-policies-overrides);
+#   - the M4 layer: m4.env (images and policy key ids) and docker-compose.m4.yml (broker systems opensearch and servicedesk,
+#     devstack) apply only with M4_ACTIVE=1, which the script writes to .env after the checks, so an accidental `up` before the
+#     switch keeps the M3 configuration;
 #   - a manifest built from each server repository (target/mcp-manifest.json or MANIFEST_DIR/<serverId>.json): the registry
 #     entries are replaced through the CI certificates (CC-161), not through the bootstrap of the gateway.
 # Order: OpenBao init (service account of Service Desk, broker policy) -> Redis ACL -> broker -> MCP servers (they declare
@@ -21,6 +23,8 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 compose="$root/scripts/compose.sh"
+# The prospective M4 configuration (docker-compose.m4.yml, m4.env) is what the checks below look at; .env gets it only after them.
+export M4_ACTIVE=1
 c=("$compose" --profile full --profile m2)
 check_only=0
 [ "${1:-}" = "--check" ] && check_only=1
@@ -37,7 +41,7 @@ for name, svc in sorted(json.load(sys.stdin)["services"].items()):
 while read -r service image; do
   docker image inspect "$image" >/dev/null 2>&1 || fail "$service: image $image does not exist locally (make images / make images-m2)"
   case "$image" in
-    *:m3-*|*:m2-*|*:m1-*) fail "$service: image $image is an M1-M3 image; set the M4 image in .env" ;;
+    *:m3-*|*:m2-*|*:m1-*) fail "$service: image $image is an M1-M3 image; add the M4 image to m4.env" ;;
   esac
 done <<<"$images"
 echo "apply-m4-switch: images ok"
@@ -56,15 +60,9 @@ echo "apply-m4-switch: dev keys and manifests ok"
 mkdir -p "$root/out"
 docker ps --format '{{.Names}} {{.Image}}' | grep '^mcp-dev-' > "$root/out/m4-previous-images.txt" || true
 
-python3 - "$root/.env" <<'PY'
-import re, sys
-path = sys.argv[1]
-text = open(path).read()
-for key, value in (("POLICY_KEY_MAIN_ID", "dev-policies-main"), ("POLICY_KEY_OVERRIDES_ID", "dev-policies-overrides")):
-    text = re.sub(rf"^{key}=.*$", f"{key}={value}", text, flags=re.M)
-open(path, "w").write(text)
-PY
-echo "apply-m4-switch: policy keys in .env point at the dev- keys"
+grep -q '^M4_ACTIVE=' "$root/.env" && sed -i.bak 's/^M4_ACTIVE=.*/M4_ACTIVE=1/' "$root/.env" && rm -f "$root/.env.bak" \
+  || printf '\n# M4 layer of compose (docker-compose.m4.yml, m4.env), set by make m4-switch.\nM4_ACTIVE=1\n' >> "$root/.env"
+echo "apply-m4-switch: M4_ACTIVE=1 in .env (broker image and settings, dev- policy key ids)"
 
 "${c[@]}" run --rm --no-deps openbao-init
 "$root/scripts/redis-sync-acl.sh" >/dev/null
