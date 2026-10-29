@@ -20,3 +20,8 @@ services:
       BROKER_SYSTEMS_SERVICEDESK_SUPPORTEDTYPES: service-account
       BROKER_SYSTEMS_SERVICEDESK_DEFAULTTYPE: service-account
       BROKER_SYSTEMS_SERVICEDESK_SECRETSCHEME: Bearer
+  portal-bff:
+    environment:
+      # The groups mapper of the client puts groups in the access token and userinfo, not in the ID token; the BFF reads userinfo
+      # (back-channel over the plain-http alias of Keycloak, allowed by the dev profile like the other OIDC URIs).
+      PORTAL_OIDC_USER_INFO_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/userinfo

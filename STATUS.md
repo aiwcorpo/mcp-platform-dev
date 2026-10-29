@@ -400,6 +400,13 @@ Paczki polityk: kanał `repository-m4` rewizja 20261029192632-5625b13, klucze `d
 - Wyniki: `make m4` 39 PASS / 0 FAIL / 1 SKIP (`environment=dev` bez drugiego gateway'a), `make m1` zielone, `make m2` 85 PASS / 3 FAIL (zapis GitLab czeka na `approve`), `make m3` 57 PASS / 2 FAIL przed poprawką
   klucza w teście (podpis sprawdzany kluczem `test-`; poprawione) i brakującą listą narzędzi zapisu Jiry (pending), `make proxy-test` 211 z 212 (zaufanie CA w pęku kluczy macOS).
 
+### E2E-2: grupy w portalu (2026-10-29)
+
+BFF czyta grupy z ID tokenu i userinfo, a mapper `groups` klienta `mcp-portal-bff` ma `id.token.claim=false`, więc `/api/v1/me` miał puste grupy (carol nie była adminem).
+`PORTAL_OIDC_USER_INFO_URI=http://keycloak:8080/realms/corp/protocol/openid-connect/userinfo` dodane w `docker-compose.m4.yml` (profil `dev` BFF dopuszcza http dla back-channel jak dla pozostałych URI);
+realm bez zmian. Odtworzony tylko kontener `portal-bff`. Sprawdzone programowo: carol `/api/v1/me` ma `mcp-platform-admin`, `isAdmin=true`, `/api/v1/admin/registry` 200 z sześcioma narzędziami
+`pending_approval` (nic nie zatwierdzono); alice `isAdmin=false`, `admin/registry` 403.
+
 ## Propozycje CC
 
 Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktów tu nie zmieniano.
