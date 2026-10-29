@@ -2,8 +2,8 @@
 # Certificates of the public HTTPS origins (proxy: https://localhost:PROXY_TLS_PORT, Keycloak:
 # https://localhost:KEYCLOAK_TLS_PORT) from a separate "dev public" CA.
 # The internal CA (scripts/gen-certs.sh) signs mTLS identities and has no name restrictions; trusting it in the
-# system keychain would make it valid for any host. This CA is limited by name constraints to localhost and
-# 127.0.0.1, so it is the one a person adds to the macOS keychain (make trust-ca). NOT FOR PRODUCTION.
+# system keychain would make it valid for any host. This CA is limited by name constraints to the DNS name localhost, so it is
+# the one a person adds to the macOS keychain (make trust-ca). NOT FOR PRODUCTION.
 # Existing files are kept (an existing CA is never regenerated, the person has already trusted it); the CA key
 # stays in certs/public-ca/ (git-ignored) and is never mounted anywhere. certs/public-ca/truststore.p12 holds
 # only this CA, for Java clients of the public Keycloak address.
@@ -24,12 +24,15 @@ set -eu
 subject="/O=mcp-platform-dev NOT FOR PRODUCTION"
 mkdir -p public-ca proxy keycloak
 
+# Name constraints: DNS localhost only. The certificate verifier of the native Claude Code rejects a CA with IP address
+# constraints (UNSUPPORTED_CONSTRAINT_TYPE), so 127.0.0.1 and ::1 are not constrained here; the leaf certificates still carry
+# them in the SAN and the CA stays unusable for any DNS name other than localhost.
 if [ ! -f public-ca/ca.crt ]; then
   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out public-ca/ca.key 2>/dev/null
   openssl req -x509 -new -key public-ca/ca.key -sha256 -days 1825 -subj "$subject/CN=mcp-platform-dev public CA (localhost only)" \
     -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
     -addext "keyUsage=critical,keyCertSign,cRLSign" \
-    -addext "nameConstraints=critical,permitted;DNS:localhost,permitted;IP:127.0.0.1/255.255.255.255,permitted;IP:::1/ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff" \
+    -addext "nameConstraints=critical,permitted;DNS:localhost" \
     -out public-ca/ca.crt
   chmod 600 public-ca/ca.key
   echo "certs: wrote public-ca"
