@@ -348,6 +348,41 @@ nastepne `make up` go odtworzy). (`idp-relay` usuniety w M3.3.)
 Wyniki po zmianach: `make proxy-test` 212, `make m2` 88 PASS / 0 FAIL / 2 SKIP, `make m1` 7 PASS, `make m3` 37 PASS / 8 SKIP.
 Nie zweryfikowane: scenariusz M3 na prawdziwych komponentach, zachowanie step-up Keycloaka z istniejaca sesja SSO w przegladarce.
 
+## M4 (2026-10-29): migracja do mcp-contracts 4.0.0, przygotowanie (stos M3 nietknięty)
+
+Opis: [docs/m4.md](docs/m4.md). W tej fazie nic nie zrestartowano na działającym stosie; wszystko jest w repo, a aktywacja to `make m4-switch`
+na polecenie koordynatora. Efektywny `compose config` różni się od poprzedniego tylko zmienną `SERVICEDESK_API_KEY` jednorazowego `openbao-init`.
+
+| Kamień | Zakres | Stan |
+| --- | --- | --- |
+| M4.1 | certyfikaty CI per serwer (5), `certs/legacy/mcp-registry-ci` do testu 403, klucze 600; identyfikatory kluczy polityk w `.env` (domyślnie `test-`, `dev-policies-main`/`-overrides` przy przełączeniu); konto serwisowe Service Desku w OpenBao + polityka brokera; token exchange do OpenSearch sprawdzony na mocku | zrobione; `make m4` 22 PASS, 14 SKIP ("przed przelaczeniem" lub brak wykonawcy), `make openbao-test` 8 PASS |
+| M4.2 | `make offboard`, `make registry-register` (certyfikat serwera, manifest z `target/mcp-manifest.json`), `scripts/m4.py` (część po przełączeniu), `make m4-test` 6 testów na fałszywych Keycloak, brokerze i gateway'u z mTLS | zrobione; część po przełączeniu nieuruchomiona na prawdziwych komponentach |
+| M4.3 | `make m4-switch` (kolejność: OpenBao, Redis ACL, broker, serwery, kasowanie wierszy bootstrap, gateway, rejestracja CI, BFF/web, sygnał do ws-09 i oczekiwanie na paczkę 4.0.0, testy); `CHECK=1` sprawdza warunki wstępne | skrypt gotowy, `--check` zgłasza brak obrazów M4; samo przełączenie czeka na obrazy i polecenie |
+
+Weryfikacja: `compose config -q` (profile infra, full, m2), `make mocks-test` 177, `make m4-test` 6, `make proxy-test` 211 z 212 (nieudany: "wewnętrzne CA nie weryfikuje certyfikatu publicznego";
+curl z SecureTransport na macOS bierze zaufane CA z pęku kluczy, gdzie człowiek zaufał CA "dev public"; test nie jest związany ze zmianami M4).
+
+IGA: adapter `mock` jest w procesie BFF (compose ma `PORTAL_IGA_MOCK_FILE`), osobnej usługi nie dodano.
+Dotychczasowe `make registry-refresh` zostaje jako tor dev (bootstrap); tor produkcyjny to `make registry-register`.
+
+Czekam na (do przełączenia):
+
+- ws-05: obraz gateway'a 4.0.0 (`MCP_GATEWAY_IMAGE` `m4-...`) i jego zmienne: konfiguracja limitów (użytkownik, klient, narzędzie), TTL odczytu `tools/list` (<= 60 s),
+  `credentialType` per system, nazwa ustawienia trybu dev z `allowTestKeys`, potwierdzenie listenera C5 na `:8443` dla CN `mcp-offboarding` i `mcp-registry-ci-<serverId>`;
+- ws-06: obraz brokera 4.0.0; zmienne systemów `opensearch` (`token-exchange`, audience i zakres) i `servicedesk` (`service-account`), odczyt `secret/data/mcp/service-accounts/<system>`
+  (potwierdzenie pól `key` i `scheme`), domyślny limit rejestracji, `unused_cleanup`;
+- ws-02/03/04: obrazy pięciu serwerów 4.0.0 (`MCP_JIRA_IMAGE`, `MCP_CONFLUENCE_IMAGE`, `MCP_GITLAB_IMAGE`, `MCP_SERVICEDESK_IMAGE`, `MCP_OPENSEARCH_IMAGE`) i `target/mcp-manifest.json`
+  każdego (z `environment: dev` w profilu dev; OpenSearch z `token-exchange` w `acceptedTypes`), zmienne `MCP_ACCEPTED_CREDENTIAL_TYPES` i dla Service Desku `service-account`;
+- ws-07/08: obrazy BFF i web 4.0.0 (`MCP_PORTAL_BFF_IMAGE`, `MCP_PORTAL_WEB_IMAGE`) i ewentualne nowe zmienne `PORTAL_*`;
+- ws-09: kanał paczek 4.0.0 (`out/repository-m4/`, rewizja 20261029162141-a6152ef, klucze `dev-policies-main` i `dev-policies-overrides` w `mcp-policies/keys/dev`) i publikacja
+  `.ci/switch-stack.sh --confirm` na sygnał z `make m4-switch`;
+- ws-10: nic do przełączenia; `make m4` i scenariusze e2e po przełączeniu.
+
+Propozycje CC (nie zmieniano kontraktów):
+
+- Układ sekretu konta serwisowego w OpenBao (`key`, `scheme`) nie jest w kontrakcie; do doprecyzowania w opisie `resolve` C4 albo README ("service-account").
+- Test `environment_mismatch` wymaga gateway'a w trybie produkcyjnym; stos dev go nie ma. Do rozważenia: wektor lub test e2e uruchamiający drugi gateway bez `devstack`.
+
 ## Propozycje CC
 
 Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktów tu nie zmieniano.

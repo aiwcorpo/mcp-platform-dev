@@ -41,6 +41,9 @@ make images                                    # obrazy gateway, broker, mcp-jir
 make images-m2 | make up-m2                    # M2: proxy (jedna domena), BFF, web, serwery ws-04; docs/m2.md
 make proxy-test | make mocks-test | make m2    # testy proxy, mocków i scenariusz M2; m2 zmienia stan stosu (patrz docs/m2.md)
 make m3 | make otp USER=alice | make reset-authenticator USER=alice | make registry-refresh   # M3 (docs/m3.md): scenariusz Authenticatora (zmienia stan: kasuje Authenticator alice), kod OTP logowania, reset rejestracji, odswiezenie manifestow
+make m4 | make m4-test | make openbao-test     # M4 (docs/m4.md): kontrole infrastruktury (czesc po przelaczeniu SKIP), testy jednostkowe offboardingu i rejestru, init OpenBao w izolacji
+make offboard USER=<login> [DRY=1]              # IdP (grupy, wylogowanie), purge brokera i gateway'a (CN mcp-offboarding), powtorzone; odmawia kont wspolnych
+make registry-register | make m4-switch         # PUT manifestow certyfikatem kazdego serwera (CC-161); przelaczenie stosu na M4 (CHECK=1: tylko warunki wstepne)
 make trust-ca                                   # drukuje polecenia zaufania do CA https proxy (https://localhost:18745)
 make down | make reset | make clean
 ```
@@ -109,6 +112,7 @@ Inny użytkownik w Claude Code: `/mcp`, `jira`, `Clear authentication`, ponowne 
 
 - [docs/porty.md](docs/porty.md): adresy i porty usług, z hosta i z sieci compose
 - [docs/uzytkownicy.md](docs/uzytkownicy.md): użytkownicy, grupy C9, klienci OIDC, token exchange
+- [docs/m4.md](docs/m4.md): certyfikaty CI per serwer, klucze `dev-`, token exchange, konto serwisowe, offboarding, przełączenie M4
 - [docs/integracja.md](docs/integracja.md): jak podpiąć gateway, broker, serwer MCP, portal i testy e2e
 - [docs/claude-code.md](docs/claude-code.md): podłączenie Claude Code do lokalnego gateway'a
 - [STATUS.md](STATUS.md): stan względem briefu ws-01

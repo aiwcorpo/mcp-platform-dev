@@ -11,11 +11,16 @@
   audit REQUEST_ID [--logs FILE]... [--compose]
                                              C8 audit events of one request from gateway, broker, mcp-jira logs
   jira-auth                                  credentials that reached the Jira mock (from its request journal)
+  offboard LOGIN [--dry-run]                 IdP (groups, logout), broker purge, gateway purge (CN=mcp-offboarding), purges repeated
+  registry-put SERVER_ID MANIFEST            C5 PUT of a manifest with the certificate of that server (CN=mcp-registry-ci-<serverId>)
 
 Configuration comes from .env and .secrets/dev.env; environment variables override:
   KEYCLOAK_URL         default https://localhost:$KEYCLOAK_TLS_PORT (certificate of certs/public-ca)
   BROKER_URL           default https://localhost:$BROKER_MOCK_PORT (contract stub); real broker: https://localhost:$BROKER_PORT
   MCP_BROKER_TLS_NAME  name verified in the broker certificate, whatever host BROKER_URL uses (CC-035)
+  GATEWAY_ADMIN_URL    default https://localhost:$GATEWAY_INTERNAL_PORT (C5 listener of the gateway, mTLS)
+  MCP_GATEWAY_INTERNAL_TLS_NAME  name verified in the gateway certificate
+  KEYCLOAK_ADMIN_URL   default http://localhost:$KEYCLOAK_PORT (admin API; admin login from .secrets/dev.env)
   MCP_CERTS_DIR        default ./certs
 """
 
@@ -331,24 +336,127 @@ def broker_request(user, method, path, body=None, broker_url=None, tls_name=None
         return resp.status, {"raw": raw[:200]}
 
 
-def offboarding_request(method, path, broker_url=None, tls_name=None):
-    """A C4 admin call as the offboarding / helpdesk client makes it: mTLS with CN=mcp-offboarding and no bearer token.
+def mtls_request(identity, method, base_url, path, tls_name, body=None):
+    """A call over mTLS with the certificate certs/<identity> and no bearer token (C4 and C5 admin operations of CI and
+    offboarding). The name verified in the server certificate is tls_name, whatever host base_url uses (CC-035).
     Returns (HTTP status, JSON body or {})."""
-    url = urllib.parse.urlparse((broker_url or cfg("BROKER_URL", f"https://localhost:{cfg('BROKER_PORT', '18100')}")).rstrip("/"))
-    tls_name = tls_name or cfg("MCP_BROKER_TLS_NAME", "mcp-credential-broker.internal")
-    conn = PinnedNameHTTPSConnection(url.hostname, url.port or 443, tls_name, mtls_context("mcp-offboarding"))
+    url = urllib.parse.urlparse(base_url.rstrip("/"))
+    conn = PinnedNameHTTPSConnection(url.hostname, url.port or 443, tls_name, mtls_context(identity))
+    headers = {"X-Request-Id": str(uuid7())}
+    if body is not None:
+        headers["Content-Type"] = "application/json; charset=utf-8"
     try:
-        conn.request(method, f"{url.path}{path}", headers={"X-Request-Id": str(uuid7())})
+        conn.request(method, f"{url.path}{path}", body=body, headers=headers)
         resp = conn.getresponse()
         raw = resp.read().decode(errors="replace")
     except (OSError, ssl.SSLError, http.client.HTTPException) as e:
-        raise Fail(f"broker unreachable or rejected TLS: {getattr(e, 'reason', None) or e}") from None
+        raise Fail(f"{base_url} (TLS name {tls_name}) unreachable or rejected TLS: {getattr(e, 'reason', None) or e}") from None
     finally:
         conn.close()
     try:
         return resp.status, json.loads(raw) if raw else {}
     except ValueError:
         return resp.status, {"raw": raw[:200]}
+
+
+def broker_admin_url():
+    return cfg("BROKER_URL", f"https://localhost:{cfg('BROKER_PORT', '18100')}")
+
+
+def gateway_admin_url():
+    return cfg("GATEWAY_ADMIN_URL", f"https://localhost:{cfg('GATEWAY_INTERNAL_PORT', '18445')}")
+
+
+def offboarding_request(method, path, broker_url=None, tls_name=None):
+    """A C4 admin call as the offboarding / helpdesk client makes it: mTLS with CN=mcp-offboarding and no bearer token."""
+    return mtls_request("mcp-offboarding", method, broker_url or broker_admin_url(), path,
+                        tls_name or cfg("MCP_BROKER_TLS_NAME", "mcp-credential-broker.internal"))
+
+
+def gateway_request(identity, method, path, body=None):
+    """A C5 call straight to the gateway listener (mTLS only); identity is the directory of the client certificate."""
+    return mtls_request(identity, method, gateway_admin_url(), path,
+                        cfg("MCP_GATEWAY_INTERNAL_TLS_NAME", "mcp-gateway.internal"), body)
+
+
+def registry_put(server_id, manifest_path, identity=None):
+    """PUT /admin/v1/registry/servers/{serverId} with the manifest built from the reviewed commit (target/mcp-manifest.json).
+    The certificate is the one of that server: CN=mcp-registry-ci-<serverId> (CC-161); `identity` overrides it for tests
+    that present another certificate on purpose."""
+    return gateway_request(identity or f"mcp-registry-ci-{server_id}", "PUT",
+                           f"/admin/v1/registry/servers/{urllib.parse.quote(server_id, safe='')}",
+                           Path(manifest_path).read_bytes())
+
+
+KC_ADMIN_URL = cfg("KEYCLOAK_ADMIN_URL", f"http://localhost:{cfg('KEYCLOAK_PORT', '18080')}")
+
+
+def kc_admin(method, path, body=None):
+    """Admin REST API of Keycloak (realm corp) as the bootstrap admin; the credentials never appear in argv or output.
+    Returns (HTTP status, JSON body or {})."""
+    token = post_form(f"{KC_ADMIN_URL}/realms/master/protocol/openid-connect/token",
+                      {"grant_type": "password", "client_id": "admin-cli", "username": cfg("KC_BOOTSTRAP_ADMIN_USERNAME"),
+                       "password": cfg("KC_BOOTSTRAP_ADMIN_PASSWORD")})["access_token"]
+    req = urllib.request.Request(f"{KC_ADMIN_URL}/admin/realms/{REALM}{path}", method=method,
+                                 data=json.dumps(body).encode() if body is not None else None,
+                                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read()
+            return resp.status, json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        return e.code, {"raw": e.read().decode(errors="replace")[:200]}
+
+
+SHARED_TEST_USERS = ("alice", "bob", "carol", "mallory")
+
+
+def offboard(login_name, dry_run=False, repeat_delay=5.0, allow_shared=False):
+    """Offboarding of one user (README of the contracts, "Retencja i offboarding"): three independent, idempotent calls plus the
+    repeat the contract recommends after the logout. Order: IdP (groups removed so tokens stop being renewed, sessions ended
+    so the back-channel logout reaches the portal), broker purge, gateway purge, then both purges again. A failing step does
+    not stop the others. Returns a list of (step, ok, detail); the caller turns it into an exit code."""
+    import time
+    if login_name in SHARED_TEST_USERS and not allow_shared and not dry_run:
+        raise Fail(f"{login_name} is a shared test user (alice, bob, carol, mallory): offboarding removes its groups; "
+                   "use another login or --allow-shared")
+    steps = []
+
+    def step(name, ok, detail=""):
+        steps.append((name, ok, detail))
+
+    status, users = kc_admin("GET", f"/users?username={urllib.parse.quote(login_name)}&exact=true")
+    if status != 200 or not isinstance(users, list) or not users:
+        raise Fail(f"user {login_name} not found in the realm (HTTP {status})")
+    sub = users[0]["id"]
+    status, groups = kc_admin("GET", f"/users/{sub}/groups")
+    groups = groups if isinstance(groups, list) else []
+    if dry_run:
+        step("idp: groups that would be removed", True, ", ".join(g["name"] for g in groups) or "none")
+        step("idp: sessions that would be ended", True, "")
+        step("broker: POST /v1/admin/users/{sub}/purge", True, f"sub {sub}, not sent")
+        step("gateway: POST /admin/v1/users/{sub}/purge", True, f"sub {sub}, not sent")
+        return steps
+    removed = [g["name"] for g in groups if kc_admin("DELETE", f"/users/{sub}/groups/{g['id']}")[0] == 204]
+    step("idp: groups removed", len(removed) == len(groups), f"{len(removed)} of {len(groups)}: {', '.join(removed) or 'none'}")
+    status, _ = kc_admin("POST", f"/users/{sub}/logout")
+    step("idp: sessions ended (back-channel logout of the portal)", status in (200, 204), f"HTTP {status}")
+
+    quoted = urllib.parse.quote(sub, safe="")
+
+    def purges(label):
+        for name, call in (("broker", lambda: offboarding_request("POST", f"/v1/admin/users/{quoted}/purge")),
+                           ("gateway", lambda: gateway_request("mcp-offboarding", "POST", f"/admin/v1/users/{quoted}/purge"))):
+            try:
+                status, body = call()
+                step(f"{name}: purge{label}", status == 204, f"HTTP {status}" + ("" if status == 204 else f" {body}"))
+            except Fail as e:
+                step(f"{name}: purge{label}", False, str(e))
+
+    purges("")
+    time.sleep(repeat_delay)
+    purges(" (repeated after the logout)")
+    return steps
 
 
 def uuid7():
@@ -486,6 +594,17 @@ def main():
     p = sub.add_parser("reset-authenticator")
     p.add_argument("user")
 
+    p = sub.add_parser("offboard")
+    p.add_argument("login")
+    p.add_argument("--dry-run", action="store_true", help="resolve the user and print the plan, change nothing")
+    p.add_argument("--allow-shared", action="store_true", help="permit alice, bob, carol, mallory (they lose their groups)")
+    p.add_argument("--repeat-delay", type=float, default=5.0, help="seconds between the purges and their repetition")
+
+    p = sub.add_parser("registry-put")
+    p.add_argument("server_id")
+    p.add_argument("manifest")
+    p.add_argument("--identity", help="client certificate directory under certs/ (default mcp-registry-ci-<serverId>)")
+
     sub.add_parser("jira-auth")
 
     args = parser.parse_args()
@@ -517,6 +636,15 @@ def main():
             if status in (404, 405):
                 print("this broker build has no Authenticator reset (M3, contracts 3.0.1)", file=sys.stderr)
             return 1
+        elif args.cmd == "offboard":
+            steps = offboard(args.login, args.dry_run, args.repeat_delay, args.allow_shared)
+            for name, ok, detail in steps:
+                print(f"{'ok  ' if ok else 'FAIL'} {name}" + (f"  [{detail}]" if detail else ""))
+            return 0 if all(ok for _, ok, _ in steps) else 1
+        elif args.cmd == "registry-put":
+            status, body = registry_put(args.server_id, args.manifest, args.identity)
+            print(json.dumps({"httpStatus": status, **body}))
+            return 0 if status in (200, 201) else 1
         elif args.cmd == "audit":
             return audit(args.request_id, args.logs, True if args.compose else None)
         elif args.cmd == "jira-auth":

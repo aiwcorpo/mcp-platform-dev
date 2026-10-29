@@ -66,6 +66,7 @@ Metadane serwera autoryzacji (RFC 8414) są pod
 | `certs/<nazwa>/tls.crt`, `tls.key`, `chain.crt` | certyfikat, klucz PKCS#8, certyfikat + CA |
 | `certs/<nazwa>/keystore.p12` | klucz + łańcuch dla Javy; hasło `TLS_STORE_PASSWORD` |
 | `certs/untrusted/mcp-gateway/` | CN `mcp-gateway` podpisany innym CA, do testów negatywnych |
+| `certs/legacy/mcp-registry-ci/` | dawny wspólny CN potoku (M3); od gateway'a 4.0.0 daje 403, tylko do testu negatywnego, nigdzie niemontowany |
 | `certs/public-ca/ca.crt`, `ca.key` | osobne CA "dev public" dla adresu publicznego (`scripts/gen-public-cert.sh`); name constraints: tylko `localhost`, `127.0.0.1`, `::1`; klucz zostaje na hoście, nigdzie niemontowany |
 | `certs/proxy/tls.crt`, `tls.key`, `chain.crt` | certyfikat serwera proxy (SAN `localhost`, `127.0.0.1`, `::1`, 397 dni), montowany do kontenera `proxy` |
 | `certs/keycloak/tls.crt`, `tls.key`, `chain.crt` | certyfikat Keycloaka (to samo CA, te same SAN i czas życia), montowany do `keycloak` i `idp-relay` |
@@ -76,7 +77,8 @@ Metadane serwera autoryzacji (RFC 8414) są pod
 | `mcp-gateway` | serverAuth, clientAuth | `${MCP_GATEWAY_INTERNAL_TLS_NAME}`, `mcp-gateway`, `localhost`, `127.0.0.1` |
 | `mcp-credential-broker` | serverAuth | `${MCP_BROKER_TLS_NAME}`, `mcp-credential-broker`, `localhost`, `127.0.0.1` |
 | `mcp-jira`, `mcp-confluence`, `mcp-gitlab`, `mcp-servicedesk`, `mcp-opensearch` | serverAuth | `<serverId>.internal`, `<serverId>`, `localhost`, `127.0.0.1` |
-| `mcp-portal-bff`, `mcp-registry-ci`, `mcp-offboarding` | clientAuth | `<nazwa>` |
+| `mcp-portal-bff`, `mcp-offboarding` | clientAuth | `<nazwa>` |
+| `mcp-registry-ci-mcp-jira`, `-mcp-confluence`, `-mcp-gitlab`, `-mcp-servicedesk`, `-mcp-opensearch` | clientAuth | `<nazwa>` (jeden certyfikat potoku na serwer, CC-161) |
 
 Wszystkie mają `CN=<nazwa>`. `localhost` w SAN dostają tylko certyfikaty serwerowe, dla komponentów
 uruchomionych na hoście; produkcyjne certyfikaty go nie mają. Klient i tak powinien weryfikować nazwę

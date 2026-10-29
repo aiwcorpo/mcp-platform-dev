@@ -125,19 +125,19 @@ def check_secrets_hygiene():
            and mcpdev.CONFIG.get("KC_BOOTSTRAP_ADMIN_PASSWORD", "-") not in out, "")
     config = json.loads(subprocess.run([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2", "config", "--format", "json"],
                                        capture_output=True, text=True).stdout)
-    dev_keys = (POLICY_REPO / "keys" / "dev").resolve()
+    key_dirs = {(POLICY_REPO / "keys" / "dev").resolve()}
     servers = {name: svc for name, svc in config["services"].items() if "MCP_INTERNAL_URL" in (svc.get("environment") or {})}
     problems = []
     for name, svc in servers.items():
         env = svc["environment"]
         mount = next((v for v in svc.get("volumes", []) if v.get("target") == env.get("MCP_POLICY_PUBLIC_KEY_FILE")), None)
-        if not env.get("MCP_POLICY_KEY_ID", "").startswith("test-"):
+        if not env.get("MCP_POLICY_KEY_ID", "").startswith(("test-", "dev-")):
             problems.append(f"{name}: key id {env.get('MCP_POLICY_KEY_ID')}")
-        if mount is None or (ROOT / mount["source"]).resolve().parent != dev_keys:
+        if mount is None or (ROOT / mount["source"]).resolve().parent not in key_dirs:
             problems.append(f"{name}: key file not from mcp-policies/keys/dev")
         if env.get("SPRING_PROFILES_ACTIVE") != "devstack" or "AIWCORPO_MCP_PLATFORM_INTERNAL_JWT_ALLOW_TEST_KEYS" in env:
             problems.append(f"{name}: profile or JWT test key flag")
-    record("compose (effective configuration): every MCP server runs devstack, with a test-* id and a key file from the dev keys of ws-09, "
+    record("compose (effective configuration): every MCP server runs devstack, with a test-* or dev-* (M4) id and a key file from the dev keys of ws-09, "
            "without the internal JWT test key flag", len(servers) >= 5 and not problems, "; ".join(problems)[:200])
 
 

@@ -14,7 +14,8 @@ COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira
 
 .PHONY: help secrets certs contracts up up-core up-full down reset clean ps logs token claims exchange pat seed \
         smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test trust-ca mocks-test m2 mock-auth \
-        m3 otp reset-authenticator registry-refresh admin-password m3-switch
+        m3 otp reset-authenticator registry-refresh admin-password m3-switch \
+        m4 m4-test m4-switch offboard registry-register openbao-test
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -22,7 +23,7 @@ help: ## list targets
 secrets: ## generate .secrets/dev.env (missing keys only)
 	@./scripts/init-secrets.sh
 
-certs: secrets ## generate the dev CA, mTLS certificates and the https certificate of the proxy (once)
+certs: secrets ## generate the dev CA, mTLS certificates (CI certificate per server), https certificate of the proxy (once)
 	@./scripts/gen-certs.sh
 	@./scripts/gen-public-cert.sh
 
@@ -148,3 +149,21 @@ admin-password: ## login and password of the Keycloak admin console (master real
 
 m3-switch: ## apply the prepared M3 switch to the running stack (broker, MCP servers, gateway recreated from .env; state is kept)
 	@./scripts/apply-m3-switch.sh
+
+m4: ## M4 infrastructure checks (CI certificates, dev- keys, token exchange, service account); steps that need M4 components are SKIP before the switch
+	@$(PY) scripts/m4.py run
+
+m4-test: ## unit tests of offboarding and registry registration against fake Keycloak, broker and gateway (needs make certs; no stack)
+	@$(PY) -I -m unittest discover -s scripts/tests
+
+openbao-test: ## openbao/init.sh against a throw-away OpenBao: service account of Service Desk and the broker policy (isolated network)
+	@./scripts/openbao-init-test.sh
+
+offboard: ## offboarding of USER=<login>: IdP groups and logout, broker purge, gateway purge (CN mcp-offboarding), purges repeated; DRY=1 only prints the plan
+	@$(PY) scripts/mcpdev.py offboard $(USER) $(if $(DRY),--dry-run)
+
+registry-register: ## PUT the manifests built from the server repositories with the certificate of each server (CN mcp-registry-ci-<serverId>); SERVERS="mcp-jira ..." narrows
+	@./scripts/registry-register.sh
+
+m4-switch: ## apply the prepared M4 switch to the running stack (broker, servers, registry by CI, gateway, BFF/web; state is kept); CHECK=1 only checks the preconditions
+	@./scripts/apply-m4-switch.sh $(if $(CHECK),--check)

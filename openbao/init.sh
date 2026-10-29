@@ -3,6 +3,9 @@
 # Layout used by the credential broker (ws-06):
 #   KV v2  secret/        connections: secret/data/mcp/connections/<sub>/<system>
 #   KV v2  secret/data/mcp/oauth-clients/<system>: OAuth client of the broker at a provider (read only for the broker)
+#   KV v2  secret/data/mcp/service-accounts/<system>: key of the platform's service account (credential type
+#          service-account, CC-157); today only servicedesk, value = SERVICEDESK_API_KEY of .secrets/dev.env (the key the
+#          Service Desk mock accepts), fields `key` and `scheme`. Read only for the broker.
 #   Transit transit/      key mcp-credential-broker (encryption of stored secrets)
 #   Transit transit/      key mcp-authenticators (TOTP seeds of the Authenticator, contracts 3.0.1 C4: Transit only, no
 #                         envelope); ciphertext under secret/data/mcp/authenticators/<sha256(sub)>[/...]
@@ -27,6 +30,7 @@ bao policy write mcp-credential-broker - <<'HCL'
 path "secret/data/mcp/connections/*"     { capabilities = ["create", "read", "update", "delete"] }
 path "secret/metadata/mcp/connections/*" { capabilities = ["read", "list", "delete"] }
 path "secret/data/mcp/oauth-clients/gitlab" { capabilities = ["read"] }
+path "secret/data/mcp/service-accounts/*"   { capabilities = ["read"] }
 path "transit/encrypt/mcp-credential-broker" { capabilities = ["update"] }
 path "transit/decrypt/mcp-credential-broker" { capabilities = ["update"] }
 path "secret/data/mcp/authenticators/*"     { capabilities = ["create", "read", "update", "delete"] }
@@ -53,5 +57,8 @@ fi
 
 # Client of the GitLab mock (mocks/systems/gitlab.py); the same secret is in the mock's environment.
 printf '%s' "$GITLAB_OAUTH_CLIENT_SECRET" | bao kv put secret/mcp/oauth-clients/gitlab client_id=mcp-broker client_secret=- >/dev/null
+
+# Service account of the platform at Service Desk. The Bearer scheme is one of the three the mock accepts.
+printf '%s' "$SERVICEDESK_API_KEY" | bao kv put secret/mcp/service-accounts/servicedesk key=- scheme=Bearer >/dev/null
 
 echo "openbao-init: kv v2 at secret/, transit keys mcp-credential-broker and mcp-authenticators, approle mcp-credential-broker ready"
