@@ -13,7 +13,9 @@ c=("$compose" --profile full --profile m2)
 "${c[@]}" up -d --no-deps --wait mcp-gateway
 
 for service in mcp-gateway mcp-jira mcp-confluence mcp-gitlab mcp-servicedesk mcp-opensearch; do
-  if "${c[@]}" logs "$service" 2>&1 | grep -q 'event=devstack_profile'; then
+  # Captured first: grep -q would close the pipe early and, under pipefail, turn a match into a failure.
+  log="$("${c[@]}" logs "$service" 2>&1)"
+  if grep -q 'event=devstack_profile' <<<"$log"; then
     echo "apply-m3-switch: $service runs with profile devstack"
   else
     echo "apply-m3-switch: $service did not log event=devstack_profile" >&2
