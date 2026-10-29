@@ -71,6 +71,12 @@ python3 "$root/scripts/mcpdev.py" sync-groups | sed 's/^/apply-m4-switch: realm:
 "${c[@]}" up -d --no-deps --wait server-state-init mcp-jira mcp-confluence mcp-gitlab mcp-servicedesk mcp-opensearch
 "${c[@]}" exec -T postgres psql -U gateway -d gateway -At -c "delete from registry_servers where source = 'bootstrap'" \
   | sed 's/^/apply-m4-switch: dropped bootstrap rows: /'
+# MCP sessions of the M3 gateway have no entry in the per-user session index that purge reads (README of the gateway, "Przejście z M3 na M4");
+# clients get 404 and initialize again. gw:conf:* and gw:rl:* stay.
+set -a; . "$root/.secrets/dev.env"; set +a
+redis_container="$("${c[@]}" ps -q redis)"
+docker exec "$redis_container" sh -c 'REDISCLI_AUTH="$REDIS_ADMIN_PASSWORD" redis-cli --user admin --scan --pattern "gw:session:*" | xargs -r env REDISCLI_AUTH="$REDIS_ADMIN_PASSWORD" redis-cli --user admin DEL' \
+  | sed 's/^/apply-m4-switch: dropped M3 sessions: /'
 "${c[@]}" up -d --no-deps --wait mcp-gateway
 "$root/scripts/registry-register.sh"
 "${c[@]}" up -d --no-deps --wait portal-bff portal-web

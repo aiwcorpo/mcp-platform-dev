@@ -842,8 +842,6 @@ services:
       MCP_TLS_KEYSTORE: /certs/mcp-servicedesk/keystore.p12
       MCP_SERVICEDESK_URL: http://servicedesk.internal:8080
       MCP_SERVICEDESK_ALLOW_PLAIN_HTTP: "true"
-      MCP_SERVICEDESK_CREDENTIAL_MODE: service-account
-      MCP_SERVICEDESK_ALLOWED_QUEUES: IT
       # Signed policy bundle (C7), the same the gateway evaluates, and the manifest the registry takes (C6).
       MCP_POLICY_URL: https://policies.internal:8443/policies/main/latest.json
       MCP_POLICY_KEY_ID: ${POLICY_KEY_MAIN_ID}
