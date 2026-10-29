@@ -13,7 +13,7 @@
 #     switch keeps the M3 configuration;
 #   - a manifest built from each server repository (target/mcp-manifest.json or MANIFEST_DIR/<serverId>.json): the registry
 #     entries are replaced through the CI certificates (CC-161), not through the bootstrap of the gateway.
-# Order: OpenBao init (service account of Service Desk, broker policy) -> Redis ACL -> broker -> MCP servers (they declare
+# Order: OpenBao init (service account of Service Desk, broker policy) -> realm groups (Service Desk for alice and bob, additive) -> Redis ACL -> broker -> MCP servers (they declare
 # environment dev) -> drop of the bootstrap rows of the registry (dev only; the CI PUT recreates them with source ci) ->
 # gateway -> registration by CI -> BFF and web -> signal to ws-09 and wait until the 4.0.0 bundle signed with the dev- key is
 # published (ws-09 runs .ci/switch-stack.sh --confirm in mcp-policies; M4_PUBLISHED=1 skips the wait) -> proxy-test and make m4.
@@ -65,6 +65,7 @@ grep -q '^M4_ACTIVE=' "$root/.env" && sed -i.bak 's/^M4_ACTIVE=.*/M4_ACTIVE=1/' 
 echo "apply-m4-switch: M4_ACTIVE=1 in .env (broker image and settings, dev- policy key ids)"
 
 "${c[@]}" run --rm --no-deps openbao-init
+python3 "$root/scripts/mcpdev.py" sync-groups | sed 's/^/apply-m4-switch: realm: /'
 "$root/scripts/redis-sync-acl.sh" >/dev/null
 "${c[@]}" up -d --no-deps --wait mcp-credential-broker
 "${c[@]}" up -d --no-deps --wait server-state-init mcp-jira mcp-confluence mcp-gitlab mcp-servicedesk mcp-opensearch

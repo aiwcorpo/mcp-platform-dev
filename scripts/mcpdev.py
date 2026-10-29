@@ -12,6 +12,7 @@
                                              C8 audit events of one request from gateway, broker, mcp-jira logs
   jira-auth                                  credentials that reached the Jira mock (from its request journal)
   offboard LOGIN [--dry-run]                 IdP (groups, logout), broker purge, gateway purge (CN=mcp-offboarding), purges repeated
+  sync-groups                                add the groups and memberships of keycloak/realm-corp.json to the running realm (additive)
   registry-put SERVER_ID MANIFEST            C5 PUT of a manifest with the certificate of that server (CN=mcp-registry-ci-<serverId>)
 
 Configuration comes from .env and .secrets/dev.env; environment variables override:
@@ -408,6 +409,34 @@ def kc_admin(method, path, body=None):
         return e.code, {"raw": e.read().decode(errors="replace")[:200]}
 
 
+def sync_groups():
+    """Brings the RUNNING realm to the groups and memberships of keycloak/realm-corp.json (the file is imported only when the
+    container is created, and recreating Keycloak ends every session). Additive: groups and memberships are added, never removed.
+    Returns the list of changes made."""
+    realm = json.loads((ROOT / "keycloak" / "realm-corp.json").read_text())
+    changes = []
+    existing = {g["name"]: g["id"] for g in kc_admin("GET", "/groups?max=200")[1]}
+    for group in realm["groups"]:
+        if group["name"] not in existing:
+            if kc_admin("POST", "/groups", {"name": group["name"]})[0] != 201:
+                raise Fail(f"cannot create group {group['name']}")
+            existing[group["name"]] = next(g["id"] for g in kc_admin("GET", f"/groups?search={group['name']}&exact=true")[1] if g["name"] == group["name"])
+            changes.append(f"group {group['name']} created")
+    for user in realm["users"]:
+        status, found = kc_admin("GET", f"/users?username={user['username']}&exact=true")
+        if status != 200 or not found:
+            raise Fail(f"user {user['username']} not in the realm")
+        sub = found[0]["id"]
+        have = {g["name"] for g in kc_admin("GET", f"/users/{sub}/groups")[1]}
+        for path in user.get("groups", []):
+            name = path.lstrip("/")
+            if name not in have:
+                if kc_admin("PUT", f"/users/{sub}/groups/{existing[name]}")[0] != 204:
+                    raise Fail(f"cannot add {user['username']} to {name}")
+                changes.append(f"{user['username']} added to {name}")
+    return changes
+
+
 SHARED_TEST_USERS = ("alice", "bob", "carol", "mallory")
 
 
@@ -605,6 +634,7 @@ def main():
     p.add_argument("manifest")
     p.add_argument("--identity", help="client certificate directory under certs/ (default mcp-registry-ci-<serverId>)")
 
+    sub.add_parser("sync-groups")
     sub.add_parser("jira-auth")
 
     args = parser.parse_args()
@@ -636,6 +666,9 @@ def main():
             if status in (404, 405):
                 print("this broker build has no Authenticator reset (M3, contracts 3.0.1)", file=sys.stderr)
             return 1
+        elif args.cmd == "sync-groups":
+            for change in sync_groups() or ["realm already matches keycloak/realm-corp.json"]:
+                print(change)
         elif args.cmd == "offboard":
             steps = offboard(args.login, args.dry_run, args.repeat_delay, args.allow_shared)
             for name, ok, detail in steps:

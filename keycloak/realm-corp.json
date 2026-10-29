@@ -853,6 +853,10 @@
       "path": "/mcp-servicedesk-queue-IT"
     },
     {
+      "name": "mcp-servicedesk-queue-FIN",
+      "path": "/mcp-servicedesk-queue-FIN"
+    },
+    {
       "name": "mcp-opensearch-read",
       "path": "/mcp-opensearch-read"
     },
@@ -906,6 +910,9 @@
         "/mcp-gitlab-read",
         "/mcp-gitlab-write",
         "/mcp-gitlab-grp-team-a",
+        "/mcp-servicedesk-read",
+        "/mcp-servicedesk-write",
+        "/mcp-servicedesk-queue-IT",
         "/mcp-opensearch-read",
         "/mcp-opensearch-idx-logs-team-a",
         "/mcp-client-claude-code"
@@ -936,6 +943,8 @@
       "groups": [
         "/mcp-jira-read",
         "/mcp-jira-proj-ABC",
+        "/mcp-servicedesk-read",
+        "/mcp-servicedesk-queue-FIN",
         "/mcp-opensearch-read",
         "/mcp-opensearch-idx-logs-team-a",
         "/mcp-client-claude-code"

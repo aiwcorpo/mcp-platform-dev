@@ -373,6 +373,44 @@ def check_opensearch_through_gateway():
            ", ".join(sorted({f"{e['auth']}:{e['status']}" for e in fresh})))
 
 
+def check_access_groups():
+    """Groups of the dev users for Service Desk and OpenSearch after the switch (docs/m4.md): alice reads and writes queue IT, bob reads
+    queue FIN only, nobody has HR; both read logs-team-a."""
+    name = "realm: Service Desk and OpenSearch groups of alice and bob match keycloak/realm-corp.json"
+    groups = {user: set(mcpdev.decode_jwt(mcpdev.login(user)).get("groups", [])) for user in ("alice", "bob")}
+    want = {"alice": {"mcp-servicedesk-read", "mcp-servicedesk-write", "mcp-servicedesk-queue-IT", "mcp-opensearch-read", "mcp-opensearch-idx-logs-team-a"},
+            "bob": {"mcp-servicedesk-read", "mcp-servicedesk-queue-FIN", "mcp-opensearch-read", "mcp-opensearch-idx-logs-team-a"}}
+    missing = {u: sorted(want[u] - groups[u]) for u in want if want[u] - groups[u]}
+    extra = [u for u in groups if "mcp-servicedesk-queue-HR" in groups[u]]
+    if missing and not switched():
+        skip(name, f"{BEFORE_SWITCH}: missing {missing}; make m4-switch runs mcpdev.py sync-groups")
+    else:
+        record(name, not missing and not extra, f"missing {missing}")
+
+
+def check_servicedesk_queues():
+    name = "service desk: alice reads queue IT, not FIN and not HR; bob reads FIN, not IT and not HR (service account narrowed by Cedar)"
+    if not switched():
+        skip(name, BEFORE_SWITCH)
+        return
+    reached = {}
+    for user in ("alice", "bob"):
+        call = mcp_session(f"{PROXY}/s/mcp-servicedesk/mcp", mcpdev.login(user))
+        call("initialize", {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "m4", "version": "1"}})
+        call("notifications/initialized", notify=True)
+        tool = next((t for t in call("tools/list")[1].get("result", {}).get("tools", []) if t["name"].endswith("search_tickets")), None)
+        if tool is None:
+            record(name, False, f"{user}: no search_tickets")
+            return
+        for queue in ("IT", "FIN", "HR"):
+            args = {k: (queue if "queue" in k.lower() else "a") for k in tool["inputSchema"].get("required", [])}
+            result = call("tools/call", {"name": tool["name"], "arguments": args})[1].get("result", {})
+            reached[(user, queue)] = not result.get("isError", False) and "not_found_or_denied" not in json.dumps(result)
+    expected = {("alice", "IT"): True, ("alice", "FIN"): False, ("alice", "HR"): False,
+                ("bob", "IT"): False, ("bob", "FIN"): True, ("bob", "HR"): False}
+    record(name, reached == expected, str({f"{u}/{q}": v for (u, q), v in reached.items() if expected[(u, q)] != v}))
+
+
 def check_environment_dev():
     skip("environment=dev: a manifest with environment dev is rejected by a gateway without the dev mode (422 environment_mismatch)",
          "needs a second gateway in production mode (without profile devstack) on a host port; the stack gateway runs in dev mode by design")
@@ -398,7 +436,7 @@ def wait_bundle(seconds):
 
 def run():
     parts = (check_certificates, check_dev_keys, check_bundle_signature, check_service_account, check_token_exchange,
-             check_registry_certificates, check_offboarding, check_rate_limit, check_service_account_through_gateway, check_opensearch_through_gateway, check_environment_dev)
+             check_registry_certificates, check_offboarding, check_rate_limit, check_service_account_through_gateway, check_opensearch_through_gateway, check_access_groups, check_servicedesk_queues, check_environment_dev)
     for part in parts:
         try:
             part()
