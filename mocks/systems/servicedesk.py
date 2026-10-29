@@ -2,6 +2,7 @@
 
 Endpoints, exactly the ones the server calls:
   GET  /api/v1/queues/{queue}/tickets?q=<text>&limit=<n>  -> {"items": [ticket, ...]}   (search_tickets)
+  GET  /api/v1/queues/{queue}                              -> {"id": queue}               (existence of the queue, read by the server for the policy)
   GET  /api/v1/tickets/{ticketId}                          -> ticket                      (get_ticket, and the read before add_note)
   POST /api/v1/tickets/{ticketId}/notes  {"body", "visibility"} -> 201 {"id"}             (add_note)
 
@@ -177,6 +178,13 @@ def handle(req):
         return _error(401, "unauthorized", "a valid service account key is required",
                       {"WWW-Authenticate": 'Bearer realm="servicedesk"'})
     rest = segments[2:]
+    if len(rest) == 2 and rest[0] == "queues":
+        if req.method != "GET":
+            return _error(405, "method_not_allowed", "GET only", {"Allow": "GET"})
+        if rest[1] not in QUEUES:
+            return _error(404, "not_found", "queue not found")
+        # No classification: the queue is unrestricted for the server; who may see it is decided by the policy bundle.
+        return common.json_response(200, {"id": rest[1]})
     if len(rest) == 3 and rest[0] == "queues" and rest[2] == "tickets":
         if req.method != "GET":
             return _error(405, "method_not_allowed", "GET only", {"Allow": "GET"})

@@ -205,5 +205,12 @@ class DataTest(ServicedeskTestCase):
             self.assertTrue(pattern.match(key) and pattern.match(ticket["queue"]), key)
 
 
+class QueueTest(ServicedeskTestCase):
+    def test_queue_exists_for_the_policy(self):
+        self.assertEqual(data(call("GET", "/api/v1/queues/IT")), {"id": "IT"})
+        self.assertEqual(call("GET", "/api/v1/queues/NOPE").status, 404)
+        self.assertEqual(call("GET", "/api/v1/queues/IT", key=None).status, 401)
+
+
 if __name__ == "__main__":
     unittest.main()

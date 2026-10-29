@@ -283,5 +283,31 @@ class GetDocumentTest(unittest.TestCase):
         self.assertEqual(call("GET", "/logs-team-a-2026.10.28/_doc/a28-001", token).status, 401)
 
 
+class ServerQueryShapeTest(unittest.TestCase):
+    """The body mcp-server-opensearch builds (OpenSearchAdapter.searchBody / aggregateBody)."""
+
+    FILTERS = [{"range": {"@timestamp": {"gte": "2026-10-27T00:00:00Z", "lt": "2026-10-29T00:00:00Z", "format": "strict_date_optional_time"}}},
+               {"bool": {"should": [{"term": {"_index": "logs-team-a"}}, {"prefix": {"_index": "logs-team-a-"}}], "minimum_should_match": 1}}]
+
+    def test_multi_match_search(self):
+        body = {"size": 21, "track_total_hits": False, "timeout": "10s", "_source": {"includes": ["message"]},
+                "sort": [{"@timestamp": {"order": "desc", "unmapped_type": "date"}}],
+                "query": {"bool": {"filter": self.FILTERS + [
+                    {"multi_match": {"query": "connection timeout", "fields": ["message"], "type": "best_fields", "operator": "and", "lenient": True}},
+                    {"term": {"log.level": {"value": "ERROR", "case_insensitive": True}}}]}}}
+        resp = call("POST", "/logs-team-a-2026.10.27/_search", exchanged("alice"), body)
+        self.assertEqual(resp.status, 200)
+        self.assertEqual([h["_id"] for h in payload(resp)["hits"]["hits"]], ["a27-003"])
+
+    def test_terms_aggregation(self):
+        body = {"size": 0, "track_total_hits": False, "query": {"bool": {"filter": self.FILTERS}},
+                "aggs": {"groups": {"terms": {"field": "log.level", "size": 5}}}}
+        resp = call("POST", "/logs-team-a-2026.10.27,logs-team-a-2026.10.28/_search", exchanged("alice"), body)
+        self.assertEqual(resp.status, 200)
+        buckets = payload(resp)["aggregations"]["groups"]["buckets"]
+        self.assertEqual({b["key"]: b["doc_count"] for b in buckets}, {"info": 3, "error": 3, "warn": 2, "debug": 1})
+        self.assertEqual(payload(resp)["hits"]["hits"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

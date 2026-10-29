@@ -19,7 +19,8 @@ name without access is 403 (security_exception), a wildcard silently narrows to 
 as OpenSearch Security does with do_not_fail_on_forbidden. A name that does not exist is 404 before the
 permission check (the mock favours clear test signals over hiding existence).
 
-Query support is the subset the server sends plus a few obvious neighbours; aggregations are not supported.
+Query support is the subset the server sends plus a few obvious neighbours (multi_match as the server builds it); the only aggregation is terms
+(aggregate_logs).
 """
 import fnmatch
 import os
@@ -260,6 +261,12 @@ def search(req, claims, prefixes):
     result = {"took": 1, "timed_out": False,
               "_shards": {"total": len(names), "successful": len(names), "skipped": 0, "failed": 0},
               "hits": {"max_score": None if sort_spec else 1.0, "hits": hits}}
+    aggs = body.get("aggs", body.get("aggregations"))
+    if aggs is not None:
+        try:
+            result["aggregations"] = {name: terms_aggregation(spec, matched) for name, spec in aggs.items()}
+        except QueryError as exc:
+            return os_error(400, "parsing_exception", str(exc))
     if body.get("track_total_hits", True) is not False:
         result["hits"]["total"] = {"value": len(matched), "relation": "eq"}
     return common.json_response(200, result)
@@ -267,6 +274,22 @@ def search(req, claims, prefixes):
 
 class QueryError(Exception):
     pass
+
+
+def terms_aggregation(spec, matched):
+    """The one aggregation the server sends (aggregate_logs): terms on a field, buckets by count then key."""
+    terms = spec.get("terms") if isinstance(spec, dict) else None
+    if not isinstance(terms, dict) or not isinstance(terms.get("field"), str):
+        raise QueryError("only a terms aggregation on a field is supported")
+    counts = {}
+    for _, _, doc in matched:
+        value = value_at(doc, terms["field"])
+        if value is not None:
+            counts[value] = counts.get(value, 0) + 1
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], str(item[0])))
+    size = int(terms.get("size", 10))
+    return {"doc_count_error_upper_bound": 0, "sum_other_doc_count": sum(n for _, n in ordered[size:]),
+            "buckets": [{"key": k, "doc_count": n} for k, n in ordered[:size]]}
 
 
 def field_path(field):
@@ -454,6 +477,12 @@ def matches(query, index, doc):
         return bool_matches(spec, index, doc)
     if kind in ("term", "match", "match_phrase", "prefix", "terms", "range", "exists"):
         return leaf_matches(kind, spec, index, doc)
+    if kind == "multi_match":
+        text = spec.get("query") if isinstance(spec, dict) else None
+        if not isinstance(text, str):
+            raise QueryError("[multi_match] requires a query string")
+        fields = [f.split("^")[0] for f in spec.get("fields", [])] or ["*"]
+        return text_query(text, fields, str(spec.get("operator", "or")).lower() == "and", False)(doc)
     if kind in ("simple_query_string", "query_string"):
         text = spec.get("query")
         if not isinstance(text, str):

@@ -174,7 +174,9 @@ def check_policy_server():
         s1, h1, archive = http("GET", f"{POLICIES}/policies/main/{latest['url']}")
         s2, _, sig = http("GET", f"{POLICIES}/policies/main/{latest['sigUrl']}")
         record("policies: archive and 64-byte signature of the latest revision are served", s1 == 200 and s2 == 200 and len(sig) == 64, f"{s1}/{s2}/{len(sig)}")
-        pem = POLICY_REPO / "keys" / "dev" / "test-policies-main-dev.public.pem"
+        key_id = json.loads(subprocess.run([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2", "config", "--format", "json"],
+                                           capture_output=True, text=True).stdout)["services"]["mcp-gateway"]["environment"]["MCP_POLICY_MAIN_KEY_ID"]
+        pem = POLICY_REPO / "keys" / "dev" / f"{key_id}.public.pem"
         try:
             from cryptography.hazmat.primitives.serialization import load_pem_public_key
             from cryptography.exceptions import InvalidSignature

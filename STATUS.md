@@ -383,6 +383,23 @@ Propozycje CC (nie zmieniano kontraktów):
 - Układ sekretu konta serwisowego w OpenBao (`value`, `username`+`password`, `expires_at`) i klienta wymiany (`oauth-clients/<system>`, `client_secret`) nie jest w kontrakcie (to samo zgłasza ws-06 jako P2).
 - Test `environment_mismatch` wymaga gateway'a w trybie produkcyjnym; stos dev go nie ma. Do rozważenia: wektor lub test e2e uruchamiający drugi gateway bez `devstack`.
 
+## M4: stos przełączony (2026-10-29)
+
+`make m4-switch` zastosowane na działającym stosie (bez down i bez usuwania wolumenów). Obrazy (z `m4.env`): gateway `m4-ac3cdb6`, broker `m4-27b8866`, BFF `m4-bd5a231`,
+web `m4-58c0b7b`, jira `m4-7f3f951` (podmieniona po przełączeniu, poprawka wycieku przez `hasMore`), confluence `m4-bb3289e`, gitlab `m4-516853a`, servicedesk `m4-f248714`, opensearch `m4-1862fb4`.
+Paczki polityk: kanał `repository-m4` rewizja 20261029192632-5625b13, klucze `dev-policies-*`.
+
+- Kolejność poprawiona w skrypcie: serwery MCP M4 nie wstają bez paczki podpisanej kluczem `dev-` (padają po 30 s), więc sygnał do ws-09 i oczekiwanie na publikację są przed serwerami.
+- Usunięte z compose `MCP_SERVICEDESK_CREDENTIAL_MODE` i `MCP_SERVICEDESK_ALLOWED_QUEUES`; kolejki nadaje tylko paczka polityk (CC-163).
+- Sesje `gw:session:*` M3 skasowane przed gatewayem (było 0 kluczy); `sync-groups`: realm już zgodny (grupy dodane wcześniej).
+- Rejestr: 5 serwerów zarejestrowanych certyfikatami CI (200), wiersze `bootstrap` skasowane. Oczekują na `approve` (pending_approval, `source=ci`, `change=new`): `jira` add_comment, transition_issue,
+  delete_issue; `confluence` create_page; `gitlab` comment_merge_request; `servicedesk` add_note. Zatwierdzić może tylko `carol` (jedyna z `mcp-platform-admin`) w portalu.
+- Mocki dostosowane do serwerów M4: Service Desk ma `GET /api/v1/queues/{queue}`; OpenSearch rozumie `multi_match` i agregację `terms` (aggregate_logs). `make mocks-test` 180.
+- `_resolve/index` mocka OpenSearch: `logs-team-a,logs-team-a-*` z `ignore_unavailable=true` zwraca tylko istniejące indeksy; bez tego parametru brak indeksu o nazwie samego prefiksu daje 404 (jak OpenSearch).
+- Token Keycloaka: nagłówek `typ: JWT` (nie `at+jwt`), broker go przyjmuje (łańcuch token exchange do OpenSearch działa przez gateway).
+- Wyniki: `make m4` 39 PASS / 0 FAIL / 1 SKIP (`environment=dev` bez drugiego gateway'a), `make m1` zielone, `make m2` 85 PASS / 3 FAIL (zapis GitLab czeka na `approve`), `make m3` 57 PASS / 2 FAIL przed poprawką
+  klucza w teście (podpis sprawdzany kluczem `test-`; poprawione) i brakującą listą narzędzi zapisu Jiry (pending), `make proxy-test` 211 z 212 (zaufanie CA w pęku kluczy macOS).
+
 ## Propozycje CC
 
 Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktów tu nie zmieniano.

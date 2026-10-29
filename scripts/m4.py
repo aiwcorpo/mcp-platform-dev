@@ -325,6 +325,12 @@ def check_rate_limit():
             record(name, bool(seen[0]) and seen[0].isdigit() and "rate_limited" in seen[1], f"Retry-After {seen[0]}")
 
 
+def tool_arguments(schema, queue="IT"):
+    """Values for the required properties of a search tool of Service Desk (queue, text) or OpenSearch (index_prefix, text, from, to)."""
+    values = {"queue": queue, "text": "VPN", "index_prefix": "logs-team-a", "from": "2026-10-27T00:00:00Z", "to": "2026-10-29T00:00:00Z"}
+    return {key: values.get(key, "a") for key in schema.get("required", [])}
+
+
 def check_service_account_through_gateway():
     name = "service account: Service Desk through the gateway receives the service key, never a JWT"
     if not switched():
@@ -342,8 +348,7 @@ def check_service_account_through_gateway():
     if search_tool is None:
         record(name, False, "no search_tickets in tools/list")
         return
-    arguments = {key: ("IT" if "queue" in key.lower() else "VPN") for key in search_tool["inputSchema"].get("required", [])}
-    call("tools/call", {"name": search_tool["name"], "arguments": arguments})
+    call("tools/call", {"name": search_tool["name"], "arguments": tool_arguments(search_tool["inputSchema"])})
     fresh = journal()[before:]
     record(name, bool(fresh) and all(e["auth"] != "jwt" for e in fresh) and any(e["status"] == 200 for e in fresh),
            ", ".join(sorted({f"{e['auth']}:{e['status']}" for e in fresh})))
@@ -362,12 +367,11 @@ def check_opensearch_through_gateway():
     call("initialize", {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "m4", "version": "1"}})
     call("notifications/initialized", notify=True)
     tools = call("tools/list")[1].get("result", {}).get("tools", [])
-    tool = next((t for t in tools if "search" in t["name"]), None)
+    tool = next((t for t in tools if t["name"].endswith("search_logs")), None)
     if tool is None:
         record(name, False, "no search tool in tools/list")
         return
-    arguments = {key: ("logs-team-a-*" if "index" in key.lower() else "error") for key in tool["inputSchema"].get("required", [])}
-    call("tools/call", {"name": tool["name"], "arguments": arguments})
+    call("tools/call", {"name": tool["name"], "arguments": tool_arguments(tool["inputSchema"])})
     fresh = journal()[before:]
     record(name, bool(fresh) and any(e["auth"] == "jwt" and e["status"] == 200 for e in fresh) and all(e["auth"] == "jwt" for e in fresh),
            ", ".join(sorted({f"{e['auth']}:{e['status']}" for e in fresh})))
@@ -389,25 +393,28 @@ def check_access_groups():
 
 
 def check_servicedesk_queues():
-    name = "service desk: alice reads queue IT, not FIN and not HR; bob reads FIN, not IT and not HR (service account narrowed by Cedar)"
+    name = "service desk: alice reads queue IT, not FIN and not HR; bob reads FIN, not IT and not HR; carol (no queue group) none (queues granted by the policy bundle only)"
     if not switched():
         skip(name, BEFORE_SWITCH)
         return
     reached = {}
-    for user in ("alice", "bob"):
+    for user in ("alice", "bob", "carol"):
         call = mcp_session(f"{PROXY}/s/mcp-servicedesk/mcp", mcpdev.login(user))
         call("initialize", {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "m4", "version": "1"}})
         call("notifications/initialized", notify=True)
         tool = next((t for t in call("tools/list")[1].get("result", {}).get("tools", []) if t["name"].endswith("search_tickets")), None)
         if tool is None:
+            if user == "carol":
+                reached.update({("carol", q): False for q in ("IT", "FIN", "HR")})
+                continue
             record(name, False, f"{user}: no search_tickets")
             return
         for queue in ("IT", "FIN", "HR"):
-            args = {k: (queue if "queue" in k.lower() else "a") for k in tool["inputSchema"].get("required", [])}
-            result = call("tools/call", {"name": tool["name"], "arguments": args})[1].get("result", {})
+            result = call("tools/call", {"name": tool["name"], "arguments": tool_arguments(tool["inputSchema"], queue)})[1].get("result", {})
             reached[(user, queue)] = not result.get("isError", False) and "not_found_or_denied" not in json.dumps(result)
     expected = {("alice", "IT"): True, ("alice", "FIN"): False, ("alice", "HR"): False,
-                ("bob", "IT"): False, ("bob", "FIN"): True, ("bob", "HR"): False}
+                ("bob", "IT"): False, ("bob", "FIN"): True, ("bob", "HR"): False,
+                ("carol", "IT"): False, ("carol", "FIN"): False, ("carol", "HR"): False}
     record(name, reached == expected, str({f"{u}/{q}": v for (u, q), v in reached.items() if expected[(u, q)] != v}))
 
 
