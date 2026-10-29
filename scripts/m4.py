@@ -218,7 +218,7 @@ def check_token_exchange():
 def manifest_path(server):
     if os.environ.get("MANIFEST_DIR"):
         return Path(os.environ["MANIFEST_DIR"]) / f"{server}.json"
-    return ROOT.parent / f"mcp-server-{server.removeprefix('mcp-')}" / "target" / "mcp-manifest.json"
+    return ROOT.parent / f"mcp-server-{server.removeprefix('mcp-')}" / "mcp-app" / "target" / "mcp-manifest.json"
 
 
 def check_registry_certificates():

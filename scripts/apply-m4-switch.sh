@@ -11,7 +11,7 @@
 #   - the M4 layer: m4.env (images and policy key ids) and docker-compose.m4.yml (broker systems opensearch and servicedesk,
 #     devstack) apply only with M4_ACTIVE=1, which the script writes to .env after the checks, so an accidental `up` before the
 #     switch keeps the M3 configuration;
-#   - a manifest built from each server repository (target/mcp-manifest.json or MANIFEST_DIR/<serverId>.json): the registry
+#   - a manifest built from each server repository (mcp-app/target/mcp-manifest.json or MANIFEST_DIR/<serverId>.json): the registry
 #     entries are replaced through the CI certificates (CC-161), not through the bootstrap of the gateway.
 # Order: OpenBao init (service account of Service Desk, broker policy) -> realm groups (Service Desk for alice and bob, additive) -> Redis ACL -> broker -> MCP servers (they declare
 # environment dev) -> drop of the bootstrap rows of the registry (dev only; the CI PUT recreates them with source ci) ->
@@ -51,7 +51,7 @@ for key in dev-policies-main dev-policies-overrides; do
 done
 for server in mcp-jira mcp-confluence mcp-gitlab mcp-servicedesk mcp-opensearch; do
   manifest="${MANIFEST_DIR:+$MANIFEST_DIR/$server.json}"
-  manifest="${manifest:-$root/../mcp-server-${server#mcp-}/target/mcp-manifest.json}"
+  manifest="${manifest:-$root/../mcp-server-${server#mcp-}/mcp-app/target/mcp-manifest.json}"
   [ -f "$manifest" ] || fail "$server: no manifest at $manifest (build the server; the registry is filled by the CI PUT)"
 done
 echo "apply-m4-switch: dev keys and manifests ok"

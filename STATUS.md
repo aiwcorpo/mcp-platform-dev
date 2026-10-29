@@ -356,7 +356,7 @@ na polecenie koordynatora. Efektywny `compose config` różni się od poprzednie
 | Kamień | Zakres | Stan |
 | --- | --- | --- |
 | M4.1 | certyfikaty CI per serwer (5), `certs/legacy/mcp-registry-ci` do testu 403, klucze 600; identyfikatory kluczy polityk w `.env` (domyślnie `test-`, `dev-policies-main`/`-overrides` przy przełączeniu); konto serwisowe Service Desku w OpenBao + polityka brokera; token exchange do OpenSearch sprawdzony na mocku | zrobione; `make m4` 22 PASS, 14 SKIP ("przed przelaczeniem" lub brak wykonawcy), `make openbao-test` 8 PASS |
-| M4.2 | `make offboard`, `make registry-register` (certyfikat serwera, manifest z `target/mcp-manifest.json`), `scripts/m4.py` (część po przełączeniu), `make m4-test` 6 testów na fałszywych Keycloak, brokerze i gateway'u z mTLS | zrobione; część po przełączeniu nieuruchomiona na prawdziwych komponentach |
+| M4.2 | `make offboard`, `make registry-register` (certyfikat serwera, manifest z `mcp-app/target/mcp-manifest.json`), `scripts/m4.py` (część po przełączeniu), `make m4-test` 6 testów na fałszywych Keycloak, brokerze i gateway'u z mTLS | zrobione; część po przełączeniu nieuruchomiona na prawdziwych komponentach |
 | M4.3 | `make m4-switch` (kolejność: OpenBao, Redis ACL, broker, serwery, kasowanie wierszy bootstrap, gateway, rejestracja CI, BFF/web, sygnał do ws-09 i oczekiwanie na paczkę 4.0.0, testy); `CHECK=1` sprawdza warunki wstępne | skrypt gotowy, `--check` zgłasza brak obrazów M4; samo przełączenie czeka na obrazy i polecenie |
 
 Weryfikacja: `compose config -q` (profile infra, full, m2), `make mocks-test` 177, `make m4-test` 6, `make proxy-test` 211 z 212 (nieudany: "wewnętrzne CA nie weryfikuje certyfikatu publicznego";
@@ -371,7 +371,7 @@ Czekam na (do przełączenia):
   `credentialType` per system, nazwa ustawienia trybu dev z `allowTestKeys`, potwierdzenie listenera C5 na `:8443` dla CN `mcp-offboarding` i `mcp-registry-ci-<serverId>`;
 - ws-06: obraz brokera 4.0.0; zmienne systemów `opensearch` (`token-exchange`, audience i zakres) i `servicedesk` (`service-account`), odczyt `secret/data/mcp/service-accounts/<system>`
   (potwierdzenie pól `key` i `scheme`), domyślny limit rejestracji, `unused_cleanup`;
-- ws-02/03/04: obrazy pięciu serwerów 4.0.0 (`MCP_JIRA_IMAGE`, `MCP_CONFLUENCE_IMAGE`, `MCP_GITLAB_IMAGE`, `MCP_SERVICEDESK_IMAGE`, `MCP_OPENSEARCH_IMAGE`) i `target/mcp-manifest.json`
+- ws-02/03/04: obrazy pięciu serwerów 4.0.0 (`MCP_JIRA_IMAGE`, `MCP_CONFLUENCE_IMAGE`, `MCP_GITLAB_IMAGE`, `MCP_SERVICEDESK_IMAGE`, `MCP_OPENSEARCH_IMAGE`) i `mcp-app/target/mcp-manifest.json`
   każdego (z `environment: dev` w profilu dev; OpenSearch z `token-exchange` w `acceptedTypes`), zmienne `MCP_ACCEPTED_CREDENTIAL_TYPES` i dla Service Desku `service-account`;
 - ws-07/08: obrazy BFF i web 4.0.0 (`MCP_PORTAL_BFF_IMAGE`, `MCP_PORTAL_WEB_IMAGE`) i ewentualne nowe zmienne `PORTAL_*`;
 - ws-09: kanał paczek 4.0.0 (`out/repository-m4/`, rewizja 20261029162141-a6152ef, klucze `dev-policies-main` i `dev-policies-overrides` w `mcp-policies/keys/dev`) i publikacja

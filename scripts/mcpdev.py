@@ -381,7 +381,7 @@ def gateway_request(identity, method, path, body=None):
 
 
 def registry_put(server_id, manifest_path, identity=None):
-    """PUT /admin/v1/registry/servers/{serverId} with the manifest built from the reviewed commit (target/mcp-manifest.json).
+    """PUT /admin/v1/registry/servers/{serverId} with the manifest built from the reviewed commit (mcp-app/target/mcp-manifest.json).
     The certificate is the one of that server: CN=mcp-registry-ci-<serverId> (CC-161); `identity` overrides it for tests
     that present another certificate on purpose."""
     return gateway_request(identity or f"mcp-registry-ci-{server_id}", "PUT",
