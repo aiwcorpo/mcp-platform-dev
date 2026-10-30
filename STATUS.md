@@ -407,6 +407,12 @@ BFF czyta grupy z ID tokenu i userinfo, a mapper `groups` klienta `mcp-portal-bf
 realm bez zmian. Odtworzony tylko kontener `portal-bff`. Sprawdzone programowo: carol `/api/v1/me` ma `mcp-platform-admin`, `isAdmin=true`, `/api/v1/admin/registry` 200 z sześcioma narzędziami
 `pending_approval` (nic nie zatwierdzono); alice `isAdmin=false`, `admin/registry` 403.
 
+Zgłoszona regresja step-up po E2E-2 (30.10, 401 `step_up_required` mimo step-upu): hipoteza, że userinfo nadpisuje `acr`, **nie potwierdziła się**; nic nie zmieniono.
+Logowanie `mcp-portal-bff` z `acr_values=mfa` i `max_age=0`: ID token ma `acr=mfa` i `auth_time`, userinfo zwraca tylko `email`, `email_verified`, `family_name`, `given_name`, `groups`, `name`,
+`preferred_username`, `sub` (bez `acr` i `auth_time`), więc scalone claimy zachowują `mfa` z ID tokenu; claimy wspólne nie różnią się. Przez BFF na bobie (bez zarejestrowanego Authenticatora): `DELETE /api/v1/authenticator`
+bez step-upu daje 401 `step_up_required`, po logowaniu ze step-upem 204. Log BFF alice: `step_up_required` o 12:26:26Z, a `authenticator_removed` (allow) o 12:28:09Z, potem to samo przy rejestracji
+(deny 12:49:40Z, allow 12:50:42Z i 12:51:06Z): po step-upie operacje przechodzą, a 401 poprzedza go zgodnie z projektem.
+
 ## Propozycje CC
 
 Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktów tu nie zmieniano.
