@@ -100,11 +100,13 @@ def check_keycloak_mfa():
             record(f"keycloak: {user} with acr_values=mfa + OTP of the dev seed reaches acr 'mfa'", c.get("acr") == "mfa", str(c.get("acr")))
         except mcpdev.Fail as e:
             record(f"keycloak: {user} with acr_values=mfa + OTP", False, str(e))
-    try:
-        mcpdev.login("alice", acr_values="mfa", otp_code="000000")
-        record("keycloak: a wrong OTP does not give a token", False, "token issued")
-    except mcpdev.Fail as e:
-        record("keycloak: a wrong OTP does not give a token", "rejected" in str(e), str(e)[:100])
+    # On a throw-away user: failed logins count against the account, and a lock of alice would block the people using her.
+    with mcpdev.TempUser(["mcp-client-claude-code"]) as temp:
+        try:
+            mcpdev.login(temp.name, acr_values="mfa", otp_code="000000")
+            record("keycloak: a wrong OTP does not give a token", False, "token issued")
+        except mcpdev.Fail as e:
+            record("keycloak: a wrong OTP does not give a token", "rejected" in str(e), str(e)[:100])
     try:
         mcpdev.login("mallory", acr_values="mfa")
         record("keycloak: mallory (no OTP configured) cannot reach acr 'mfa'", False, "token issued")

@@ -422,6 +422,12 @@ alice, bob, carol w bazie brokera przed i po przebiegu (bez kolumn z sekretami) 
 `make m4` 39 PASS / 0 FAIL / 1 SKIP; wiersze przed i po identyczne: alice `active`, `bdd72742368f1f47fe80f25e9298511c`, `2026-10-30 12:51:06.960096+00`; bob i carol `none`.
 Uwaga: test błędnego OTP w `make m3` (`000000`) zwiększa licznik błędów Keycloaka alice; dwa przebiegi pod rząd w odstępie krótszym niż minuta mogą zablokować konto na 60 s (blokada czasowa, bez skutku dla Authenticatora platformy).
 
+### L10 i test błędnego OTP (2026-10-30)
+
+Dziennik mocków (`mocks/systems/common.py`, `describe_auth`) zapisuje znany PAT jako `pat:<konto>` (np. `pat:alice`), nie wartość; nieznane poświadczenia są oznaczane bez wartości; test `test_common.py`. Przeczytane pozostałe mocki: nic
+innego nie loguje wartości. Zrestartowane mocki Confluence, Service Desku i OpenSearch (bezstanowe); mock GitLaba zostaje na starym kodzie do następnego restartu, bo trzyma w pamięci tokeny OAuth połączeń (restart wymagałby ponownego
+"Połącz" w portalu). Test błędnego OTP w `make m3` idzie na `TempUser`, więc nie liczy błędów logowania alice. `make mocks-test` 182, `make m3` 73 PASS.
+
 ## Propozycje CC
 
 Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktów tu nie zmieniano.

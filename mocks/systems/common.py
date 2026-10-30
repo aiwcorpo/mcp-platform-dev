@@ -135,13 +135,13 @@ def describe_auth(req):
     if not value:
         private = req.header("private-token")
         if private:
-            return "pat:" + private if private in PATS else "private-token:unknown"
+            return "pat:" + PATS[private] if private in PATS else "private-token:unknown"
         return "none"
     token = req.bearer()
     if token is None:
         return "basic" if value[:6].lower() == "basic " else "other"
     if token in PATS:
-        return "pat:" + token
+        return "pat:" + PATS[token]
     if token.startswith(OAUTH_TOKEN_PREFIX):
         return "oauth"
     if token.count(".") == 2 and jwt_claims(token) is not None:
