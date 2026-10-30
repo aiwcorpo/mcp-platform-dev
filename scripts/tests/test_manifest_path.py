@@ -30,5 +30,16 @@ class ManifestPathTest(unittest.TestCase):
             self.assertEqual(Path(out), expected)
 
 
+class SharedAccountGuardTest(unittest.TestCase):
+    def test_reset_of_a_shared_account_is_refused_before_any_call(self):
+        # A subprocess keeps the real configuration out of the fake-server tests. The guard raises before the login, so nothing is sent.
+        code = ("import sys; sys.path.insert(0, %r); import mcpdev\n"
+                "for user in mcpdev.SHARED_TEST_USERS:\n"
+                "    try:\n        mcpdev.reset_authenticator(user)\n    except mcpdev.Fail as e:\n        print('refused', user)\n"
+                "    else:\n        print('NOT refused', user)\n" % str(ROOT / "scripts"))
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True).stdout.split("\n")
+        self.assertEqual([l for l in out if l], [f"refused {u}" for u in ("alice", "bob", "carol", "mallory")])
+
+
 if __name__ == "__main__":
     unittest.main()

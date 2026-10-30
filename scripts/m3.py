@@ -255,14 +255,16 @@ def check_broker_knows_systems():
 # ---- scenario ---------------------------------------------------------------------------------------------
 
 JIRA_DELETE = "jira__delete_issue"
+# A PAT the Jira mock knows; the broker stores it for the throw-away user (the identity check of the PAT was dropped in 3.0).
+JIRA_PAT = "mallory-pat"
 # The BFF forwards a view only for a same-origin request (C12 markMyConfirmationViewed).
 SAME_ORIGIN = {"Sec-Fetch-Site": "same-origin"}
 
 
 def delete_journal():
-    """(method, url) of DELETE requests that reached the Jira mock with the PAT of alice (whole journal of the mock)."""
+    """(method, url) of DELETE requests that reached the Jira mock with the PAT of the scenario user (whole journal of the mock)."""
     return [(r["method"], r["url"]) for r in mcpdev.jira_auth(1000)
-            if r["method"] == "DELETE" and r["status"] == 204 and r["credential"] == "PAT alice-pat"]
+            if r["method"] == "DELETE" and r["status"] == 204 and r["credential"] == f"PAT {JIRA_PAT}"]
 
 
 def error_of(reply):
@@ -285,8 +287,19 @@ class Scenario:
         return ok
 
     def run(self):
+        """On a throw-away user (mcpdev.TempUser): alice, bob and carol keep the Authenticators of people, and the scenario registers one,
+        burns codes and deletes Jira issues. The user is purged and deleted at the end."""
+        with mcpdev.TempUser(["mcp-client-claude-code", "mcp-jira-read", "mcp-jira-write", "mcp-jira-destructive", "mcp-jira-proj-ABC"]) as user:
+            self.user = user.name
+            # The real broker (not the contract stub that put_secret defaults to).
+            mcpdev.CONFIG.setdefault("BROKER_URL", f"https://localhost:{cfg('BROKER_PORT', '18100')}")
+            status, body = mcpdev.put_secret(self.user, "jira", JIRA_PAT)
+            record("scenario user: a Jira PAT is stored for the throw-away user", status == 200, f"HTTP {status}")
+            self.scenario()
+
+    def scenario(self):
         self.portal = m2.Portal()
-        self.portal.login("alice")
+        self.portal.login(self.user)
         status, _, raw = self.portal.request("GET", f"{PROXY}/api/v1/authenticator")
         broker_m3 = status == 200 and "state" in jbody(raw)
         if not self.need("Authenticator registration with step-up MFA", broker_m3,
@@ -295,9 +308,9 @@ class Scenario:
                          "Cedar denial", "activity log"):
                 skip(step, "needs the Authenticator registration (broker, BFF M3)")
             return
-        self.reset()
+        self.no_authenticator_yet()
         self.register()
-        call = self.session("alice")
+        call = self.session(self.user)
         before = len(delete_journal())
         first = self.first_call(call, "ABC-2")
         if not self.need("delete_issue -> confirmation_required", first.get("error") == "confirmation_required" and first.get("confirmationId"),
@@ -311,19 +324,17 @@ class Scenario:
         self.cedar_denial()
         self.activity()
 
-    def reset(self):
-        status, body = mcpdev.reset_authenticator("alice")
-        record("reset: Authenticator of alice removed through mcp-offboarding", status == 204, f"HTTP {status} {body}")
+    def no_authenticator_yet(self):
         status, _, raw = self.portal.request("GET", f"{PROXY}/api/v1/authenticator")
-        record("portal: alice has no Authenticator after the reset", jbody(raw).get("state") == "none", raw[:80].decode("utf-8", "replace"))
+        record("portal: the throw-away user starts without an Authenticator", jbody(raw).get("state") == "none", raw[:80].decode("utf-8", "replace"))
 
     def register(self):
         plain = m2.Portal()
-        plain.login("alice")
+        plain.login(self.user)
         status, _, raw = plain.request("POST", f"{PROXY}/api/v1/authenticator/enrollment", {})
         record("portal: enrollment without a fresh MFA is refused (step_up_required)", status in (401, 403) and b"step_up_required" in raw, f"HTTP {status}")
         stepped = m2.Portal()
-        stepped.login("alice", step_up=True)
+        stepped.login(self.user, step_up=True)
         status, headers, raw = stepped.request("POST", f"{PROXY}/api/v1/authenticator/enrollment", {})
         body = jbody(raw)
         record("portal: enrollment after step-up -> 201, no-store, seed and otpauth URI once",
@@ -365,11 +376,11 @@ class Scenario:
         record("code: a wrong code is confirmation_failed and nothing is deleted", wrong.get("error") == "confirmation_failed" and len(delete_journal()) == before, str(wrong.get("error")))
         done = self.first_call(call, "ABC-2", totp.fresh_code(self.seed))
         if "raw" in done and done["raw"].get("error", {}).get("code") == -32602:
-            skip("execution: the right code runs delete_issue as alice (DELETE reached Jira once)",
+            skip("execution: the right code runs delete_issue as the scenario user (DELETE reached Jira once)",
                  "the code was accepted and the call reached mcp-jira, which has no delete_issue yet (Invalid params)")
             skip("code: the same code cannot confirm again", "needs the execution step")
             return
-        record("execution: the right code runs delete_issue as alice (DELETE reached Jira once)", "error" not in done and len(delete_journal()) == before + 1, str(done)[:120])
+        record("execution: the right code runs delete_issue as the scenario user (DELETE reached Jira once)", "error" not in done and len(delete_journal()) == before + 1, str(done)[:120])
         replay = self.first_call(call, "ABC-2", totp.code(self.seed))
         record("code: the same code cannot confirm again", replay.get("error") in ("confirmation_required", "confirmation_failed", "rate_limited") and len(delete_journal()) == before + 1, str(replay.get("error")))
 
@@ -411,12 +422,31 @@ class Scenario:
         record("activity: no code and no seed in the log", self.seed.encode() not in raw and not re.search(rb'"confirmation_code"', raw))
 
 
+def authenticator_rows():
+    """(state, registration_id, registered_at) of alice, bob and carol from the broker database; no seed or code column is read."""
+    subs = {}
+    for name in ("alice", "bob", "carol"):
+        status, found = mcpdev.kc_admin("GET", f"/users?username={name}&exact=true")
+        subs[name] = found[0]["id"]
+    quoted = ",".join("'" + sub + "'" for sub in subs.values())
+    out = subprocess.run([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2", "exec", "-T", "postgres", "psql", "-U", "broker", "-d", "broker",
+                          "-At", "-F", "|", "-c", f"select sub, state, coalesce(registration_id,''), coalesce(registered_at::text,'') from authenticator where sub in ({quoted}) order by sub"],
+                         capture_output=True, text=True)
+    rows = {line.split("|")[0]: tuple(line.split("|")[1:]) for line in out.stdout.splitlines() if line.strip()}
+    return {name: rows.get(sub, ("no row", "", "")) for name, sub in subs.items()}
+
+
 def run():
+    before = authenticator_rows()
+    print("authenticator rows before:", before)
     for part in (check_openbao, check_redis_gateway, check_keycloak_mfa, check_secrets_hygiene, check_gateway_devstack, check_policy_server, check_misc, check_registry_tools, check_broker_knows_systems, lambda: Scenario().run()):
         try:
             part()
         except (mcpdev.Fail, OSError, KeyError, ValueError) as e:
             record(getattr(part, "__name__", "scenario"), False, f"{type(e).__name__}: {e}")
+    after = authenticator_rows()
+    print("authenticator rows after: ", after)
+    record("shared accounts: the Authenticator rows of alice, bob and carol (state, registration_id, registered_at) are the same after the run", before == after, "")
     for status, name, detail in results:
         print(f"{status:4} {name}" + (f"  [{detail}]" if detail else ""))
     failed = sum(1 for r in results if r[0] == "FAIL")

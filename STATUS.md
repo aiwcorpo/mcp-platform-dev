@@ -413,6 +413,15 @@ Logowanie `mcp-portal-bff` z `acr_values=mfa` i `max_age=0`: ID token ma `acr=mf
 bez step-upu daje 401 `step_up_required`, po logowaniu ze step-upem 204. Log BFF alice: `step_up_required` o 12:26:26Z, a `authenticator_removed` (allow) o 12:28:09Z, potem to samo przy rejestracji
 (deny 12:49:40Z, allow 12:50:42Z i 12:51:06Z): po step-upie operacje przechodzą, a 401 poprzedza go zgodnie z projektem.
 
+### Testy nie ruszają Authenticatorów ludzi (2026-10-30)
+
+`make m3` rejestrował, resetował i wyczerpywał kody na koncie alice (E2E-4 w mcp-e2e). Teraz scenariusz Authenticatora działa na użytkowniku jednorazowym (`mcpdev.TempUser`: losowa nazwa
+`m4-<hex>`, hasło, poświadczenie OTP Keycloaka, grupy Jiry; PAT `mallory-pat` zapisany brokerowi), który po teście jest purge'owany (broker, gateway) i usuwany z realmu. `mcpdev.reset_authenticator` odmawia
+alice, bob, carol i mallory bez `--force` (`make reset-authenticator USER=alice FORCE=1` to narzędzie człowieka; test jednostkowy sprawdza odmowę). `make m3` porównuje stan, `registration_id` i `registered_at` wierszy
+alice, bob, carol w bazie brokera przed i po przebiegu (bez kolumn z sekretami) i zalicza to jako sprawdzenie. Wynik przebiegu po approve 6 narzędzi: `make m2` 88 PASS / 0 FAIL / 2 SKIP, `make m3` 73 PASS / 0 FAIL / 0 SKIP,
+`make m4` 39 PASS / 0 FAIL / 1 SKIP; wiersze przed i po identyczne: alice `active`, `bdd72742368f1f47fe80f25e9298511c`, `2026-10-30 12:51:06.960096+00`; bob i carol `none`.
+Uwaga: test błędnego OTP w `make m3` (`000000`) zwiększa licznik błędów Keycloaka alice; dwa przebiegi pod rząd w odstępie krótszym niż minuta mogą zablokować konto na 60 s (blokada czasowa, bez skutku dla Authenticatora platformy).
+
 ## Propozycje CC
 
 Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktów tu nie zmieniano.

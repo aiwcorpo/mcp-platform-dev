@@ -168,11 +168,19 @@ def post_form(url, form):
         raise Fail(f"{url} -> HTTP {e.code}: {e.read().decode(errors='replace')}") from None
 
 
+# Throw-away users (TempUser) are not in .secrets/dev.env: their password and Base32 OTP seed live here for the run.
+EXTRA_USERS = {}
+
+
 def user_password(user):
+    if user in EXTRA_USERS:
+        return EXTRA_USERS[user]["password"]
     return os.environ.get("MCP_DEV_PASSWORD") or cfg(f"KC_USER_{user.upper()}_PASSWORD")
 
 
 def otp_seed(user):
+    if user in EXTRA_USERS:
+        return EXTRA_USERS[user]["otp_seed"]
     return cfg(f"KC_USER_{user.upper()}_OTP_SEED")
 
 
@@ -409,6 +417,52 @@ def kc_admin(method, path, body=None):
         return e.code, {"raw": e.read().decode(errors="replace")[:200]}
 
 
+SHARED_TEST_USERS = ("alice", "bob", "carol", "mallory")
+
+
+class TempUser:
+    """A throw-away realm user for scenarios that register an Authenticator or burn confirmation codes: random name, password and an
+    OTP credential Keycloak accepts for the step-up. Deleted, and purged at broker and gateway, on exit. Never one of SHARED_TEST_USERS."""
+
+    def __init__(self, groups, otp=True):
+        self.name = "m4-" + secrets.token_hex(4)
+        self.password = secrets.token_urlsafe(18)
+        self.raw_otp = secrets.token_hex(10)
+        self.groups = groups
+        self.otp = otp
+        self.sub = None
+
+    def __enter__(self):
+        credentials = [{"type": "password", "value": self.password, "temporary": False}]
+        if self.otp:
+            credentials.append({"type": "otp", "secretData": json.dumps({"value": self.raw_otp}),
+                                "credentialData": json.dumps({"subType": "totp", "digits": 6, "period": 30, "algorithm": "HmacSHA1", "counter": 0})})
+        status, body = kc_admin("POST", "/users", {"username": self.name, "enabled": True, "emailVerified": True, "email": f"{self.name}@corp.test",
+                                                    "firstName": "M4", "lastName": "Check", "credentials": credentials})
+        if status != 201:
+            raise Fail(f"cannot create the temporary user: HTTP {status} {body}")
+        self.sub = kc_admin("GET", f"/users?username={self.name}&exact=true")[1][0]["id"]
+        for group in self.groups:
+            found = kc_admin("GET", f"/groups?search={group}&exact=true")[1]
+            kc_admin("PUT", f"/users/{self.sub}/groups/{next(g['id'] for g in found if g['name'] == group)}")
+        EXTRA_USERS[self.name] = {"password": self.password, "otp_seed": base64.b32encode(self.raw_otp.encode()).decode()}
+        return self
+
+    def __exit__(self, *exc):
+        EXTRA_USERS.pop(self.name, None)
+        quoted = urllib.parse.quote(self.sub, safe="")
+        for call in (lambda: offboarding_request("POST", f"/v1/admin/users/{quoted}/purge"),
+                     lambda: gateway_request("mcp-offboarding", "POST", f"/admin/v1/users/{quoted}/purge")):
+            try:
+                call()
+            except Fail:
+                pass
+        kc_admin("DELETE", f"/users/{self.sub}")
+
+    def token(self, client="claude-code"):
+        return login(self.name, client, password=self.password)
+
+
 def sync_groups():
     """Brings the RUNNING realm to the groups and memberships of keycloak/realm-corp.json (the file is imported only when the
     container is created, and recreating Keycloak ends every session). Additive: groups and memberships are added, never removed.
@@ -437,7 +491,6 @@ def sync_groups():
     return changes
 
 
-SHARED_TEST_USERS = ("alice", "bob", "carol", "mallory")
 
 
 def offboard(login_name, dry_run=False, repeat_delay=5.0, allow_shared=False):
@@ -497,10 +550,14 @@ def uuid7():
     return uuid.UUID(int=value)
 
 
-def reset_authenticator(user):
+def reset_authenticator(user, force=False):
     """POST /v1/admin/users/{sub}/authenticator/reset for a test user (lost phone and lost IdP factor): removes the
     registration and a pending enrollment. A verification lock stays (it lifts only with time). `sub` comes from a
-    real login, so it is whatever the IdP issues, not a value copied from the realm file."""
+    real login, so it is whatever the IdP issues, not a value copied from the realm file.
+    alice, bob, carol and mallory hold the Authenticators of people (a test run once removed one): refused without force."""
+    if user in SHARED_TEST_USERS and not force:
+        raise Fail(f"{user} is a shared test user whose Authenticator belongs to a person; refusing to reset it "
+                   "(make reset-authenticator USER=... FORCE=1 is the human's tool)")
     sub = decode_jwt(login(user))["sub"]
     return offboarding_request("POST", f"/v1/admin/users/{urllib.parse.quote(sub, safe='')}/authenticator/reset")
 
@@ -622,6 +679,7 @@ def main():
 
     p = sub.add_parser("reset-authenticator")
     p.add_argument("user")
+    p.add_argument("--force", action="store_true", help="permit alice, bob, carol, mallory (the Authenticator of a person is removed)")
 
     p = sub.add_parser("offboard")
     p.add_argument("login")
@@ -659,7 +717,7 @@ def main():
             print(json.dumps({"httpStatus": status, **body}))
             return 0 if status == 200 else 1
         elif args.cmd == "reset-authenticator":
-            status, body = reset_authenticator(args.user)
+            status, body = reset_authenticator(args.user, args.force)
             print(json.dumps({"httpStatus": status, **body}))
             if status == 204:
                 return 0

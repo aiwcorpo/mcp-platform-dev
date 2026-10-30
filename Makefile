@@ -138,8 +138,8 @@ m3: ## M3 scenario skeleton: infrastructure checks plus the Authenticator / DEST
 otp: ## current TOTP code of a test user (USER=alice; seed from .secrets/dev.env); URI=1 prints the otpauth URI for a real app
 	@$(PY) scripts/mcpdev.py otp $(USER) $(if $(URI),--uri)
 
-reset-authenticator: ## remove the Authenticator registration of USER at the broker (mTLS CN=mcp-offboarding); BROKER_URL as for pat
-	@$(PY) scripts/mcpdev.py reset-authenticator $(USER)
+reset-authenticator: ## remove the Authenticator registration of USER at the broker (mTLS CN=mcp-offboarding); alice, bob, carol, mallory only with FORCE=1; BROKER_URL as for pat
+	@$(PY) scripts/mcpdev.py reset-authenticator $(USER) $(if $(FORCE),--force)
 
 registry-refresh: ## dev only: drop the manifests the gateway took over by bootstrap and let it fetch them again (after a tool definition changed)
 	@./scripts/registry-refresh.sh
