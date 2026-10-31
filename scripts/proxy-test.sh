@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests of the reverse proxy rules (proxy/nginx.conf) against stand-in upstreams, in an isolated Docker network
 # that does not touch the running stack. Every rule has a positive and a negative case.
-# Usage: scripts/proxy-test.sh
+# Usage: scripts/proxy-test.sh        rules of the layer in force (M5_ACTIVE in the environment or .env, else M4)
+#        PROXY_LAYER=m4|m5 scripts/proxy-test.sh   a given layer; m5 tests proxy/m5/* (docker-compose.m5.yml) over proxy/*
 set -uo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -9,6 +10,23 @@ net=mcp-dev-proxytest
 port=18749
 tls_port=18748
 base="http://127.0.0.1:$port"
+layer="${PROXY_LAYER:-}"
+if [[ -z "$layer" ]]; then
+  active="${M5_ACTIVE:-$(grep -s '^M5_ACTIVE=' "$root/.env" | cut -d= -f2-)}"
+  layer=m4
+  [[ "$active" == 1 ]] && layer=m5
+fi
+conf="$root/proxy"
+gateway_alias=mcp-gateway
+# Gateway paths the shared checks run on (the M4 layer still has saved links under /v/).
+gw_paths="/s/mcp-jira/mcp /v/team-link/mcp /.well-known/oauth-protected-resource"
+gw_extra_path=/v/team-link/mcp
+if [[ "$layer" == m5 ]]; then
+  conf="$root/proxy/m5"
+  gateway_alias=gateway-lb
+  gw_paths="/mcp /s/mcp-jira/mcp /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/mcp"
+  gw_extra_path=/mcp
+fi
 nginx_image="$(grep -o 'nginx:[^ ]*@sha256:[0-9a-f]*' "$root/docker-compose.yml" | head -1)"
 python_image="$(grep -o 'python:[^ ]*@sha256:[0-9a-f]*' "$root/docker-compose.yml" | head -1)"
 pass=0
@@ -23,7 +41,7 @@ trap '[[ -n "${KEEP:-}" ]] || remove_containers; rm -rf "$tmp"' EXIT
 remove_containers
 docker network create "$net" >/dev/null || exit 1
 
-for pair in gateway:mcp-gateway bff:portal-bff.internal web:portal-web; do
+for pair in gateway:$gateway_alias bff:portal-bff.internal web:portal-web; do
   name="${pair%%:*}"
   alias="${pair##*:}"
   docker run -d --name "$net-$name" --network "$net" --network-alias "$alias" -e ECHO_NAME="$name" \
@@ -31,12 +49,12 @@ for pair in gateway:mcp-gateway bff:portal-bff.internal web:portal-web; do
 done
 docker run -d --name "$net-proxy" --network "$net" --read-only --tmpfs /tmp --user 101:101 \
   -p "127.0.0.1:$port:8080" -p "127.0.0.1:$tls_port:8443" \
-  -v "$root/proxy/routes.conf:/etc/nginx/routes.conf:ro" \
+  -v "$conf/routes.conf:/etc/nginx/routes.conf:ro" \
   -v "$root/certs/proxy/tls.crt:/etc/nginx/tls/tls.crt:ro" -v "$root/certs/proxy/tls.key:/etc/nginx/tls/tls.key:ro" \
-  -v "$root/proxy/nginx.conf:/etc/nginx/nginx.conf:ro" \
+  -v "$conf/nginx.conf:/etc/nginx/nginx.conf:ro" \
   -v "$root/proxy/proxy-common.conf:/etc/nginx/proxy-common.conf:ro" \
   -v "$root/proxy/to-bff.conf:/etc/nginx/to-bff.conf:ro" \
-  -v "$root/proxy/to-gateway.conf:/etc/nginx/to-gateway.conf:ro" \
+  -v "$conf/to-gateway.conf:/etc/nginx/to-gateway.conf:ro" \
   -v "$root/proxy/to-web.conf:/etc/nginx/to-web.conf:ro" \
   -v "$root/proxy/gateway-headers.conf:/etc/nginx/gateway-headers.conf:ro" \
   -v "$root/proxy/errors:/etc/nginx/errors:ro" -e PUBLIC_PORT="$port" -e PUBLIC_TLS_PORT="$tls_port" "$nginx_image" /bin/sh -c '
@@ -84,7 +102,25 @@ req "$base/api/v1/me";                check "route /api -> bff" bff "$(field .up
 req "$base/api";                      check "route /api exact -> bff" bff "$(field .upstream)"
 req "$base/apix";                     check "negative: /apix is not bff" web "$(field .upstream)"
 req "$base/s/mcp-jira/mcp";           check "route /s/ -> gateway" gateway "$(field .upstream)"
-req "$base/v/team-link/mcp";          check "route /v/ -> gateway" gateway "$(field .upstream)"
+if [[ "$layer" == m5 ]]; then
+  req "$base/mcp";                      check "route /mcp -> gateway" gateway "$(field .upstream)"
+  req "$base/mcp?systems=jira&access=read"
+  check "/mcp filter reaches the gateway unchanged" "gateway /mcp?systems=jira&access=read" "$(field .upstream) $(field .uri)"
+  req "$base/mcp?systems=gitlab,jira&tools=jira__get_issue&exclude=jira__delete_issue"
+  check "/mcp filter with commas reaches the gateway unchanged" "/mcp?systems=gitlab,jira&tools=jira__get_issue&exclude=jira__delete_issue" "$(field .uri)"
+  req -X POST "$base/mcp?systems=jira"
+  check "POST /mcp reaches the gateway" "POST gateway" "$(field '.method') $(field .upstream)"
+  req "$base/.well-known/oauth-protected-resource/mcp"
+  check "route well-known resource of /mcp -> gateway" "gateway /.well-known/oauth-protected-resource/mcp" "$(field .upstream) $(field .uri)"
+  req "$base/mcp/";                     check "negative: /mcp/ is not the gateway" web "$(field .upstream)"
+  req "$base/mcpx";                     check "negative: /mcpx is not the gateway" web "$(field .upstream)"
+  req "$base/mcp/x";                    check "negative: /mcp/x is not the gateway" web "$(field .upstream)"
+  req "$base/v/team-link/mcp";          check "negative: /v/ is no longer routed to the gateway" web "$(field .upstream)"
+  req "$base/v/x/mcp?echo_status=401";  check "negative: /v/ answers from the portal, not the gateway" "web 0" "$(field .upstream) $(header content-security-policy)"
+  req "$base/m%63p";                    check "percent-encoded /mcp refused" "404 none" "$status $(upstream)"
+else
+  req "$base/v/team-link/mcp";          check "route /v/ -> gateway" gateway "$(field .upstream)"
+fi
 req "$base/s";                        check "negative: /s without slash is not gateway" web "$(field .upstream)"
 req "$base/.well-known/oauth-protected-resource";
 check "route well-known resource -> gateway" gateway "$(field .upstream)"
@@ -102,7 +138,7 @@ req -X POST "$base/api/v1/connections/gitlab/secret" -d '{}'
 check "POST /api reaches bff" "POST bff" "$(field '.method') $(field .upstream)"
 
 # Cookie: removed on gateway routes, kept for web and BFF.
-for p in /s/mcp-jira/mcp /v/team-link/mcp /.well-known/oauth-protected-resource; do
+for p in $gw_paths; do
   req -H 'Cookie: __Host-session=secret' "$base$p"
   check "Cookie removed on $p" null "$(field '.headers.cookie // "null"')"
 done
@@ -125,7 +161,7 @@ check "Set-Cookie kept on /" 1 "$(header set-cookie)"
 
 # nosniff and CSP on every gateway response, errors included, exactly once; not added elsewhere.
 csp="default-src 'none'; sandbox"
-for p in /s/mcp-jira/mcp /v/team-link/mcp /.well-known/oauth-protected-resource; do
+for p in $gw_paths; do
   for code in 200 401 404 500; do
     req "$base$p?echo_status=$code"
     check "nosniff on $p $code" "nosniff" "$(hvalue x-content-type-options)"
@@ -224,16 +260,20 @@ gw_error() { # label expected-status
   check "$1: CSP" "$csp" "$(hvalue content-security-policy)"
   check "$1: nosniff once" 1 "$(header x-content-type-options)"
 }
-for p in "/s/../admin/v1/x" "/s/%2e%2e/admin" "/.well-known/oauth-protected-resource/../x" "/v/%2e%2e/x" "/s/a;b/mcp" \
+for p in "/s/../admin/v1/x" "/s/%2e%2e/admin" "/.well-known/oauth-protected-resource/../x" "/s/a;b/mcp" \
          "/s/..;/admin/v1/x" "/s/a%3bb/mcp" "/s/x%41/mcp" "/%73/x/mcp"; do
   req "$base$p"
   gw_error "refused $p" 404
 done
+if [[ "$layer" == m4 ]]; then
+  req "$base/v/%2e%2e/x"
+  gw_error "refused /v/%2e%2e/x" 404
+fi
 req -H "X-Big: $(head -c 20000 /dev/zero | tr '\0' a)" "$base/s/mcp-jira/mcp"
 gw_error "oversized header" 431
 req -X POST -H 'Transfer-Encoding: gzip, chunked' --data-binary x "$base/s/mcp-jira/mcp"
 gw_error "unknown Transfer-Encoding" 400
-req -H "Cookie: a=$(head -c 20000 /dev/zero | tr '\0' a)" "$base/v/team-link/mcp"
+req -H "Cookie: a=$(head -c 20000 /dev/zero | tr '\0' a)" "$base$gw_extra_path"
 gw_error "oversized cookie" 431
 req --request-target "/s/mcp-jira/$(head -c 20000 /dev/zero | tr '\0' a)" "$base"
 gw_error "oversized request line" 414
@@ -268,7 +308,10 @@ req --cacert "$cacert" "$tls/s/%2e%2e/x";               check "https: noncanonic
 req --cacert "$cacert" "$tls/admin/v1/registry/servers"; check "https: admin API not exposed" 404 "$status"
 req --cacert "$cacert" "$tls/.well-known/jwks.json";    check "https: JWKS not exposed" 404 "$status"
 check "https: HSTS not sent (localhost HSTS would force https on every dev port)" 0 "$(header strict-transport-security)"
-curl -s -o /dev/null --cacert "$root/certs/ca/ca.crt" "$tls/" >/dev/null 2>&1; check "https: the internal CA does not verify the public certificate" 60 "$?"
+# curl of macOS also consults the keychain, where the person trusts the "dev public" CA (make trust-ca), so the refusal cannot be seen there.
+if [[ "$(uname)" != Darwin ]]; then
+  curl -s -o /dev/null --cacert "$root/certs/ca/ca.crt" "$tls/" >/dev/null 2>&1; check "https: the internal CA does not verify the public certificate" 60 "$?"
+fi
 check "https: TLS 1.1 refused" 1 "$(curl -s -o /dev/null --cacert "$cacert" --tls-max 1.1 "$tls/" >/dev/null 2>&1 && echo 0 || echo 1)"
 
 echo "proxy tests: $pass passed, $fail failed"

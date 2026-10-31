@@ -428,6 +428,18 @@ Dziennik mocków (`mocks/systems/common.py`, `describe_auth`) zapisuje znany PAT
 innego nie loguje wartości. Zrestartowane mocki Confluence, Service Desku i OpenSearch (bezstanowe); mock GitLaba zostaje na starym kodzie do następnego restartu, bo trzyma w pamięci tokeny OAuth połączeń (restart wymagałby ponownego
 "Połącz" w portalu). Test błędnego OTP w `make m3` idzie na `TempUser`, więc nie liczy błędów logowania alice. `make mocks-test` 182, `make m3` 73 PASS.
 
+## M5 (2026-10-31): przygotowanie, stos M4 nietknięty
+
+Opis w `docs/m5.md`. Nic nie zostało przełączone ani zrestartowane; warstwa M5 działa dopiero po `make m5-switch` (polecenie koordynatora).
+
+- Kamień 1, proxy: `proxy/m5/*` (trasa `/mcp` dokładna, metadane `/mcp` z nosniff i CSP, bez `/v/`, upstream `gateway-lb`); `scripts/proxy-test.sh` testuje obie warstwy (M4 211, M5 225 sprawdzeń).
+- Kamień 2, mocki: `mocks/systems/faults.py` (opóźnienie, jitter, 429 z Retry-After, błędy 5xx, prefiks ścieżki), endpoint `/__mock/faults`, `make mock-fault`; `make mocks-test` 195 (było 182). L10 był już zamknięty w 852a8f0.
+- Kamień 3, HA: `docker-compose.m5.yml` (2x gateway, 2x broker, balancery nginx w `lb/`, wspólny Redis, wspólne klucze C2, `MCP_TOOLS_LIST_TIMEOUT`), `scripts/check-compose.py` 26 PASS, `scripts/lb-test.sh` 20 PASS (zabicie instancji bez błędów).
+- Kamień 4, D12: serwer paczek i rejestr obrazów (sieć `ci`, 18756, 18757); serwer paczek sprawdzony, rejestr nie (obraz niepobrany).
+- Kamień 5, CI: `ci/run.sh` (lint, unit, compose, style, proxy, lb), `.gitlab-ci.yml`, `ci/Dockerfile`, `ci/runner.Dockerfile`, `ci/local-runner.sh`; obrazy niezbudowane.
+- Kamień 6: `scripts/apply-m5-switch.sh` (`--check` sprawdzony), `make m5-switch`.
+- Brak linii `M5: osiągnięty`: wymaga przełączenia.
+
 ## Propozycje CC
 
 Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktów tu nie zmieniano.

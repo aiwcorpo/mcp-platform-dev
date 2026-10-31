@@ -23,6 +23,8 @@ from http.cookiejar import CookieJar
 import mcpdev
 from mcpdev import cfg
 
+# Layer of the running stack: from M5 on there are no saved links (/mcp with a filter instead of /v/<slug>/mcp).
+M5 = cfg("M5_ACTIVE", "0") == "1"
 PORTS = {name: int(cfg(f"{name.upper()}_MOCK_PORT")) for name in ("gitlab", "confluence", "servicedesk", "opensearch")}
 PROXY = f"https://localhost:{cfg('PROXY_TLS_PORT')}"
 PUBLIC_CA = mcpdev.ROOT / "certs" / "public-ca" / "ca.crt"
@@ -447,23 +449,41 @@ def check_portal():
         record("portal: denying at the provider -> cancelled", "cancelled" in headers.get("Location", ""), headers.get("Location", "")[:100])
 
     slug = "m2-" + secrets.token_hex(3)
-    status, _, raw = portal.request("POST", f"{PROXY}/api/v1/virtual-servers", {
-        "slug": slug, "displayName": "m2 check", "tools": ["jira__get_issue", "jira__search_issues"]})
-    created = jbody(raw)
-    link = f"{PROXY}/v/{slug}/mcp"
-    record("portal: create a link -> URL on the proxy origin", status == 201 and created.get("url") == link, f"HTTP {status} {raw[:120]!r}")
-    status, _, raw = portal.request("POST", f"{PROXY}/api/v1/virtual-servers", {
-        "slug": slug + "x", "displayName": "wide", "tools": ["jira__get_issue"], "resourceDefaults": {"projects": ["ABC"]}})
-    record("portal: non-empty resourceDefaults -> 400 (CC-085)", status == 400, f"HTTP {status}")
+    if M5:
+        # Contracts 5.x: no saved links; the wizard composes an address of /mcp with a filter and stores nothing.
+        link = f"{PROXY}/mcp?systems=jira"
+        status, _, raw = portal.request("GET", f"{PROXY}/api/v1/me/mcp-endpoint?systems=jira")
+        record("portal: the wizard returns the address of /mcp with the filter, nothing stored", status == 200 and jbody(raw).get("url") == link,
+               f"HTTP {status} {raw[:120]!r}")
+        status, _, raw = portal.request("GET", f"{PROXY}/api/v1/me/mcp-endpoint?systems=jira&systems=gitlab")
+        record("portal: a repeated parameter -> 400 invalid_filter", status == 400 and jbody(raw).get("reason") == "invalid_filter", f"HTTP {status}")
+        status, _, _ = portal.request("POST", f"{PROXY}/api/v1/virtual-servers", {"slug": slug, "displayName": "gone", "tools": ["jira__get_issue"]})
+        record("portal: the API of saved links is gone", status in (404, 405), f"HTTP {status}")
+    else:
+        status, _, raw = portal.request("POST", f"{PROXY}/api/v1/virtual-servers", {
+            "slug": slug, "displayName": "m2 check", "tools": ["jira__get_issue", "jira__search_issues"]})
+        created = jbody(raw)
+        link = f"{PROXY}/v/{slug}/mcp"
+        record("portal: create a link -> URL on the proxy origin", status == 201 and created.get("url") == link, f"HTTP {status} {raw[:120]!r}")
+        status, _, raw = portal.request("POST", f"{PROXY}/api/v1/virtual-servers", {
+            "slug": slug + "x", "displayName": "wide", "tools": ["jira__get_issue"], "resourceDefaults": {"projects": ["ABC"]}})
+        record("portal: non-empty resourceDefaults -> 400 (CC-085)", status == 400, f"HTTP {status}")
 
     if status is not None:
         token_alice = mcpdev.login("alice", "claude-code")
         status, headers, _ = http("POST", link, {"Content-Type": "application/json"}, b"{}")
         challenge = headers.get("WWW-Authenticate", "")
         record("proxy: 401 challenge of the link points at the proxy origin", status == 401 and f'resource_metadata="{PROXY}/' in challenge, challenge[:140])
-        status, _, raw = http("GET", f"{PROXY}/.well-known/oauth-protected-resource/v/{slug}/mcp")
-        record("proxy: protected resource metadata of the link: resource == link URL",
-               status == 200 and jbody(raw).get("resource") == link, raw[:120].decode("utf-8", "replace"))
+        if M5:
+            record("proxy: the challenge names the metadata of /mcp without the filter",
+                   f'resource_metadata="{PROXY}/.well-known/oauth-protected-resource/mcp"' in challenge, challenge[:160])
+            status, _, raw = http("GET", f"{PROXY}/.well-known/oauth-protected-resource/mcp?systems=jira")
+            record("proxy: protected resource metadata of /mcp: resource == /mcp without the query",
+                   status == 200 and jbody(raw).get("resource") == f"{PROXY}/mcp", raw[:120].decode("utf-8", "replace"))
+        else:
+            status, _, raw = http("GET", f"{PROXY}/.well-known/oauth-protected-resource/v/{slug}/mcp")
+            record("proxy: protected resource metadata of the link: resource == link URL",
+                   status == 200 and jbody(raw).get("resource") == link, raw[:120].decode("utf-8", "replace"))
         status, _, raw = http("GET", f"{PROXY}/.well-known/oauth-protected-resource/s/mcp-jira/mcp")
         record("proxy: protected resource metadata of mcp-jira names the proxy origin", status == 200 and jbody(raw).get("resource") == f"{PROXY}/s/mcp-jira/mcp")
         call = mcp_session(link, token_alice)
@@ -471,7 +491,10 @@ def check_portal():
         call("notifications/initialized", notify=True)
         status, reply = call("tools/list")
         names = sorted(t.get("name") for t in reply.get("result", {}).get("tools", []))
-        record("MCP client: the link lists only its tools", names == ["jira__get_issue", "jira__search_issues"], str(names))
+        if M5:
+            record("MCP client: /mcp?systems=jira lists Jira tools only", bool(names) and all(n.startswith("jira__") for n in names), str(names))
+        else:
+            record("MCP client: the link lists only its tools", names == ["jira__get_issue", "jira__search_issues"], str(names))
         status, reply = call("tools/call", {"name": "jira__get_issue", "arguments": {"issueKey": "ABC-1"}})
         record("MCP client: tools/call through the link reaches Jira as alice", "ABC-1" in tool_text(reply), tool_text(reply)[:120])
         status, reply = call("tools/call", {"name": "gitlab__get_project", "arguments": {"project": "team-a/app"}})
@@ -488,10 +511,13 @@ def check_portal():
         record("MCP client: a GitLab tool works with the OAuth connection made in the portal", "result" in reply and "error" not in reply
                and not reply["result"].get("isError"), tool_text(reply)[:120])
         write_slug = slug + "w"
-        status, _, raw = portal.request("POST", f"{PROXY}/api/v1/virtual-servers", {
-            "slug": write_slug, "displayName": "m2 write", "tools": ["gitlab__comment_merge_request"]})
-        write_link = f"{PROXY}/v/{write_slug}/mcp"
-        record("portal: create a link with gitlab__comment_merge_request", status == 201 and jbody(raw).get("url") == write_link, f"HTTP {status} {raw[:120]!r}")
+        if M5:
+            write_link = f"{PROXY}/mcp?tools=gitlab__comment_merge_request"
+        else:
+            status, _, raw = portal.request("POST", f"{PROXY}/api/v1/virtual-servers", {
+                "slug": write_slug, "displayName": "m2 write", "tools": ["gitlab__comment_merge_request"]})
+            write_link = f"{PROXY}/v/{write_slug}/mcp"
+            record("portal: create a link with gitlab__comment_merge_request", status == 201 and jbody(raw).get("url") == write_link, f"HTTP {status} {raw[:120]!r}")
         write_call = mcp_session(write_link, token_alice)
         write_call("initialize", {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "m2", "version": "1"}})
         write_call("notifications/initialized", notify=True)
@@ -505,8 +531,9 @@ def check_portal():
                  and "/merge_requests/7/notes" in row.get("path", "")]
         record("gitlab mock: the note on the MR was accepted (201) after the call through the link", bool(notes) and notes[-1].get("status") == 201,
                str(notes[-1] if notes else journal_status)[:120])
-        status, _, _ = portal.request("DELETE", f"{PROXY}/api/v1/virtual-servers/{write_slug}")
-        record("portal: delete the link with the write tool", status in (200, 204), f"HTTP {status}")
+        if not M5:
+            status, _, _ = portal.request("DELETE", f"{PROXY}/api/v1/virtual-servers/{write_slug}")
+            record("portal: delete the link with the write tool", status in (200, 204), f"HTTP {status}")
 
         status, _, _ = portal.request("DELETE", f"{PROXY}/api/v1/connections/gitlab")
         record("portal: disconnect GitLab", status in (200, 204), f"HTTP {status}")
@@ -516,11 +543,16 @@ def check_portal():
                "credential_required" in text and f"{PROXY}/connections?system=gitlab" in text, text[:160])
         if "gitlab" in connected_before:
             portal.request("POST", f"{PROXY}/api/v1/connections/gitlab/oauth", {"returnPath": "/catalog"})
-        status, _, _ = portal.request("DELETE", f"{PROXY}/api/v1/virtual-servers/{slug}")
-        record("portal: delete the link", status in (200, 204), f"HTTP {status}")
-        status, _, _ = http("POST", link, {**bearer(token_alice), "Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
-                            b'{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
-        record("proxy: a deleted link answers 404", status == 404, f"HTTP {status}")
+        if M5:
+            status, headers, _ = http("POST", f"{PROXY}/v/{slug}/mcp", {**bearer(token_alice), "Content-Type": "application/json"}, b"{}")
+            record("proxy: /v/ is no longer a gateway route (answered by the portal, no gateway CSP)",
+                   status != 200 and "Content-Security-Policy" not in headers, f"HTTP {status}")
+        else:
+            status, _, _ = portal.request("DELETE", f"{PROXY}/api/v1/virtual-servers/{slug}")
+            record("portal: delete the link", status in (200, 204), f"HTTP {status}")
+            status, _, _ = http("POST", link, {**bearer(token_alice), "Content-Type": "application/json", "Accept": "application/json, text/event-stream"},
+                                b'{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+            record("proxy: a deleted link answers 404", status == 404, f"HTTP {status}")
     status, _, _ = portal.request("POST", f"{PROXY}/api/v1/auth/logout")
     record("portal: logout", status in (200, 204), f"HTTP {status}")
     status, _, _ = portal.request("GET", f"{PROXY}/api/v1/me")

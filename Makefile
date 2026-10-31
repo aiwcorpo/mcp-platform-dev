@@ -15,7 +15,8 @@ COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira
 .PHONY: help secrets certs contracts up up-core up-full down reset clean ps logs token claims exchange pat seed \
         smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test trust-ca mocks-test m2 mock-auth \
         m3 otp reset-authenticator registry-refresh admin-password m3-switch \
-        m4 m4-test m4-switch offboard registry-register openbao-test
+        m4 m4-test m4-switch offboard registry-register openbao-test \
+        m5-switch m5-artifacts ci ci-local lb-test compose-check mock-fault c2-keys
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -167,3 +168,28 @@ registry-register: ## PUT the manifests built from the server repositories with 
 
 m4-switch: ## apply the prepared M4 switch to the running stack (broker, servers, registry by CI, gateway, BFF/web; state is kept); CHECK=1 only checks the preconditions
 	@./scripts/apply-m4-switch.sh $(if $(CHECK),--check)
+
+m5-switch: ## apply the prepared M5 switch to the running stack (two gateways and brokers, balancers, /mcp routes; state is kept); CHECK=1 only checks the preconditions; only on the order of the coordinator
+	@./scripts/apply-m5-switch.sh $(if $(CHECK),--check)
+
+m5-artifacts: ## start the package server (18756) and the image registry (18757) of D12; touches only these two services
+	@mkdir -p artifacts/packages
+	M5_ACTIVE=1 $(COMPOSE) --profile ci up -d --no-deps --wait packages registry
+
+ci: ## the CI entry point (ci/run.sh): lint, unit, compose, style, proxy, lb; STEPS="lint unit" narrows
+	@./ci/run.sh $(STEPS)
+
+ci-local: ## the same through the local GitLab CI runner in a container (ci/local-runner.sh); JOB=static narrows; needs docker build
+	@./ci/local-runner.sh $(JOB)
+
+lb-test: ## balancers of gateway and broker against stand-in instances (isolated network, does not touch the stack)
+	@./scripts/lb-test.sh
+
+compose-check: ## rendered compose configuration of the M3, M4 and M5 layers (nothing is started)
+	@$(PY) -I scripts/check-compose.py
+
+mock-fault: ## latency and 429 of a system mock: make mock-fault ARGS="set gitlab latencyMs=200 rateLimitPerSecond=20" (show / clear <system>|all)
+	@$(PY) scripts/mock-fault.py $(ARGS)
+
+c2-keys: ## shared private JWKS of the internal JWT for the M5 gateway instances (.secrets/c2-jwks.json; kept when it exists)
+	@./scripts/gen-c2-keys.sh

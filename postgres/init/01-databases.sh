@@ -1,5 +1,5 @@
 #!/bin/sh
-# Databases for the gateway (virtual servers, registry, activity) and the broker (connection metadata,
+# Databases for the gateway (registry, activity) and the broker (connection metadata,
 # never secret values). Runs only on an empty data volume.
 set -eu
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \

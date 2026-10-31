@@ -24,7 +24,7 @@ Usługi mają nazwy usług i aliasy `*.internal`.
 | Broker | `https://localhost:18100` | `https://${MCP_BROKER_TLS_NAME}:8443` | `make up-full` (stuby wtedy są usuwane) |
 | `mcp-jira` | `https://localhost:18446` | `https://mcp-jira.internal:8443` | profil `full`; port hosta tylko dla testów A1/A3, wymaga certyfikatu `mcp-gateway` i JWT |
 | Portal (zarezerwowany) | `http://localhost:18090` | | redirect URI klienta `mcp-portal-bff` (BFF uruchomiony na hoście) |
-| Proxy (jedna domena, M2) | `https://localhost:18745` (adres publiczny), `http://localhost:18740` (te same trasy, bez TLS) | `proxy.internal:8080` | `make up-m2`; certyfikat CA "dev public" (`make trust-ca`); `/` web, `/api` BFF, `/s/` `/v/` `/.well-known/oauth-protected-resource*` gateway; patrz [m2.md](m2.md) |
+| Proxy (jedna domena, M2) | `https://localhost:18745` (adres publiczny), `http://localhost:18740` (te same trasy, bez TLS) | `proxy.internal:8080` | `make up-m2`; certyfikat CA "dev public" (`make trust-ca`); `/` web, `/api` BFF, `/s/` `/mcp` (M5; do M4 `/v/`) `/.well-known/oauth-protected-resource*` gateway; patrz [m2.md](m2.md) |
 | Portal web (M2) | | `http://portal-web:8080` | statyczny serwer SPA za proxy |
 | Portal BFF (M2) | | `http://portal-bff.internal:8080` | za proxy, `PORTAL_PORT=8080`; sieć `core`, OIDC bez discovery (patrz [m3.md](m3.md)) |
 | Mock GitLaba (OAuth + REST) | `http://localhost:18741` | `http://gitlab.internal:8080` | authorize otwiera przeglądarka (port hosta), reszta z sieci compose |
@@ -33,6 +33,10 @@ Usługi mają nazwy usług i aliasy `*.internal`.
 | Mock OpenSearch | `http://localhost:18744` | `http://opensearch.internal:8080` | sieć `servers` |
 | `mcp-confluence`, `mcp-gitlab`, `mcp-servicedesk`, `mcp-opensearch` | | `https://<nazwa>.internal:8443` | profil `m2`, bez portów hosta |
 | Serwer paczek polityk (M3) | `http://localhost:18747` (`POLICIES_PORT`) | `http://policies.internal:8080`, `https://policies.internal:8443` (serwery MCP; certyfikat CA wewnetrznego) | nginx, tylko odczyt; `/policies/{main,overrides}/`; sieci `core` i `servers`; patrz [m3.md](m3.md) |
+| Gateway, M5 (dwie instancje) | instancje `http://localhost:18752` i `:18753`; balancer `:18000` (`GATEWAY_PORT`), mTLS `:18445`, status `http://localhost:18750/__lb/status` | `gateway-backends.internal` (instancje), `mcp-gateway.internal` i `gateway-lb` (balancer) | po `make m5-switch`; [m5.md](m5.md) |
+| Broker, M5 (dwie instancje) | instancje `https://localhost:18754` i `:18755`; balancer `:18100` (`BROKER_PORT`), status `http://localhost:18751/__lb/status` | `broker-backends.internal` (instancje), `mcp-credential-broker.internal` (balancer) | j.w. |
+| Serwer paczek (D12) | `http://localhost:18756` | `packages.internal` (sieć `ci`) | tylko odczyt; `make m5-artifacts`; [m5.md](m5.md) |
+| Rejestr obrazów (D12) | `localhost:18757` | `registry.internal` (sieć `ci`) | http na loopbacku, bez uwierzytelniania; `make m5-artifacts` |
 | Callback Claude Code | `http://localhost:33418/callback` | | redirect URI klienta `claude-code` |
 
 ## Keycloak: issuer i backchannel

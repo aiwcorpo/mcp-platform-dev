@@ -434,7 +434,7 @@ services:
       MCP_OIDC_JWKS_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/certs
       MCP_OIDC_TOKEN_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/token
       MCP_OIDC_AUDIENCE: mcp-gateway
-      # The single public origin (the proxy): resource_metadata, "resource" of RFC 9728, link urls and connectUrl.
+      # The single public origin (the proxy): resource_metadata, "resource" of RFC 9728 (<origin>/mcp from M5) and connectUrl.
       MCP_PUBLIC_URL: https://localhost:${PROXY_TLS_PORT}
       # Dev only: Keycloak's token endpoint (token exchange) is plain http in this stack.
       MCP_ALLOW_PLAIN_HTTP: "true"

@@ -1,7 +1,9 @@
 """Runs one system mock. MOCK_SYSTEM selects the module (gitlab, confluence, servicedesk, opensearch).
 
-Environment: MOCK_SYSTEM, MOCK_PORT (default 8080), MOCK_ADMIN_PASSWORD (Basic auth for /__mock/journal).
-GET /__mock/health is open; GET and DELETE /__mock/journal need Basic auth admin:$MOCK_ADMIN_PASSWORD.
+Environment: MOCK_SYSTEM, MOCK_PORT (default 8080), MOCK_ADMIN_PASSWORD (Basic auth for /__mock/journal), and the
+MOCK_LATENCY_* / MOCK_RATE_LIMIT_* / MOCK_ERROR_* settings of faults.py.
+GET /__mock/health is open; GET and DELETE /__mock/journal and GET, PUT, DELETE /__mock/faults need Basic auth
+admin:$MOCK_ADMIN_PASSWORD.
 """
 import hmac
 import importlib
@@ -10,11 +12,12 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import common
+import faults as faults_module
 
 MAX_BODY = 1 << 20
 
 
-def make_handler(system, journal, admin_password):
+def make_handler(system, journal, admin_password, faults):
     module = importlib.import_module(system)
 
     class Handler(BaseHTTPRequestHandler):
@@ -48,7 +51,15 @@ def make_handler(system, journal, admin_password):
                     resp = common.Response(204, b"", content_type=None)
                 else:
                     resp = common.json_response(200, journal.entries())
+            elif req.raw_path == "/__mock/faults":
+                resp = self._faults(req) if self._admin_ok(req) else common.json_response(
+                    401, {"error": "unauthorized"}, {"WWW-Authenticate": 'Basic realm="mock"'})
             else:
+                injected = faults.apply(req)
+                if injected is not None:
+                    journal.record(req, injected.status)
+                    self._send(injected, head=req.method == "HEAD")
+                    return
                 try:
                     resp = module.handle(req) or common.json_response(404, {"error": "not_found"})
                 except Exception as exc:  # a handler bug must not kill the connection thread silently
@@ -56,6 +67,18 @@ def make_handler(system, journal, admin_password):
                     resp = common.json_response(500, {"error": "mock_error"})
                 journal.record(req, resp.status)
             self._send(resp, head=req.method == "HEAD")
+
+        def _faults(self, req):
+            if req.method == "DELETE":
+                faults.clear()
+            elif req.method == "PUT":
+                try:
+                    faults.configure(req.json())
+                except faults_module.FaultsError as exc:
+                    return common.json_response(400, {"error": "invalid_settings", "detail": str(exc)})
+            elif req.method != "GET":
+                return common.json_response(405, {"error": "method_not_allowed"}, {"Allow": "GET, PUT, DELETE"})
+            return common.json_response(200, faults.state())
 
         def _send(self, resp, head=False, close=False):
             self.send_response(resp.status)
@@ -76,7 +99,8 @@ def make_handler(system, journal, admin_password):
 def main():
     system = os.environ["MOCK_SYSTEM"]
     port = int(os.environ.get("MOCK_PORT", "8080"))
-    handler = make_handler(system, common.Journal(), os.environ.get("MOCK_ADMIN_PASSWORD", ""))
+    faults = faults_module.Faults.from_env(os.environ)
+    handler = make_handler(system, common.Journal(), os.environ.get("MOCK_ADMIN_PASSWORD", ""), faults)
     ThreadingHTTPServer(("0.0.0.0", port), handler).serve_forever()
 
 

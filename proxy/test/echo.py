@@ -40,4 +40,4 @@ class Handler(BaseHTTPRequestHandler):
     do_GET = do_POST = do_PUT = do_DELETE = do_HEAD = _serve
 
 
-ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("ECHO_PORT", "8080"))), Handler).serve_forever()

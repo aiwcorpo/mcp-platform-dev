@@ -41,7 +41,9 @@ claude mcp add --transport http --client-id claude-code --callback-port 33418 \
   jira https://localhost:18745/s/mcp-jira/mcp
 ```
 
-Wirtualny serwer z portalu ma ten sam kształt (`https://localhost:18745/v/<slug>/mcp`); portal pokazuje gotową komendę
+Od M5 jeden adres obejmuje całą platformę (`https://localhost:18745/mcp`), a filtr jest w query, np.
+`"https://localhost:18745/mcp?systems=jira&access=read"` (cudzysłów, bo adres ma `&`); kreator w portalu składa adres
+(`GET /api/v1/me/mcp-endpoint`), niczego nie zapisuje i pokazuje gotową komendę
 (BFF dostaje `PORTAL_CLIENT_CONFIGS_CLAUDE_CODE_CLIENT_ID=claude-code` i `..._CALLBACK_PORT=33418` z `docker-compose.yml`).
 Metadane zasobu i wyzwanie 401 wskazują adres https; serwer autoryzacji to Keycloak po https, `https://localhost:18746/realms/corp`
 (certyfikat tego samego CA "dev public", więc Safari zapisuje ciasteczka logowania; docs/m2.md, "Keycloak na https").
