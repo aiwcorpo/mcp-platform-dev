@@ -4,6 +4,7 @@
 #     (mcp-gateway.internal, mcp-credential-broker.internal) and the old host ports (GATEWAY_PORT, GATEWAY_INTERNAL_PORT, BROKER_PORT)
 #     move to the balancers in front of them (lb/gateway.conf, lb/broker.conf);
 #   - the gateway instances share the keys of the internal JWT (scripts/gen-c2-keys.sh) and have MCP_TOOLS_LIST_TIMEOUT;
+#   - the policy bundle server logs downloads on stdout (policies/nginx.m5.conf);
 #   - the proxy serves /mcp and routes to gateway-lb, without /v/ (proxy/m5/);
 #   - artifact services of D12 (package server, image registry) in the network "ci", started apart: make m5-artifacts.
 # Redis (one instance) and PostgreSQL stay shared by both instances of each component. Ports of new services: m5.env.
@@ -134,6 +135,11 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+
+  # Access log on stdout as the trace of a bundle download (X13 of mcp-e2e); the M4 file keeps `access_log off`.
+  policies:
+    volumes:
+      - ./policies/nginx.m5.conf:/etc/nginx/nginx.conf:ro
 
   proxy:
     volumes:

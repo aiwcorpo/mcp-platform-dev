@@ -18,7 +18,7 @@
 # test accounts). A failure at any later step prints the step, the command and the way back:
 #   scripts/rollback-m5.sh out/m5-backup-<time>          (tested part: scripts/rollback-test.sh)
 # Order: backup -> OpenBao init (secret_id of the broker) -> C2 keys -> Redis ACL -> broker 1, broker 2, broker balancer -> signal
-# to ws-09 and wait for the 5.x bundle -> MCP servers -> gateway 1, gateway 2 (state copied from 1), gateway balancer -> registration
+# to ws-09 and wait for the 5.x bundle -> policy server (access log) -> MCP servers -> gateway 1, gateway 2 (state copied from 1), gateway balancer -> registration
 # by CI -> BFF and web -> proxy -> mocks -> checks (proxy tests, make m4, /mcp through the public origin, connection counts).
 # Any failed check makes the script exit non-zero (the stack stays as it is; decide on the rollback).
 # RESTART_GITLAB_MOCK=1 also restarts the GitLab mock (it keeps OAuth tokens in memory: every GitLab connection must be made again).
@@ -143,6 +143,8 @@ if [ "${M5_PUBLISHED:-0}" != 1 ]; then
   python3 "$root/scripts/m4.py" wait-bundle 120 || fail "the new bundle does not verify with the dev- key"
 fi
 
+step="policy server access log"
+"${c[@]}" up -d --no-deps --wait policies
 step="MCP servers"
 "${c[@]}" up -d --no-deps --wait server-state-init mcp-jira mcp-confluence mcp-gitlab mcp-servicedesk mcp-opensearch
 step="gateway 1"

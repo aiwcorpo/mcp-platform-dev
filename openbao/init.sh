@@ -66,6 +66,10 @@ else
     | bao write auth/approle/role/mcp-credential-broker/custom-secret-id secret_id=- >/dev/null
 fi
 
+expires="$(printf '%s' "$BAO_BROKER_SECRET_ID" \
+  | bao write -field=expiration_time auth/approle/role/mcp-credential-broker/secret-id/lookup secret_id=- 2>/dev/null || true)"
+echo "openbao-init: broker secret_id expires ${expires:-unknown}"
+
 # Client of the GitLab mock (mocks/systems/gitlab.py); the same secret is in the mock's environment.
 printf '%s' "$GITLAB_OAUTH_CLIENT_SECRET" | bao kv put secret/mcp/oauth-clients/gitlab client_id=mcp-broker client_secret=- >/dev/null
 

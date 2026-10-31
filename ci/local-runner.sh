@@ -20,6 +20,13 @@ while IFS= read -r -d '' file; do
   cp -p "$root/$file" "$work/repo/$file"
 done < <(cd "$root" && git ls-files -z --cached --others --exclude-standard)
 
+# gitlab-ci-local starts its helper by the tag :latest; pin it to the digest approved on 2026-10-31.
+util=firecow/gitlab-ci-local-util
+util_digest=sha256:1dc43cf4d8a4637a7da45eb95e14a97c750fbc9f1d45099bbd9f8ad6f0830778
+if [ "${CI_MODE:-runner}" != image ]; then
+  docker image inspect "$util@$util_digest" >/dev/null 2>&1 || docker pull -q "$util@$util_digest" >/dev/null
+  docker tag "$util@$util_digest" "$util:latest"
+fi
 docker image inspect mcp-ci:local >/dev/null 2>&1 || docker build -q -f "$root/ci/Dockerfile" -t mcp-ci:local "$root" >/dev/null
 image=mcp-ci:local
 run_command=(ci/run.sh)
