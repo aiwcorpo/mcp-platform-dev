@@ -49,9 +49,17 @@ bao write auth/approle/role/mcp-credential-broker \
   token_policies=mcp-credential-broker token_ttl=1h token_max_ttl=4h secret_id_ttl=168h >/dev/null
 bao write auth/approle/role/mcp-credential-broker/role-id role_id="$BAO_BROKER_ROLE_ID" >/dev/null
 
-if printf '%s' "$BAO_BROKER_SECRET_ID" \
-    | bao write -format=json auth/approle/role/mcp-credential-broker/secret-id/lookup secret_id=- 2>/dev/null \
-    | grep -q '"secret_id_accessor"'; then
+lookup="$(printf '%s' "$BAO_BROKER_SECRET_ID" \
+    | bao write -format=json auth/approle/role/mcp-credential-broker/secret-id/lookup secret_id=- 2>/dev/null || true)"
+# BAO_RENEW_SECRET_ID=1 (make openbao-renew, make m5-switch) replaces a secret_id that is still valid, so its 168 h start again;
+# without it a valid one is left alone and the TTL runs on.
+if [ "${BAO_RENEW_SECRET_ID:-0}" = 1 ] && printf '%s' "$lookup" | grep -q '"secret_id_accessor"'; then
+  accessor="$(printf '%s' "$lookup" | sed -n 's/.*"secret_id_accessor": *"\([^"]*\)".*/\1/p' | head -1)"
+  printf '%s' "$accessor" | bao write auth/approle/role/mcp-credential-broker/secret-id-accessor/destroy secret_id_accessor=- >/dev/null
+  lookup=""
+  echo "openbao-init: broker secret_id replaced"
+fi
+if printf '%s' "$lookup" | grep -q '"secret_id_accessor"'; then
   echo "openbao-init: broker secret_id already present"
 else
   printf '%s' "$BAO_BROKER_SECRET_ID" \

@@ -29,7 +29,7 @@ if want bff; then
   (cd "$work/mcp-portal/bff" && ./mvnw -B -q package -DskipTests)
   ctx="$work/bff-ctx"
   mkdir -p "$ctx"
-  cp "$(ls "$work"/mcp-portal/bff/target/mcp-portal-bff-*.jar | grep -v original | head -1)" "$ctx/app.jar"
+  cp "$(find "$work"/mcp-portal/bff/target -name 'mcp-portal-bff-*.jar' ! -name '*original*' | head -1)" "$ctx/app.jar"
   cp "$dev/docker/bff-entrypoint.sh" "$ctx/bff-entrypoint.sh"
   docker build -q -f "$dev/docker/bff.Dockerfile" -t "mcp-portal-bff:m2-$short" "$ctx" >/dev/null
   echo "MCP_PORTAL_BFF_IMAGE=mcp-portal-bff:m2-$short"

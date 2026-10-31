@@ -21,11 +21,20 @@ names=("$net-gw-a" "$net-gw-b" "$net-br-a" "$net-br-b" "$net-gw-lb" "$net-br-lb"
 
 remove_containers() {
   docker rm -f "${names[@]}" >/dev/null 2>&1
+  [[ -f /.dockerenv ]] && docker network disconnect -f "$net" "$(hostname)" >/dev/null 2>&1
   docker network rm "$net" >/dev/null 2>&1
 }
 trap '[[ -n "${KEEP:-}" ]] || remove_containers; rm -rf "$tmp"' EXIT
 remove_containers
 docker network create "$net" >/dev/null || exit 1
+# Inside a container (the CI runner) 127.0.0.1 is not the host: join the test network and reach the balancers by name.
+if [[ -f /.dockerenv ]]; then
+  docker network connect "$net" "$(hostname)" || exit 1
+  curl() {
+    command curl --connect-to "127.0.0.1:$gw_http:$net-gw-lb:8080" --connect-to "127.0.0.1:$gw_tcp:$net-gw-lb:8443" \
+      --connect-to "127.0.0.1:$br_tcp:$net-br-lb:8443" "$@"
+  }
+fi
 
 check() { # name expected actual
   if [[ "$2" == "$3" ]]; then
@@ -69,8 +78,8 @@ fi
 
 # served <url> <count> -> "name:count ..." sorted; failures counted as name "http-<status>".
 served() {
-  local url="$1" count="$2" i out
-  out="$(for i in $(seq 1 "$count"); do
+  local url="$1" count="$2" out
+  out="$(for _ in $(seq 1 "$count"); do
     body="$(curl -s -m 5 -w '\n%{http_code}' "$url")"
     code="${body##*$'\n'}"
     if [[ "$code" == 200 ]]; then jq -r .upstream <<<"${body%$'\n'*}"; else echo "http-$code"; fi
@@ -100,7 +109,12 @@ check "gateway http: upstream headers passed once" "1 1 1" \
   "$(tr -d '\r' < "$tmp/h" | tr 'A-Z' 'a-z' | awk -F: '/^content-security-policy:/{a++} /^x-content-type-options:/{b++} /^x-request-id:/{c++} END{print a, b, c}')"
 curl -s -X POST -H 'Content-Type: application/json' --data-binary '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' "$gw/mcp" > "$tmp/b"
 check "gateway http: POST body reaches an instance" "POST" "$(jq -r .method "$tmp/b")"
-check "gateway http: 5 MB body refused with 413" 413 "$(curl -s -o /dev/null -w '%{http_code}' -X POST --data-binary @<(head -c 5000000 /dev/zero | tr '\0' a) "$gw/mcp")"
+curl -s -D "$tmp/h" -o "$tmp/b" -X POST --data-binary @<(head -c 5000000 /dev/zero | tr '\0' a) "$gw/mcp"
+check "gateway http: 5 MB body refused with 413 and JSON" "413 invalid_request" "$(sed -n '1s/[^ ]* \([0-9]*\).*/\1/p' "$tmp/h") $(jq -r .error "$tmp/b")"
+curl -s -D "$tmp/h" -o "$tmp/b" -H "X-Big: $(head -c 20000 /dev/zero | tr '\0' a)" "$gw/mcp"
+check "gateway http: 20 KB header refused with 431 and JSON" "431 invalid_request" "$(sed -n '1s/[^ ]* \([0-9]*\).*/\1/p' "$tmp/h") $(jq -r .error "$tmp/b")"
+curl -s -D "$tmp/h" -o "$tmp/b" -H "X-Big: $(head -c 9000 /dev/zero | tr '\0' a)" "$gw/mcp"
+check "gateway http: a 9 KB header (cookie-sized) still passes" "200 gw" "$(sed -n '1s/[^ ]* \([0-9]*\).*/\1/p' "$tmp/h") $(jq -r '.upstream[0:2]' "$tmp/b")"
 
 # TCP listeners.
 result="$(served "http://127.0.0.1:$gw_tcp/" 40)"
@@ -132,8 +146,12 @@ check "instances back in rotation without restarting the balancers" 1 "$back"
 # Both gone: the balancer answers itself.
 docker kill "$net-gw-a" "$net-gw-b" "$net-br-a" "$net-br-b" >/dev/null
 sleep 1.5
-check "gateway http: no instance -> 502" 502 "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$gw/mcp")"
-check "gateway tcp: no instance -> connection closed" 52 "$(curl -s -m 5 -o /dev/null "http://127.0.0.1:$gw_tcp/" ; echo $?)"
+curl -s -m 5 -D "$tmp/h" -o "$tmp/b" "$gw/mcp"
+check "gateway http: no instance -> 502 with JSON" "502 upstream_unavailable application/json" \
+  "$(sed -n '1s/[^ ]* \([0-9]*\).*/\1/p' "$tmp/h") $(jq -r .error "$tmp/b") $(tr -d '\r' < "$tmp/h" | tr 'A-Z' 'a-z' | sed -n 's/^content-type: \([^;]*\).*/\1/p')"
+curl -s -m 5 -o /dev/null "http://127.0.0.1:$gw_tcp/"; rc=$?
+# 52 (empty reply) on the host, 56 (receive failure) through the in-network route of the runner: both mean the connection was closed.
+check "gateway tcp: no instance -> connection closed" 1 "$(( rc == 52 || rc == 56 ))"
 docker start "$net-gw-a" "$net-gw-b" >/dev/null
 recovered=0
 for _ in $(seq 1 40); do

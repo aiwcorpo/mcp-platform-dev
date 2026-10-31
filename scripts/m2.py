@@ -544,9 +544,9 @@ def check_portal():
         if "gitlab" in connected_before:
             portal.request("POST", f"{PROXY}/api/v1/connections/gitlab/oauth", {"returnPath": "/catalog"})
         if M5:
-            status, headers, _ = http("POST", f"{PROXY}/v/{slug}/mcp", {**bearer(token_alice), "Content-Type": "application/json"}, b"{}")
-            record("proxy: /v/ is no longer a gateway route (answered by the portal, no gateway CSP)",
-                   status != 200 and "Content-Security-Policy" not in headers, f"HTTP {status}")
+            status, headers, raw = http("POST", f"{PROXY}/v/{slug}/mcp", {**bearer(token_alice), "Content-Type": "application/json"}, b"{}")
+            record("proxy: /v/ answers 404 not_found_or_denied (CC-177), not the portal page",
+                   status == 404 and jbody(raw).get("error") == "not_found_or_denied", f"HTTP {status} {raw[:80]!r}")
         else:
             status, _, _ = portal.request("DELETE", f"{PROXY}/api/v1/virtual-servers/{slug}")
             record("portal: delete the link", status in (200, 204), f"HTTP {status}")

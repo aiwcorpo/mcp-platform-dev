@@ -1,15 +1,25 @@
-# Thin wrapper: all logic is in ci/run.sh (make ci runs the same steps). The runner supplies the CI image of ci/Dockerfile
-# (default image of the runner, or the shell of the local runner of ci/local-runner.sh).
+# Thin wrapper: all logic is in ci/run.sh (make ci runs the same steps). The image is the one of ci/Dockerfile; build it where the
+# runner is (docker build -f ci/Dockerfile -t mcp-ci:local .) or push it to the registry of the project and set MCP_CI_IMAGE.
+# No secrets are used. The Docker socket (the docker-tests job) is given to the default branch only: a merge request runs
+# the static job alone, in a container without the daemon of the host.
+variables:
+  MCP_CI_IMAGE: mcp-ci:local
+
 stages: [check]
 
 static:
   stage: check
+  image: $MCP_CI_IMAGE
   script:
-    - ci/run.sh lint unit compose style
+    - ci/run.sh lint mocks compose style
 
 docker-tests:
   stage: check
+  image: $MCP_CI_IMAGE
+  tags: [docker-socket]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   variables:
     CI_REQUIRE_DOCKER: "1"
   script:
-    - ci/run.sh proxy lb
+    - ci/run.sh unit proxy lb

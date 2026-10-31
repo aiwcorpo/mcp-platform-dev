@@ -53,8 +53,8 @@ def running_image(container):
 
 
 def switched():
-    """True when the running gateway and broker are M4 images (tag m4-...)."""
-    return all(":m4-" in running_image(f"mcp-dev-{name}-1") for name in ("mcp-gateway", "mcp-credential-broker"))
+    """True when the running gateway and broker are M4 or M5 images (tag m4-... or m5-...): the M4 checks hold for both."""
+    return all(any(tag in running_image(f"mcp-dev-{name}-1") for tag in (":m4-", ":m5-")) for name in ("mcp-gateway", "mcp-credential-broker"))
 
 
 def x509_text(path, *args):

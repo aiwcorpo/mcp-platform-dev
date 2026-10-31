@@ -75,9 +75,14 @@ def check_m5(base, m5):
     state = [v["source"] for v in services["mcp-gateway"]["volumes"] if v["target"] == "/app/state"]
     state2 = [v["source"] for v in services["mcp-gateway-2"]["volumes"] if v["target"] == "/app/state"]
     record(state and state2 and state != state2, "m5: the gateway instances have separate policy state volumes", f"{state} {state2}")
+    cursor = [services[n]["environment"].get("MCP_LIST_CURSOR_KEY", "") for n in ("mcp-gateway", "mcp-gateway-2")]
+    record(cursor[0] == cursor[1] and len(cursor[0]) >= 32, "m5: both gateway instances have the same list cursor key of at least 32 characters")
     record(services["mcp-gateway"]["environment"].get("MCP_TOOLS_LIST_TIMEOUT") == "3000", "m5: MCP_TOOLS_LIST_TIMEOUT is set on the gateway")
     record({"MCP_INTERNAL_JWT_KEYS_FILE", "MCP_INTERNAL_JWT_ACTIVE_KID"} <= set(services["mcp-gateway"]["environment"]),
            "m5: the gateway instances share the keys of the internal JWT")
+    registry = services["registry"]
+    record(registry.get("user") == "65534:65534" and registry.get("read_only") and registry["environment"].get("REGISTRY_STORAGE_DELETE_ENABLED") == "false",
+           "m5: the registry runs as nobody, read-only, without deletion")
     record("ci" in m5["networks"] and all(set(services[s]["networks"]) == {"ci"} for s in ("packages", "registry")),
            "m5: package server and registry are only in the ci network")
     record(not services["packages"].get("environment") and all(k.startswith("REGISTRY_") for k in services["registry"]["environment"]),

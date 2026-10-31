@@ -13,8 +13,8 @@ base="http://127.0.0.1:$port"
 layer="${PROXY_LAYER:-}"
 if [[ -z "$layer" ]]; then
   active="${M5_ACTIVE:-$(grep -s '^M5_ACTIVE=' "$root/.env" | cut -d= -f2-)}"
-  layer=m4
-  [[ "$active" == 1 ]] && layer=m5
+  layer="m4"
+  [[ "$active" == 1 ]] && layer="m5"
 fi
 conf="$root/proxy"
 gateway_alias=mcp-gateway
@@ -35,11 +35,19 @@ tmp="$(mktemp -d)"
 
 remove_containers() {
   docker rm -f "$net-proxy" "$net-gateway" "$net-bff" "$net-web" >/dev/null 2>&1
+  [[ -f /.dockerenv ]] && docker network disconnect -f "$net" "$(hostname)" >/dev/null 2>&1
   docker network rm "$net" >/dev/null 2>&1
 }
 trap '[[ -n "${KEEP:-}" ]] || remove_containers; rm -rf "$tmp"' EXIT
 remove_containers
 docker network create "$net" >/dev/null || exit 1
+# Inside a container (the CI runner) 127.0.0.1 is not the host, where the ports are published: join the test network and let curl
+# go to the proxy container by name. The bind mounts below are resolved by the host daemon, so the repository must be mounted
+# at the same path as on the host (ci/local-runner.sh does that).
+if [[ -f /.dockerenv ]]; then
+  docker network connect "$net" "$(hostname)" || exit 1
+  curl() { command curl --connect-to "127.0.0.1:$port:$net-proxy:8080" --connect-to "localhost:$tls_port:$net-proxy:8443" "$@"; }
+fi
 
 for pair in gateway:$gateway_alias bff:portal-bff.internal web:portal-web; do
   name="${pair%%:*}"
@@ -115,8 +123,15 @@ if [[ "$layer" == m5 ]]; then
   req "$base/mcp/";                     check "negative: /mcp/ is not the gateway" web "$(field .upstream)"
   req "$base/mcpx";                     check "negative: /mcpx is not the gateway" web "$(field .upstream)"
   req "$base/mcp/x";                    check "negative: /mcp/x is not the gateway" web "$(field .upstream)"
-  req "$base/v/team-link/mcp";          check "negative: /v/ is no longer routed to the gateway" web "$(field .upstream)"
-  req "$base/v/x/mcp?echo_status=401";  check "negative: /v/ answers from the portal, not the gateway" "web 0" "$(field .upstream) $(header content-security-policy)"
+  # Vector endpoint-aggregate/legacy-link-route-gone: 404 not_found_or_denied in the usual shape, answered by the proxy, no upstream.
+  for method in GET POST; do
+    req -X "$method" -H 'Authorization: Bearer t' "$base/v/team-a-dev/mcp"
+    check "/v/ $method: 404 not_found_or_denied" "404 not_found_or_denied" "$status $(field .error)"
+    check "/v/ $method: message of the vector" "The resource does not exist or you do not have access to it." "$(field .message)"
+    check "/v/ $method: JSON with nosniff and CSP, no upstream" "application/json nosniff 1" "$(hvalue content-type | sed 's/;.*//') $(hvalue x-content-type-options) $(header content-security-policy)"
+  done
+  req "$base/v/team-a-dev/mcp?echo_status=200"
+  check "/v/ never reaches an upstream" 404 "$status"
   req "$base/m%63p";                    check "percent-encoded /mcp refused" "404 none" "$status $(upstream)"
 else
   req "$base/v/team-link/mcp";          check "route /v/ -> gateway" gateway "$(field .upstream)"
@@ -265,10 +280,8 @@ for p in "/s/../admin/v1/x" "/s/%2e%2e/admin" "/.well-known/oauth-protected-reso
   req "$base$p"
   gw_error "refused $p" 404
 done
-if [[ "$layer" == m4 ]]; then
-  req "$base/v/%2e%2e/x"
-  gw_error "refused /v/%2e%2e/x" 404
-fi
+req "$base/v/%2e%2e/x"
+gw_error "refused /v/%2e%2e/x" 404
 req -H "X-Big: $(head -c 20000 /dev/zero | tr '\0' a)" "$base/s/mcp-jira/mcp"
 gw_error "oversized header" 431
 req -X POST -H 'Transfer-Encoding: gzip, chunked' --data-binary x "$base/s/mcp-jira/mcp"

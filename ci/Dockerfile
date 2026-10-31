@@ -5,4 +5,5 @@
 FROM python:3.12-alpine@sha256:0687a6bc9716edc2a6ee0fbfb0f87e7ee358b262b67c9215de91bc9b2d38ba71
 RUN apk add --no-cache bash git make jq curl openssl shellcheck docker-cli docker-cli-compose
 WORKDIR /work
-ENTRYPOINT ["/bin/bash", "ci/run.sh"]
+# No ENTRYPOINT: CI systems start their own shell in the image; run steps with ci/run.sh <steps>.
+CMD ["bash"]

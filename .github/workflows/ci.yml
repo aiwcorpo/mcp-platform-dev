@@ -1,0 +1,37 @@
+# Thin wrapper: all logic is in ci/run.sh. Image of ci/Dockerfile (build it on the runner or push it and change the name).
+# No secrets are referenced and the token is read-only. The Docker socket is given to pushes to main only; pull requests
+# run the static job alone.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    container:
+      image: mcp-ci:local
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: ci/run.sh lint mocks compose style
+
+  docker-tests:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    container:
+      image: mcp-ci:local
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+    env:
+      CI_REQUIRE_DOCKER: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: ci/run.sh unit proxy lb

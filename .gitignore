@@ -2,6 +2,7 @@
 /.secrets/
 /certs/
 /out/
+/artifacts/
 __pycache__/
 .DS_Store
 __pycache__/

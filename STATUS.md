@@ -430,14 +430,16 @@ innego nie loguje wartości. Zrestartowane mocki Confluence, Service Desku i Ope
 
 ## M5 (2026-10-31): przygotowanie, stos M4 nietknięty
 
-Opis w `docs/m5.md`. Nic nie zostało przełączone ani zrestartowane; warstwa M5 działa dopiero po `make m5-switch` (polecenie koordynatora).
+Opis w `docs/m5.md`. Nic nie zostało przełączone ani zrestartowane; warstwa M5 działa dopiero po `make m5-switch CONFIRM=1` (polecenie koordynatora). Uruchomione poza testami w izolowanych sieciach:
+`packages` i `registry` (`make m5-artifacts`, porty 18756 i 18757) oraz zbudowane obrazy `mcp-ci` i `mcp-ci-runner`.
 
-- Kamień 1, proxy: `proxy/m5/*` (trasa `/mcp` dokładna, metadane `/mcp` z nosniff i CSP, bez `/v/`, upstream `gateway-lb`); `scripts/proxy-test.sh` testuje obie warstwy (M4 211, M5 225 sprawdzeń).
-- Kamień 2, mocki: `mocks/systems/faults.py` (opóźnienie, jitter, 429 z Retry-After, błędy 5xx, prefiks ścieżki), endpoint `/__mock/faults`, `make mock-fault`; `make mocks-test` 195 (było 182). L10 był już zamknięty w 852a8f0.
-- Kamień 3, HA: `docker-compose.m5.yml` (2x gateway, 2x broker, balancery nginx w `lb/`, wspólny Redis, wspólne klucze C2, `MCP_TOOLS_LIST_TIMEOUT`), `scripts/check-compose.py` 26 PASS, `scripts/lb-test.sh` 20 PASS (zabicie instancji bez błędów).
-- Kamień 4, D12: serwer paczek i rejestr obrazów (sieć `ci`, 18756, 18757); serwer paczek sprawdzony, rejestr nie (obraz niepobrany).
-- Kamień 5, CI: `ci/run.sh` (lint, unit, compose, style, proxy, lb), `.gitlab-ci.yml`, `ci/Dockerfile`, `ci/runner.Dockerfile`, `ci/local-runner.sh`; obrazy niezbudowane.
-- Kamień 6: `scripts/apply-m5-switch.sh` (`--check` sprawdzony), `make m5-switch`.
+- Kamień 1, proxy: `proxy/m5/*` (`/mcp`, metadane `/mcp`, `/v/` jako 404 `not_found_or_denied` z wektora, worker_connections 8192); `proxy-test.sh` obie warstwy (M4 212, M5 236).
+- Kamień 2, mocki: `faults.py`, `/__mock/faults`, `make mock-fault`; `make mocks-test` 195.
+- Kamień 3, HA: warstwa compose z 2x gateway, 2x broker, balancerami (JSON przy błędach, bufory 16 KB), wspólnymi kluczami C2 i kursorów, `+wait` w ACL; `check-compose.py` 28, `lb-test.sh` 22.
+- Kamień 4, D12: serwer paczek i rejestr (nobody, read-only, bez usuwania) uruchomione i sprawdzone.
+- Kamień 5, CI: `ci/run.sh`, `.gitlab-ci.yml`, `Jenkinsfile`, workflow GitHub, obrazy zbudowane, zadanie `static` przeszło na `gitlab-ci-local` w kontenerze (24 s), a `unit proxy lb` w obrazie `mcp-ci` z gniazdem Dockera i `CI=true` przeszło w całości (kod 0).
+- Kamień 6, przełączenie i wycofanie: `apply-m5-switch.sh` (kopia ze znacznikiem czasu, stan, pułapka błędu, kontrole z kodem wyjścia), `rollback-m5.sh`, `rollback-test.sh` 12, odnowienie `secret_id` brokera (`make openbao-renew`, test w `openbao-test`).
+- Poprawki przeglądu Opus: H1, M1-M10, L1-L7 (lista w commicie i w docs/m5.md).
 - Brak linii `M5: osiągnięty`: wymaga przełączenia.
 
 ## Propozycje CC

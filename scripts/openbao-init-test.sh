@@ -31,6 +31,19 @@ docker run --rm --network "$net" -v "$root/openbao/init.sh:/init.sh:ro" \
   -e BAO_BROKER_SECRET_ID=broker-secret-id -e GITLAB_OAUTH_CLIENT_SECRET=gitlab-test -e SERVICEDESK_API_KEY="$secret" -e KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET="$exchange_secret" \
   --entrypoint /bin/sh "$image" /init.sh >/dev/null && check "init.sh is idempotent" ok || check "init.sh is idempotent" fail
 
+ttl_of() { printf '%s' broker-secret-id | bao "$token" write -field=expiration_time auth/approle/role/mcp-credential-broker/secret-id/lookup secret_id=- 2>/dev/null; }
+sleep 3
+renew_out="$(mktemp)"
+before_ttl="$(ttl_of)"
+docker run --rm --network "$net" -v "$root/openbao/init.sh:/init.sh:ro" \
+  -e BAO_ADDR=http://openbao:8200 -e BAO_ROOT_TOKEN="$token" -e BAO_BROKER_ROLE_ID=broker-role -e BAO_RENEW_SECRET_ID=1 \
+  -e BAO_BROKER_SECRET_ID=broker-secret-id -e GITLAB_OAUTH_CLIENT_SECRET=gitlab-test -e SERVICEDESK_API_KEY="$secret" -e KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET="$exchange_secret" \
+  --entrypoint /bin/sh "$image" /init.sh > "$renew_out"
+grep -q 'secret_id replaced' "$renew_out" && check "BAO_RENEW_SECRET_ID=1 replaces a valid secret_id" ok || check "BAO_RENEW_SECRET_ID=1 replaces a valid secret_id" fail
+after_ttl="$(ttl_of)"
+rm -f "$renew_out"
+[ -n "$before_ttl" ] && [ -n "$after_ttl" ] && [[ "$after_ttl" > "$before_ttl" ]] && check "the renewed secret_id expires later ($before_ttl -> $after_ttl)" ok || check "the renewed secret_id expires later ($before_ttl -> $after_ttl)" fail
+
 broker="$(printf '%s' broker-secret-id | bao "" write -field=token auth/approle/login role_id=broker-role secret_id=- 2>/dev/null || true)"
 [ -n "$broker" ] && check "broker AppRole logs in" ok || check "broker AppRole logs in" fail
 

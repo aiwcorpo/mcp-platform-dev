@@ -10,13 +10,15 @@ SYSTEM ?= jira
 AUD ?= mcp-credential-broker
 REQUESTER ?= mcp-portal-bff
 STUBS := broker-mock gateway-admin-mock
-COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira
+# The services of the M5 layer join the list while it is active, so `make up` does not leave them behind.
+M5_ACTIVE := $(shell grep -s '^M5_ACTIVE=' .env | cut -d= -f2-)
+COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira $(if $(filter 1,$(M5_ACTIVE)),mcp-gateway-2 mcp-credential-broker-2 gateway-lb broker-lb)
 
 .PHONY: help secrets certs contracts up up-core up-full down reset clean ps logs token claims exchange pat seed \
         smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test trust-ca mocks-test m2 mock-auth \
         m3 otp reset-authenticator registry-refresh admin-password m3-switch \
         m4 m4-test m4-switch offboard registry-register openbao-test \
-        m5-switch m5-artifacts ci ci-local lb-test compose-check mock-fault c2-keys
+        m5-switch m5-rollback m5-artifacts ci ci-local lb-test rollback-test compose-check mock-fault c2-keys openbao-init openbao-renew
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -169,11 +171,24 @@ registry-register: ## PUT the manifests built from the server repositories with 
 m4-switch: ## apply the prepared M4 switch to the running stack (broker, servers, registry by CI, gateway, BFF/web; state is kept); CHECK=1 only checks the preconditions
 	@./scripts/apply-m4-switch.sh $(if $(CHECK),--check)
 
-m5-switch: ## apply the prepared M5 switch to the running stack (two gateways and brokers, balancers, /mcp routes; state is kept); CHECK=1 only checks the preconditions; only on the order of the coordinator
-	@./scripts/apply-m5-switch.sh $(if $(CHECK),--check)
+m5-switch: ## apply the prepared M5 switch to the running stack (two gateways and brokers, balancers, /mcp routes; state is kept); CHECK=1 only checks, CONFIRM=1 does it; only on the order of the coordinator
+	@./scripts/apply-m5-switch.sh $(if $(CHECK),--check,$(if $(CONFIRM),--confirm))
+
+m5-rollback: ## way back from a half done or rejected M5 switch: make m5-rollback BACKUP=out/m5-backup-<time> CONFIRM=1 (without CONFIRM only the plan)
+	@./scripts/rollback-m5.sh $(if $(CONFIRM),--confirm,--dry-run) $(BACKUP)
+
+rollback-test: ## database part of the M5 rollback on a throw-away PostgreSQL (isolated network, does not touch the stack)
+	@./scripts/rollback-test.sh
+
+openbao-init: ## run openbao/init.sh against the stack's OpenBao; an expired AppRole secret_id of the broker is recreated, a valid one is left alone; restarts nothing
+	$(COMPOSE) --profile full --profile m2 run --rm --no-deps openbao-init
+
+openbao-renew: ## replace the AppRole secret_id of the broker even if still valid, so its 168 h start again (docs/m5.md); touches OpenBao only, restarts nothing
+	BAO_RENEW_SECRET_ID=1 $(COMPOSE) --profile full --profile m2 run --rm --no-deps openbao-init
 
 m5-artifacts: ## start the package server (18756) and the image registry (18757) of D12; touches only these two services
 	@mkdir -p artifacts/packages
+	M5_ACTIVE=1 $(COMPOSE) --profile ci run --rm --no-deps registry-data-init
 	M5_ACTIVE=1 $(COMPOSE) --profile ci up -d --no-deps --wait packages registry
 
 ci: ## the CI entry point (ci/run.sh): lint, unit, compose, style, proxy, lb; STEPS="lint unit" narrows
