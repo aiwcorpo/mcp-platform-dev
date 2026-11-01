@@ -9,7 +9,16 @@
 #   - artifact services of D12 (package server, image registry) in the network "ci", started apart: make m5-artifacts.
 # Redis (one instance) and PostgreSQL stay shared by both instances of each component. Ports of new services: m5.env.
 
+# A container limit plus a heap that fits in it: the JVM exits on its own out-of-memory error (ExitOnOutOfMemoryError, the
+# container restarts cleanly and the log names the cause) instead of the kernel killing it with exit 137 at the limit, or the
+# heap growing to a quarter of the Docker VM (4 GiB seen on a gateway instance under load).
+x-jvm-limit-environment: &jvm-limit-environment
+  JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError
+
 x-gateway-m5-environment: &gateway-m5-environment
+  <<: *jvm-limit-environment
+  # Keys (user, reason, target) kept by the audit throttle of repeated refusals, per user and reason (contracts 5.1.0, CC-191).
+  MCP_AUDIT_THROTTLE_MAX_TARGETS_PER_USER: ${MCP_AUDIT_THROTTLE_MAX_TARGETS_PER_USER:-50}
   # Time limit of one tools/list read per MCP server (milliseconds; contracts 5.1.0, CC-180).
   MCP_TOOLS_LIST_TIMEOUT: ${MCP_TOOLS_LIST_TIMEOUT:-3000}
   MCP_INTERNAL_JWT_KEYS_FILE: /run/c2/jwks.json
@@ -46,6 +55,7 @@ volumes:
 
 services:
   mcp-gateway:
+    mem_limit: 2g
     environment: *gateway-m5-environment
     volumes:
       - ${C2_JWKS_FILE:-./.secrets/c2-jwks.json}:/run/c2/jwks.json:ro
@@ -60,6 +70,7 @@ services:
     extends:
       file: docker-compose.yml
       service: mcp-gateway
+    mem_limit: 2g
     environment: *gateway-m5-environment
     volumes:
       - gateway-state-2:/app/state
@@ -140,6 +151,23 @@ services:
   policies:
     volumes:
       - ./policies/nginx.m5.conf:/etc/nginx/nginx.conf:ro
+
+  # MCP servers: limit and heap as for the gateway (their JVM sized itself from the whole Docker VM).
+  mcp-jira:
+    mem_limit: 2g
+    environment: *jvm-limit-environment
+  mcp-confluence:
+    mem_limit: 2g
+    environment: *jvm-limit-environment
+  mcp-gitlab:
+    mem_limit: 2g
+    environment: *jvm-limit-environment
+  mcp-servicedesk:
+    mem_limit: 2g
+    environment: *jvm-limit-environment
+  mcp-opensearch:
+    mem_limit: 2g
+    environment: *jvm-limit-environment
 
   proxy:
     volumes:

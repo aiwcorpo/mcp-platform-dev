@@ -80,6 +80,10 @@ def check_m5(base, m5):
     record(services["mcp-gateway"]["environment"].get("MCP_TOOLS_LIST_TIMEOUT") == "3000", "m5: MCP_TOOLS_LIST_TIMEOUT is set on the gateway")
     record({"MCP_INTERNAL_JWT_KEYS_FILE", "MCP_INTERNAL_JWT_ACTIVE_KID"} <= set(services["mcp-gateway"]["environment"]),
            "m5: the gateway instances share the keys of the internal JWT")
+    for name in ("mcp-gateway", "mcp-gateway-2", "mcp-jira", "mcp-confluence", "mcp-gitlab", "mcp-servicedesk", "mcp-opensearch"):
+        service = services[name]
+        record(service.get("mem_limit") and "MaxRAMPercentage" in service["environment"].get("JAVA_TOOL_OPTIONS", "")
+               and "ExitOnOutOfMemoryError" in service["environment"]["JAVA_TOOL_OPTIONS"], f"m5: {name} has a memory limit and a heap sized to it")
     registry = services["registry"]
     record(registry.get("user") == "65534:65534" and registry.get("read_only") and registry["environment"].get("REGISTRY_STORAGE_DELETE_ENABLED") == "false",
            "m5: the registry runs as nobody, read-only, without deletion")
