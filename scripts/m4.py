@@ -274,8 +274,12 @@ class TemporaryUser:
 
 
 def container_log(name, needle):
-    out = subprocess.run(["docker", "logs", f"mcp-dev-{name}-1"], capture_output=True, text=True)
-    return needle in out.stdout + out.stderr
+    """The needle in the log of any instance of the component (M5 runs a second instance of gateway and broker behind a balancer)."""
+    for container in (f"mcp-dev-{name}-1", f"mcp-dev-{name}-2-1"):
+        out = subprocess.run(["docker", "logs", container], capture_output=True, text=True)
+        if needle in out.stdout + out.stderr:
+            return True
+    return False
 
 
 def check_offboarding():

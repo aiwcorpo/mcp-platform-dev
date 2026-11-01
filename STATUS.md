@@ -440,7 +440,8 @@ Opis w `docs/m5.md`. Nic nie zostało przełączone ani zrestartowane; warstwa M
 - Kamień 5, CI: `ci/run.sh`, `.gitlab-ci.yml`, `Jenkinsfile`, workflow GitHub, obrazy zbudowane, zadanie `static` przeszło na `gitlab-ci-local` w kontenerze (24 s), a `unit proxy lb` w obrazie `mcp-ci` z gniazdem Dockera i `CI=true` przeszło w całości (kod 0).
 - Kamień 6, przełączenie i wycofanie: `apply-m5-switch.sh` (kopia ze znacznikiem czasu, stan, pułapka błędu, kontrole z kodem wyjścia), `rollback-m5.sh`, `rollback-test.sh` 12, odnowienie `secret_id` brokera (`make openbao-renew`, test w `openbao-test`).
 - Poprawki przeglądu Opus: H1, M1-M10, L1-L7 (lista w commicie i w docs/m5.md).
-- Brak linii `M5: osiągnięty`: wymaga przełączenia.
+- Przełączenie wykonane 2026-11-01 (`make m5-switch CONFIRM=1`, kopia `out/m5-backup-20261101T083207Z`): paczka 5.1.0 (`20261031172059-089d348`) opublikowana przez ws-09, obie instancje gatewaya i brokera zdrowe, `/mcp` odpowiada przez `https://localhost:18745`, połączenia alice 2, bob 0, carol 0, mallory 0 przed i po. Jedyna porażka kontroli (`make m4`, zdarzenie `user_purged` w logu instancji 1) była błędem testu, który czytał log tylko jednej instancji; poprawione w `m4.py`, `make m4` 39 PASS.
+- Linia `M5: osiągnięty` należy do koordynatora po scenariuszach e2e.
 
 ## Propozycje CC
 
