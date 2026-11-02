@@ -38,8 +38,8 @@ file_exists() { [ -f "$1" ]; }
 standin_image_present() { docker image inspect "$1" >/dev/null 2>&1; }
 
 checks_common() {
-  local gateway=mcp-gateway-1
-  present "$project-gateway-lb-1" && gateway=gateway-lb-1
+  local gateway="mcp-gateway-1"
+  present "$project-gateway-lb-1" && gateway="gateway-lb-1"
   need "the gateway ($gateway) is healthy" healthy "$project-$gateway"
   need "certificate of the stand-in exists (make certs)" file_exists "$root/certs/mcp-bulk/tls.crt"
   need "the python image of the mocks is present" standin_image_present python:3.12-alpine@sha256:0687a6bc9716edc2a6ee0fbfb0f87e7ee358b262b67c9215de91bc9b2d38ba71
@@ -63,7 +63,7 @@ case "${1:-status}" in
     [ "$failed" -eq 0 ] || exit 1
     if [ "${2:-}" != --confirm ]; then
       echo "plan: remove $real (volume mcp-confluence-state stays), start $standin under the address mcp-confluence.internal,"
-      echo "      PUT the manifest of the stand-in as mcp-confluence, wait until $(gateway_url) lists 250 tools to a reader."
+      echo "      PUT the manifest of the stand-in as mcp-confluence, wait until $(gateway_url) lists 253 tools to a reader (250 of the stand-in, 3 real)."
       echo "      Add --confirm to do it."
       exit 0
     fi
