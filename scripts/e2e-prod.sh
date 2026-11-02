@@ -29,6 +29,7 @@ compose() {
   local envs=(--env-file "$root/.env" --env-file "$root/.secrets/dev.env")
   if [ "$(env_value M4_ACTIVE "$root/.env")" = 1 ]; then envs+=(--env-file "$root/m4.env"); fi
   if [ "$(env_value M5_ACTIVE "$root/.env")" = 1 ]; then envs+=(--env-file "$root/m5.env"); fi
+  if [ "$(env_value M6_ACTIVE "$root/.env")" = 1 ]; then envs+=(--env-file "$root/m6.env"); fi
   envs+=(--env-file "$root/e2e-prod.env")
   [ ! -f "$state/secrets.env" ] || envs+=(--env-file "$state/secrets.env")
   docker compose --project-directory "$root" -p "$project" -f "$root/docker-compose.e2e-prod.yml" --profile e2e-prod "${envs[@]}" "$@"
