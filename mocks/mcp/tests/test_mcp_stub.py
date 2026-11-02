@@ -126,6 +126,50 @@ class ManifestTest(unittest.TestCase):
                 self.assertIn("maxLength", prop)
 
 
+class BaseManifestTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+        credential = {"required": True, "acceptedTypes": ["user-secret"]}
+        entry = {"name": "get_page", "risk": "READ_ONLY", "action": "read", "resourceRefs": [{"argument": "pageId", "type": "Confluence::Page"}],
+                 "definition": {"name": "get_page", "title": "Get page", "description": "Real tool.", "annotations": {"readOnlyHint": True},
+                                "inputSchema": {"type": "object", "properties": {"pageId": {"type": "string", "maxLength": 20}},
+                                                "required": ["pageId"], "additionalProperties": False}}}
+        entry["definitionHash"] = mcp_stub.definition_hash(entry["definition"], entry, "confluence", credential)
+        self.base = {"serverId": "mcp-confluence", "version": "0.1.0-SNAPSHOT", "system": "confluence",
+                     "internalUrl": "https://mcp-confluence.internal:8443/mcp", "credential": credential,
+                     "resourceTypes": [{"type": "Confluence::Page", "attributes": ["id"]}], "tools": [entry]}
+        self.path = os.path.join(self.dir, "base.json")
+        with open(self.path, "w") as handle:
+            json.dump(self.base, handle)
+
+    def test_real_tools_stay_unchanged_in_front_of_the_stand_in_tools(self):
+        manifest = mcp_stub.build_manifest(mcp_stub.Settings(base_manifest=self.path, tool_count=3))
+        self.assertEqual(["get_page", "read_item_001", "read_item_002", "read_item_003"], [t["name"] for t in manifest["tools"]])
+        self.assertEqual(self.base["tools"][0], manifest["tools"][0])
+        self.assertEqual("0.1.0-SNAPSHOT", manifest["version"])
+        self.assertEqual(self.base["resourceTypes"], manifest["resourceTypes"])
+
+    def test_the_stand_in_lists_the_definitions_of_its_manifest(self):
+        stub = make_stub(base_manifest=self.path, tool_count=2)
+        _, body = rpc(stub, token(service_claims("mcp-confluence", "j1")), "tools/list")
+        self.assertEqual([t["definition"] for t in stub.manifest["tools"]], body["result"]["tools"])
+
+    def test_a_base_manifest_of_another_server_is_refused(self):
+        self.base["serverId"] = "mcp-jira"
+        with open(self.path, "w") as handle:
+            json.dump(self.base, handle)
+        with self.assertRaises(ValueError):
+            mcp_stub.build_manifest(mcp_stub.Settings(base_manifest=self.path))
+
+    def test_clashing_tool_names_are_refused(self):
+        self.base["tools"][0]["name"] = "read_item_001"
+        with open(self.path, "w") as handle:
+            json.dump(self.base, handle)
+        with self.assertRaises(ValueError):
+            mcp_stub.build_manifest(mcp_stub.Settings(base_manifest=self.path))
+
+
 class ProtocolTest(unittest.TestCase):
     def test_gateway_sequence_initialize_list_call(self):
         stub = make_stub()

@@ -37,6 +37,7 @@ Usługi mają nazwy usług i aliasy `*.internal`.
 | Broker, M5 (dwie instancje) | instancje `https://localhost:18754` i `:18755`; balancer `:18100` (`BROKER_PORT`), status `http://localhost:18751/__lb/status` | `broker-backends.internal` (instancje), `mcp-credential-broker.internal` (balancer) | j.w. |
 | Serwer paczek (D12) | `http://localhost:18756` | `packages.internal` (sieć `ci`) | tylko odczyt; `make m5-artifacts`; [m5.md](m5.md) |
 | Rejestr obrazów (D12) | `localhost:18757` | `registry.internal` (sieć `ci`) | http na loopbacku, bez uwierzytelniania; `make m5-artifacts` |
+| Profil `e2e-prod` (M6; [m6.md](m6.md)) | gateway `http://localhost:18760`, admin C5 mTLS `https://localhost:18761`, admin stand-inu brokera `http://localhost:18762` (`e2e-prod.env`, zarezerwowane 18760-18769) | sieć `mcp-e2e-prod-net` (własna), `idp-front` także w `mcp-dev-core` | tylko po `make e2e-prod-up`; osobny projekt `mcp-e2e-prod` |
 | Callback Claude Code | `http://localhost:33418/callback` | | redirect URI klienta `claude-code` |
 
 ## Keycloak: issuer i backchannel

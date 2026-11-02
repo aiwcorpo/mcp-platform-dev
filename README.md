@@ -41,6 +41,7 @@ make images                                    # obrazy gateway, broker, mcp-jir
 make images-m2 | make up-m2                    # M2: proxy (jedna domena), BFF, web, serwery ws-04; docs/m2.md
 make proxy-test | make mocks-test | make m2    # testy proxy, mocków i scenariusz M2; m2 zmienia stan stosu (patrz docs/m2.md)
 make m3 | make otp USER=alice | make reset-authenticator USER=alice | make registry-refresh   # M3 (docs/m3.md): scenariusz Authenticatora (zmienia stan: kasuje Authenticator alice), kod OTP logowania, reset rejestracji, odswiezenie manifestow
+make start-test | make e2e-prod-test           # compose start po usunięciu zadań init (osobny projekt); XH i lista 250 narzędzi na gatewayu profilu e2e-prod (docs/m6.md)
 make openbao-persist-test                      # trwałość OpenBao (dev) na jednorazowej instancji; `make openbao-migrate` to jednorazowe przełączenie działającego stosu (docs/m5.md)
 make m4 | make m4-test | make openbao-test     # M4 (docs/m4.md): kontrole infrastruktury (czesc po przelaczeniu SKIP), testy jednostkowe offboardingu i rejestru, init OpenBao w izolacji
 make offboard USER=<login> [DRY=1]              # IdP (grupy, wylogowanie), purge brokera i gateway'a (CN mcp-offboarding), powtorzone; odmawia kont wspolnych
@@ -58,6 +59,13 @@ make down | make reset | make clean
 | (bez profilu) | `make up-core` | Keycloak, OpenBao (trwały, wolumen `openbao-data`; `openbao-unseal`; jednorazowy `openbao-init`), Redis, PostgreSQL, mock Jiry |
 | `infra` | `make up` | powyższe + stuby WireMock brokera (C4) i API admina gateway'a (C5) z `mcp-contracts` `MCP_CONTRACTS_REF` |
 | `full` | `make up-full` | infrastruktura + `mcp-gateway`, `mcp-credential-broker`, `mcp-jira` z obrazów z `.env` (`make images` buduje je z commitów repozytoriów obok); stuby są usuwane |
+
+Dwa profile opcjonalne (M6, [docs/m6.md](docs/m6.md)), poza domyślnym stosem i niewłączane przez `make up*`:
+
+| Profil | Polecenie | Co daje |
+| --- | --- | --- |
+| `bulk` | `make bulk-on CONFIRM=1` / `make bulk-off CONFIRM=1` (bez `CONFIRM=1` kontrole i plan) | na czas testu G9 stand-in ze 250 narzędziami w miejsce `mcp-confluence` (na polecenie koordynatora, zmienia stos) |
+| `e2e-prod` | `make e2e-prod-up`, `make e2e-prod-test`, `make e2e-prod-down` | osobny projekt: gateway bez `devstack`, broker i serwer MCP stand-in, dla XH; głównego stosu nie rusza |
 
 `up-core` jest dla strumienia, który uruchamia własny komponent na hoście i nie chce stuba pod tym samym adresem.
 Compose zawsze przez `make` albo `scripts/compose.sh`: skrypt podaje `.env` i `.secrets/dev.env` jako

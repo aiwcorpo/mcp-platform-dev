@@ -511,3 +511,20 @@ Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktó
 - Keycloak: `ssoSessionIdleTimeout` 28800 i `ssoSessionMaxLifespan` 86400 w `keycloak/realm-corp.json` i na żywo (`PUT` dwóch pól, bez restartu; przed 3600/36000, po 28800/86400,
   `accessTokenLifespan` 900). Step-up bez zmian (LoA 2 ma `loa-max-age` 0). `loa-max-age` poziomu 1 podniesiony z 36000 do 86400 (plik i żywy Keycloak, odczyt przed i po; docs/m5.md).
 - Wymaganie wobec IdP produkcyjnego (Entra, D4) w docs/integracja.md; docs/uzytkownicy.md: grupy Service Desk alice i bob wg realmu.
+
+## M6, etap 1 (2026-11-02)
+
+Opis i dowody: [docs/m6.md](docs/m6.md).
+
+- `compose start` i Start w Docker Desktop: zależności od `openbao-init`, `server-state-init` i `registry-data-init` mają `required: false`; `scripts/wait-init.sh` usuwa zakończone kontenery zadań
+  po `make up` (Start ich nie powtarza, OpenBao nie jest ruszany). `make start-test` na własnym projekcie (4 kontrole, krok `start` w `make ci`), kontrola w `check-compose.py`.
+  Na żywym stosie: `docker compose start` całego projektu po usunięciu kontenerów zadań kończy się kodem 0 (same ostrzeżenia). Pełny Stop i Start stosu nie wykonany.
+- `make smoke`: tryb stubów albo prawdziwego brokera i gatewaya, w prawdziwym nic nie zapisuje; 90 PASS na stosie M5.
+- Izolacja CI: `environment: ci-main` na zadaniu z gniazdem (Environment ma być ograniczony do `main` w ustawieniach repozytorium, krok człowieka), tag `docker-socket` tylko na runnerze chronionym,
+  etykiety `ci-style` i `docker` w Jenkinsfile, runner lokalny bez uprawnień (`--cap-drop ALL`).
+- G9: `mcp-bulk` jako osobny system wymaga zmiany kontraktu (SystemId, ServerId, `SYSTEMS` w gatewayu), więc stand-in ze 250 narzędziami (`mocks/mcp`, 29 testów, w tym 59 wektorów JWT i wektory
+  `definition-hash` z mcp-contracts) przejmuje tożsamość `mcp-confluence`; `make bulk-on|bulk-off` (CONFIRM=1), niewykonane na głównym stosie.
+- XH: profil `e2e-prod` (osobny projekt `mcp-e2e-prod`): gateway bez `devstack`, broker i serwer MCP stand-in, `scripts/e2e-prod.sh`, `make e2e-prod-test` 10 PASS (CC-166, `environment_mismatch`,
+  trzymany manifest, klucze `dev-`, lista 253 narzędzi w 3 stronach).
+- Usunięty `m4-bao-test-35500-server` (kontener `-dev` w pamięci, bez wolumenów, pozostałość po przerwanym `openbao-init-test.sh`) i jego sieć.
+- Pytania: czy CC "system bulk" (docs/m6.md, punkt 4) czy zostajemy przy tożsamości `mcp-confluence`; ustawienie Environment `ci-main` i runnera chronionego w platformie CI.

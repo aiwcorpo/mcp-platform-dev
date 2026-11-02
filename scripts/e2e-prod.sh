@@ -9,8 +9,10 @@
 #   scripts/e2e-prod.sh status              containers of the project and the addresses a test needs (JSON on stdout with `info`)
 #   scripts/e2e-prod.sh info                addresses and file names as JSON
 #   scripts/e2e-prod.sh broker-type [TYPE]  show or set the credential type the broker stand-in returns (any string up to 64 characters)
-#   scripts/e2e-prod.sh manifest [dev|production|none]   manifest of the server stand-in with that environment field, on stdout
+#   scripts/e2e-prod.sh manifest [dev|production|none]   manifest of the mcp-jira stand-in with that environment field, on stdout
 #   scripts/e2e-prod.sh register [dev|production|none]   PUT of that manifest to the gateway (CN mcp-registry-ci-mcp-jira); prints HTTP status and body
+#   scripts/e2e-prod.sh register-bulk [environment]      the same for the stand-in with 250 tools under mcp-confluence (G9 without the main stack)
+#   scripts/e2e-prod.sh held-manifest       edit the stored manifest of mcp-jira so it fails the checks at start, restart the gateway, check the log
 #   scripts/e2e-prod.sh devkey-probe        start a gateway in production mode with dev- keys; PASS when it refuses to start
 #   scripts/e2e-prod.sh restart-gateway     restart the gateway container (for a stored manifest that must be checked at start)
 #   scripts/e2e-prod.sh logs [SERVICE]      logs of the project (default: the gateway)
@@ -90,19 +92,48 @@ prepare() {
   prepare_trust
 }
 
+# Restarts the gateway and returns once the new process has started (a health status from before the restart proves nothing).
+restart_gateway() {
+  started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  compose restart gateway >/dev/null
+  for _ in $(seq 60); do
+    # Into a variable first: under pipefail a grep that stops early would fail the pipeline.
+    log="$(compose logs --no-color --since "$started" gateway 2>&1)"
+    if grep -q 'Started GatewayApplication' <<<"$log"; then break; fi
+    sleep 2
+  done
+  for _ in $(seq 30); do
+    [ "$(docker inspect -f '{{.State.Health.Status}}' "$project-gateway-1")" = healthy ] && return 0
+    sleep 2
+  done
+  echo "e2e-prod: the gateway did not become healthy after the restart" >&2
+  return 1
+}
+
 admin_token() { env_value E2E_PROD_ADMIN_TOKEN "$state/secrets.env"; }
 
-stub_environment() { # dev|production|none -> manifest of the server stand-in with that environment field
-  python3 -I - "$root" "${1:-none}" <<'PY'
+stub_manifest() { # jira|confluence dev|production|none -> manifest of that stand-in with that environment field
+  python3 -I - "$root" "$1" "${2:-none}" <<'PY'
 import os, sys
-root, environment = sys.argv[1:3]
+root, which, environment = sys.argv[1:4]
 sys.path.insert(0, f"{root}/mocks/mcp")
-os.environ.update({"MCP_STUB_SERVER_ID": "mcp-jira", "MCP_STUB_SYSTEM": "jira", "MCP_STUB_TOOLSET": "xh",
-                   "MCP_STUB_INTERNAL_URL": "https://mcp-jira.internal:8443/mcp", "MCP_STUB_CREDENTIAL_REQUIRED": "true",
-                   "MCP_STUB_CREDENTIAL_TYPES": "user-secret"})
+if which == "jira":
+    os.environ.update({"MCP_STUB_SERVER_ID": "mcp-jira", "MCP_STUB_SYSTEM": "jira", "MCP_STUB_TOOLSET": "xh",
+                       "MCP_STUB_INTERNAL_URL": "https://mcp-jira.internal:8443/mcp"})
+os.environ.update({"MCP_STUB_CREDENTIAL_REQUIRED": "true", "MCP_STUB_CREDENTIAL_TYPES": "user-secret"})
+if which == "confluence":
+    os.environ["MCP_STUB_BASE_MANIFEST"] = f"{root}/../mcp-server-confluence/mcp-app/target/mcp-manifest.json"
 import mcp_stub
 sys.exit(mcp_stub.main(["manifest", "--environment", environment]))
 PY
+}
+
+register_stub() { # jira|confluence environment
+  local manifest
+  manifest="$(mktemp)"
+  stub_manifest "$1" "${2:-none}" > "$manifest"
+  GATEWAY_ADMIN_URL="https://localhost:$(port E2E_PROD_GATEWAY_INTERNAL_PORT)" python3 -I "$root/scripts/mcpdev.py" registry-put "mcp-$1" "$manifest"
+  rm -f "$manifest"
 }
 
 cmd_info() {
@@ -117,7 +148,7 @@ print(json.dumps({
     "brokerAdminUrl": f"http://localhost:{broker}",
     "brokerAdminTokenFile": f"{state}/secrets.env (E2E_PROD_ADMIN_TOKEN)",
     "containers": {"gateway": "mcp-e2e-prod-gateway-1", "postgres": "mcp-e2e-prod-postgres-1", "redis": "mcp-e2e-prod-redis-1",
-                   "broker": "mcp-e2e-prod-broker-1", "server": "mcp-e2e-prod-mcp-jira-1"},
+                   "broker": "mcp-e2e-prod-broker-1", "server": "mcp-e2e-prod-mcp-jira-1", "bulkServer": "mcp-e2e-prod-mcp-confluence-1"},
     "registryClientCertificate": "certs/mcp-registry-ci-mcp-jira",
     "tokenIssuer": "the stack's Keycloak (realm corp), tokens for aud mcp-gateway as for the main gateway",
 }, indent=2))
@@ -156,13 +187,28 @@ case "${1:-}" in
     echo
     ;;
   manifest)
-    stub_environment "${2:-none}"
+    stub_manifest jira "${2:-none}"
     ;;
   register)
-    manifest="$(mktemp)"
-    trap 'rm -f "$manifest"' EXIT
-    stub_environment "${2:-none}" > "$manifest"
-    GATEWAY_ADMIN_URL="https://localhost:$(port E2E_PROD_GATEWAY_INTERNAL_PORT)" python3 -I "$root/scripts/mcpdev.py" registry-put mcp-jira "$manifest"
+    register_stub jira "${2:-none}"
+    ;;
+  register-bulk)
+    register_stub confluence "${2:-none}"
+    ;;
+  held-manifest)
+    # A manifest accepted earlier that the gateway no longer accepts at its start (here: stored with environment dev, the gateway runs
+    # in production mode): the server is disabled and says why in the log. Prepared by editing the stored row, as a stale row would be.
+    register_stub jira none >/dev/null
+    compose exec -T postgres psql -U gateway -d gateway -v ON_ERROR_STOP=1 -tAc \
+      "update registry_servers set manifest = jsonb_set(manifest, '{environment}', '\"dev\"') where server_id = 'mcp-jira'" >/dev/null
+    restart_gateway
+    log="$(compose logs --no-color --since "$started" gateway 2>&1)"
+    if grep -q 'held manifest of mcp-jira is no longer acceptable, the server is disabled: environment_mismatch' <<<"$log"; then
+      echo "PASS stored manifest with environment dev: the gateway disables mcp-jira at start (environment_mismatch)"
+    else
+      echo "FAIL the gateway did not report the held manifest"
+      exit 1
+    fi
     ;;
   devkey-probe)
     prepare
@@ -181,7 +227,7 @@ case "${1:-}" in
       set -e
       if [ "$status" -ne 0 ] && grep -qiE "$pattern" "$log"; then
         echo "PASS $label: the gateway refuses to start (exit $status)"
-        grep -iE "$pattern" "$log" | grep -v '^[[:space:]]*at ' | head -2 | cut -c1-220
+        grep -oiE ".{0,60}($pattern).{0,60}" "$log" | head -1
       else
         echo "FAIL $label: exit $status"
         grep -v '^[[:space:]]*at ' "$log" | tail -6 | cut -c1-220
@@ -196,7 +242,7 @@ case "${1:-}" in
     exit "$failed"
     ;;
   restart-gateway)
-    compose restart gateway
+    restart_gateway
     ;;
   logs)
     compose logs --no-color --tail 200 "${2:-gateway}"

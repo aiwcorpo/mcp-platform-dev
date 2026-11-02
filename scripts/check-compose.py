@@ -122,6 +122,54 @@ def check_m5(base, m5):
     record(services["redis"]["image"] == base["services"]["redis"]["image"] and "redis-2" not in services, "m5: one shared Redis")
 
 
+def render_file(args, extra_env, label):
+    env = {**os.environ, **extra_env}
+    out = subprocess.run(args, capture_output=True, text=True, env=env, cwd=ROOT)
+    if out.returncode != 0:
+        record(False, f"{label} renders", out.stderr.strip()[-300:])
+        return None
+    record(True, f"{label} renders")
+    return json.loads(out.stdout)
+
+
+def check_e2e_prod():
+    names = ("E2E_PROD_DB_PASSWORD", "E2E_PROD_REDIS_PASSWORD", "E2E_PROD_ADMIN_TOKEN", "E2E_PROD_ACTIVITY_CURSOR_KEY", "E2E_PROD_LIST_CURSOR_KEY")
+    config = render_file(["docker", "compose", "--project-directory", str(ROOT), "-p", "mcp-e2e-prod", "-f", "docker-compose.e2e-prod.yml",
+                          "--profile", "e2e-prod", "--env-file", ".env", "--env-file", "e2e-prod.env", "config", "--format", "json"],
+                         {**{name: "x" * 32 for name in names}, "TLS_STORE_PASSWORD": "x", "MCP_GATEWAY_IMAGE": "mcp-gateway:check"}, "e2e-prod")
+    if not config:
+        return
+    gateway = config["services"]["gateway"]
+    env = gateway["environment"]
+    record("SPRING_PROFILES_ACTIVE" not in env and not any("DEVSTACK" in k for k in env), "e2e-prod: the gateway has no devstack profile and no acknowledgement")
+    record(not any(k.startswith("MCP_") and k.endswith(("ALLOW_TEST_KEYS", "ALLOW_PLAIN_HTTP", "REGISTRY_BOOTSTRAP")) for k in env),
+           "e2e-prod: none of the devstack relaxations is set on the gateway")
+    record(env["MCP_REDIS_WAIT_REPLICAS"] == "1" and env["MCP_POLICY_MAIN_KEY_ID"].startswith("e2e-prod-"), "e2e-prod: Redis WAIT on a replica and a bundle key that is neither dev- nor test-")
+    ports = published(config)
+    record(all(host == "127.0.0.1" and 18760 <= port <= 18769 for host, port in ports), "e2e-prod: every published port is on 127.0.0.1 in 18760-18769", str(sorted(ports)))
+    record(set(config["networks"]) == {"e2e", "core"} and config["networks"]["core"].get("external"), "e2e-prod: its own network plus the external mcp-dev-core")
+    others = [n for n, svc in config["services"].items() if any(".secrets" in str(v.get("source", "")) for v in svc.get("volumes", []))]
+    record(not others, "e2e-prod: no service mounts .secrets", str(others))
+    on_core = [n for n, svc in config["services"].items() if "core" in (svc.get("networks") or {})]
+    record(on_core == ["idp-front"], "e2e-prod: only the key-set front joins the core network", str(on_core))
+
+
+def check_bulk(m5):
+    config = render_file([str(ROOT / "scripts" / "compose.sh"), "-f", "docker-compose.bulk.yml", "--profile", "full", "--profile", "m2", "--profile", "ci", "--profile", "bulk", "config", "--format", "json"],
+                         {"M4_ACTIVE": "1", "M5_ACTIVE": "1"}, "bulk overlay")
+    if not config:
+        return
+    stand_in = config["services"]["mcp-bulk"]
+    record(stand_in["networks"].get("servers", {}).get("aliases") == ["mcp-confluence.internal"] and list(stand_in["networks"]) == ["servers"],
+           "bulk: the stand-in answers to mcp-confluence.internal and is only in the servers network")
+    record(not stand_in.get("ports") and stand_in.get("read_only") and stand_in.get("user") == "65534:65534", "bulk: no published port, read-only root, runs as nobody")
+    record(set(stand_in["environment"]) == {"MCP_STUB_TOOLSET", "MCP_STUB_TOOL_COUNT", "MCP_STUB_BASE_MANIFEST", "MCP_STUB_CERT", "MCP_STUB_KEY", "MCP_STUB_CA",
+                                            "MCP_GATEWAY_JWKS_URI", "MCP_GATEWAY_ISSUER"}, "bulk: the stand-in gets no stack secrets")
+    if m5:
+        record(set(config["services"]) == set(m5["services"]) | {"mcp-bulk"}, "bulk: the overlay adds mcp-bulk and nothing else to the M5 stack")
+        record(config["services"]["mcp-confluence"] == m5["services"]["mcp-confluence"], "bulk: the real mcp-confluence is not changed by the overlay")
+
+
 def main():
     base = render(False, False)
     m4 = render(True, False)
@@ -133,6 +181,8 @@ def main():
             check_one_shot_jobs(config, label)
     if m4 and m5:
         check_m5(m4, m5)
+    check_e2e_prod()
+    check_bulk(m5)
     for ok, name, detail in RESULTS:
         print(f"{'PASS' if ok else 'FAIL':4} {name}" + (f"  [{detail}]" if not ok and detail else ""))
     failed = sum(1 for ok, _, _ in RESULTS if not ok)

@@ -18,7 +18,7 @@ COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira $(if $(filter 1,$(M5_AC
         smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test trust-ca mocks-test m2 mock-auth \
         m3 otp reset-authenticator registry-refresh admin-password m3-switch \
         m4 m4-test m4-switch offboard registry-register openbao-test \
-        m5-switch m5-rollback m5-artifacts ci ci-local lb-test rollback-test compose-check start-test mock-fault c2-keys openbao-init openbao-renew openbao-persist-test openbao-migrate openbao-guard
+        m5-switch m5-rollback m5-artifacts ci ci-local lb-test rollback-test compose-check start-test mock-fault c2-keys openbao-init openbao-renew openbao-persist-test openbao-migrate openbao-guard bulk-on bulk-off bulk-status e2e-prod-up e2e-prod-down e2e-prod-test
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -214,6 +214,24 @@ compose-check: ## rendered compose configuration of the M3, M4 and M5 layers (no
 
 start-test: ## compose start after the one-shot job container is gone (own throw-away project, does not touch the stack, about 40 s)
 	@./scripts/start-test.sh
+
+bulk-status: ## profile bulk: is the stand-in with 250 tools in place of mcp-confluence (nothing is changed)
+	@./scripts/bulk.sh status
+
+bulk-on: ## profile bulk for scenario G9: replace mcp-confluence by a stand-in with 250 tools; without CONFIRM=1 only the checks and the plan; only on the order of the coordinator
+	@./scripts/bulk.sh on $(if $(filter 1,$(CONFIRM)),--confirm)
+
+bulk-off: ## profile bulk: the way back, the real mcp-confluence and its manifest return; CONFIRM=1 does it
+	@./scripts/bulk.sh off $(if $(filter 1,$(CONFIRM)),--confirm)
+
+e2e-prod-up: ## profile e2e-prod: own project with a gateway outside devstack, broker and server stand-ins (scenario XH); touches nothing of the main stack
+	@./scripts/e2e-prod.sh up
+
+e2e-prod-down: ## profile e2e-prod: stop it and drop its volumes (keys are kept)
+	@./scripts/e2e-prod.sh down
+
+e2e-prod-test: ## profile e2e-prod: the four cases of XH and the list of 250 tools against its gateway (starts the project when it is down)
+	@python3 -I scripts/e2e-prod-check.py
 
 mock-fault: ## latency and 429 of a system mock: make mock-fault ARGS="set gitlab latencyMs=200 rateLimitPerSecond=20" (show / clear <system>|all)
 	@$(PY) scripts/mock-fault.py $(ARGS)

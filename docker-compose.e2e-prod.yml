@@ -167,6 +167,40 @@ services:
       timeout: 3s
       retries: 20
 
+  # Stand-in with 250 tools under the identity of mcp-confluence: a list longer than one page (100) for scenario G9 without touching the
+  # main stack (profile bulk does the same there). Its manifest is registered with scripts/e2e-prod.sh register-bulk.
+  mcp-confluence:
+    <<: *python
+    command: ["python3", "/app/mcp_stub.py", "serve"]
+    environment:
+      MCP_STUB_TOOLSET: bulk
+      MCP_STUB_TOOL_COUNT: "250"
+      MCP_STUB_BASE_MANIFEST: /base/mcp-manifest.json
+      MCP_STUB_CERT: /certs/tls.crt
+      MCP_STUB_KEY: /certs/tls.key
+      MCP_STUB_CA: /certs/ca.crt
+      MCP_GATEWAY_JWKS_URI: https://mcp-gateway.internal:8443/.well-known/jwks.json
+      MCP_GATEWAY_ISSUER: https://mcp-gateway.internal
+    volumes:
+      - ./mocks/mcp:/app:ro
+      - ./certs/mcp-bulk/tls.crt:/certs/tls.crt:ro
+      - ./certs/mcp-bulk/tls.key:/certs/tls.key:ro
+      - ./certs/ca/ca.crt:/certs/ca.crt:ro
+      # The build artifact of the real server: its four tools stay in the manifest, unchanged, next to the 250 of the stand-in.
+      - type: bind
+        source: ../mcp-server-confluence/mcp-app/target/mcp-manifest.json
+        target: /base/mcp-manifest.json
+        read_only: true
+        bind: {create_host_path: false}
+    networks:
+      e2e:
+        aliases: [mcp-confluence.internal]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 8443), 2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
   gateway:
     profiles: [e2e-prod]
     image: ${MCP_GATEWAY_IMAGE:?image of the gateway}
@@ -200,7 +234,7 @@ services:
       MCP_POLICY_MAIN_KEY_FILE: /keys/e2e-prod-main.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       MCP_SERVER_JIRA_MCP_URL: https://mcp-jira.internal:8443/mcp
-      MCP_SERVER_CONFLUENCE_ENABLED: "false"
+      MCP_SERVER_CONFLUENCE_MCP_URL: https://mcp-confluence.internal:8443/mcp
       MCP_SERVER_GITLAB_ENABLED: "false"
       MCP_SERVER_SERVICEDESK_ENABLED: "false"
       MCP_SERVER_OPENSEARCH_ENABLED: "false"
@@ -225,6 +259,7 @@ services:
       idp-front: {condition: service_healthy}
       broker: {condition: service_healthy}
       mcp-jira: {condition: service_healthy}
+      mcp-confluence: {condition: service_healthy}
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /.well-known/oauth-protected-resource HTTP/1.0\\r\\n\\r\\n' >&3 && head -c 5 <&3 | grep -q HTTP"]
       interval: 3s

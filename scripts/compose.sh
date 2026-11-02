@@ -18,6 +18,17 @@ fi
 base=(docker compose --project-directory "$root" -f "$root/docker-compose.yml" ${files[@]+"${files[@]}"} \
   --env-file "$root/.env" --env-file "$root/.secrets/dev.env" ${envs[@]+"${envs[@]}"})
 
+# Refuses an `up` while the stand-in of profile bulk exists: the real mcp-confluence would start next to it under the same address.
+# scripts/bulk.sh sets BULK_SWITCH=1 for its own calls.
+project_name="$(grep -s '^COMPOSE_PROJECT_NAME=' "$root/.env" | cut -d= -f2- || true)"
+for arg in "$@"; do
+  if [ "$arg" = up ] && [ "${BULK_SWITCH:-0}" != 1 ] && docker inspect "${project_name:-mcp-dev}-mcp-bulk-1" >/dev/null 2>&1; then
+    echo "compose.sh: REFUSED. The stand-in of profile bulk replaces mcp-confluence; an up would start the real one next to it." >&2
+    echo "compose.sh: finish the test first: scripts/bulk.sh off --confirm (make bulk-off CONFIRM=1)." >&2
+    exit 4
+  fi
+done
+
 # Refuses an `up` that would replace a running in-memory (-dev) OpenBao and so delete its secrets (scripts/openbao-guard.sh).
 for arg in "$@"; do
   if [ "$arg" = up ]; then "$root/scripts/openbao-guard.sh" "$@"; break; fi

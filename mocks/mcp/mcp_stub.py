@@ -102,6 +102,7 @@ class Settings:
     issuer: str = "https://mcp-gateway.internal"
     allow_test_keys: bool = False
     devstack: bool = False
+    base_manifest: str = ""
 
     @classmethod
     def from_environment(cls, env=os.environ):
@@ -120,7 +121,7 @@ class Settings:
             cert=env.get("MCP_STUB_CERT", cls.cert), key=env.get("MCP_STUB_KEY", cls.key), ca=env.get("MCP_STUB_CA", cls.ca),
             client_cns=listed("MCP_STUB_CLIENT_CNS", "mcp-gateway"), jwks_uri=env.get("MCP_GATEWAY_JWKS_URI", cls.jwks_uri),
             issuer=env.get("MCP_GATEWAY_ISSUER", cls.issuer), allow_test_keys=flag("MCP_STUB_ALLOW_TEST_KEYS"),
-            devstack=flag("MCP_STUB_DEVSTACK"))
+            devstack=flag("MCP_STUB_DEVSTACK"), base_manifest=env.get("MCP_STUB_BASE_MANIFEST", ""))
         settings.validate()
         return settings
 
@@ -140,13 +141,30 @@ class Settings:
 
 
 def build_manifest(settings, environment=None):
-    """The manifest of C6. `environment` overrides the setting (None keeps it, "none" omits the field)."""
+    """The manifest of C6. `environment` overrides the setting (None keeps it, "none" omits the field).
+
+    With a base manifest (MCP_STUB_BASE_MANIFEST, the build artifact of the real server) the stand-in IS that server plus its own tools:
+    version, credential, resource types and the entries of the real tools are taken over unchanged, hashes included, so that a registry
+    that approved them keeps its approvals while the stand-in runs and when the real manifest is registered again."""
     credential = {"required": settings.credential_required, "acceptedTypes": list(settings.credential_types)}
-    tools = TOOLSETS[settings.toolset](settings)
-    for tool in tools:
+    own = TOOLSETS[settings.toolset](settings)
+    for tool in own:
         tool["definitionHash"] = definition_hash(tool["definition"], tool, settings.system, credential)
-    manifest = {"serverId": settings.server_id, "version": settings.version, "system": settings.system,
-                "internalUrl": settings.internal_url, "credential": credential, "resourceTypes": [], "tools": tools}
+    base = {}
+    if settings.base_manifest:
+        with open(settings.base_manifest) as handle:
+            base = json.load(handle)
+        for field, wanted in (("serverId", settings.server_id), ("system", settings.system), ("internalUrl", settings.internal_url)):
+            if base.get(field) != wanted:
+                raise ValueError(f"the base manifest has {field} {base.get(field)!r}, the stand-in {wanted!r}")
+        credential = base["credential"]
+        clash = {t["name"] for t in base["tools"]} & {t["name"] for t in own}
+        if clash:
+            raise ValueError(f"tool names of the stand-in clash with the base manifest: {sorted(clash)[:3]}")
+        own = base["tools"] + own
+    manifest = {"serverId": settings.server_id, "version": base.get("version", settings.version), "system": settings.system,
+                "internalUrl": settings.internal_url, "credential": credential, "resourceTypes": base.get("resourceTypes", []),
+                "tools": own}
     chosen = settings.environment if environment is None else ("" if environment == "none" else environment)
     if chosen:
         manifest["environment"] = chosen
