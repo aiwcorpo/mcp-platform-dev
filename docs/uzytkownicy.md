@@ -7,14 +7,19 @@ trwałe, więc realm zawsze odpowiada plikowi). Hasła są w `.secrets/dev.env`,
 
 | Login | Grupy (C9) | Do czego |
 | --- | --- | --- |
-| `alice` | `mcp-jira-read`, `mcp-jira-write`, `mcp-jira-destructive`, `mcp-jira-proj-ABC`, `mcp-confluence-read`, `mcp-confluence-space-ENG`, `mcp-gitlab-read`, `mcp-gitlab-write`, `mcp-gitlab-grp-team-a`, `mcp-opensearch-read`, `mcp-opensearch-idx-logs-team-a`, `mcp-client-claude-code` | główna ścieżka demo |
-| `bob` | `mcp-jira-read`, `mcp-jira-proj-ABC`, `mcp-opensearch-read`, `mcp-opensearch-idx-logs-team-a`, `mcp-client-claude-code` | tylko odczyt |
+| `alice` | `mcp-jira-read`, `mcp-jira-write`, `mcp-jira-destructive`, `mcp-jira-proj-ABC`, `mcp-confluence-read`, `mcp-confluence-space-ENG`, `mcp-gitlab-read`, `mcp-gitlab-write`, `mcp-gitlab-grp-team-a`, `mcp-opensearch-read`, `mcp-opensearch-idx-logs-team-a`, `mcp-servicedesk-read`, `mcp-servicedesk-write`, `mcp-servicedesk-queue-IT`, `mcp-client-claude-code` | główna ścieżka demo |
+| `bob` | `mcp-jira-read`, `mcp-jira-proj-ABC`, `mcp-opensearch-read`, `mcp-opensearch-idx-logs-team-a`, `mcp-servicedesk-read`, `mcp-servicedesk-queue-FIN`, `mcp-client-claude-code` | tylko odczyt |
 | `carol` | `mcp-platform-admin`, `mcp-client-claude-code` | admin platformy |
 | `mallory` | brak | brak uprawnień |
 
 Adresy e-mail `<login>@corp.test`. Grupy bez użytkowników, przygotowane do testów zakresów:
-`mcp-jira-proj-DEF`, `mcp-jira-proj-HR`, `mcp-confluence-write`,
-`mcp-servicedesk-read`, `mcp-servicedesk-write`, `mcp-servicedesk-queue-IT`, `mcp-opensearch-idx-logs-team-b`.
+`mcp-jira-proj-DEF`, `mcp-jira-proj-HR`, `mcp-confluence-write`, `mcp-opensearch-idx-logs-team-b`.
+
+Czasy sesji realmu: token dostępu 15 min (`accessTokenLifespan` 900), sesja SSO wygasa po 8 h bezczynności
+(`ssoSessionIdleTimeout` 28800) i najpóźniej po 24 h od logowania (`ssoSessionMaxLifespan` 86400). Wcześniej było
+1 h i 10 h, więc przerwa w ciągu dnia wymuszała ponowne logowanie. Step-up (poziom `mfa`, kod OTP) nie zależy od tych
+wartości: poziom 2 ma `loa-max-age` 0, a BFF wysyła `max_age=0`, więc każdy step-up pyta o hasło i OTP od nowa.
+Poziom 1 (samo hasło) ma `loa-max-age` 36000 (10 h), czyli krócej niż nowe 24 h: patrz `docs/m5.md`, sekcja o sesjach.
 
 Claim `groups` zawiera nazwy bez ścieżki (`mcp-jira-read`, nie `/mcp-jira-read`): mapper
 `oidc-group-membership-mapper` z `full.path=false` (CC-007) w client scope `groups`.
