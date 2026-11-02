@@ -64,6 +64,7 @@ volumes:
   postgres-data:
   gateway-state:
   redis-data:
+  openbao-data:
   mcp-opensearch-state:
   mcp-servicedesk-state:
   mcp-gitlab-state:
@@ -123,14 +124,19 @@ services:
       retries: 40
       start_period: 10s
 
+  # DEV ONLY. Raft on the named volume openbao-data (openbao/server.hcl): secrets, Transit keys and TOTP seeds survive Stop/Start and
+  # container recreate; `make clean`, `make reset` and `docker compose down -v` delete the volume. The server starts sealed;
+  # openbao-unseal below initialises it once and unseals it after every start. Liveness only: exit 2 of `bao status` is "sealed".
   openbao:
     image: openbao/openbao:2.7.2@sha256:5046911075e137e154ce49ab051502f4ec7cf367d484ae4a4dce665d9b90561f
-    command: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200", "-config=/openbao/audit.hcl"]
+    command: ["server", "-config=/openbao/server.hcl", "-config=/openbao/audit.hcl"]
     cap_add: [IPC_LOCK]
+    restart: unless-stopped
     environment:
       BAO_ADDR: http://127.0.0.1:8200
-      BAO_DEV_ROOT_TOKEN_ID: ${BAO_ROOT_TOKEN:?run make secrets}
     volumes:
+      - openbao-data:/openbao/file
+      - ./openbao/server.hcl:/openbao/server.hcl:ro
       - ./openbao/audit.hcl:/openbao/audit.hcl:ro
     ports:
       - 127.0.0.1:${OPENBAO_PORT}:8200
@@ -138,10 +144,36 @@ services:
       core:
         aliases: [openbao.internal]
     healthcheck:
-      test: ["CMD", "bao", "status"]
+      test: ["CMD-SHELL", "bao status >/dev/null 2>&1; [ $$? -ne 1 ]"]
       interval: 3s
       timeout: 3s
       retries: 20
+
+  # DEV ONLY. Initialises (once) and unseals OpenBao, and again after every restart of it; unseal key and the generated root
+  # token go to ./.secrets/openbao (mode 600, never to a log). Runs as root so it can write the bind mount; on macOS Docker
+  # Desktop the files belong to the host user. Healthy = OpenBao unsealed and the stack token (BAO_ROOT_TOKEN) valid, which is
+  # what openbao-init waits for.
+  openbao-unseal:
+    image: openbao/openbao:2.7.2@sha256:5046911075e137e154ce49ab051502f4ec7cf367d484ae4a4dce665d9b90561f
+    entrypoint: ["/bin/sh", "/unseal.sh"]
+    user: "0:0"
+    restart: unless-stopped
+    environment:
+      BAO_ADDR: http://openbao:8200
+      BAO_ROOT_TOKEN: ${BAO_ROOT_TOKEN:?run make secrets}
+    volumes:
+      - ./openbao/unseal.sh:/unseal.sh:ro
+      - ./.secrets/openbao:/keys
+    networks: [core]
+    depends_on:
+      openbao:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "BAO_TOKEN=\"$$BAO_ROOT_TOKEN\" bao token lookup >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
 
   # Named volumes are created root-owned; the server images run as uid 999 and keep the accepted policy revision
   # in /app/state (rollback protection), so the volumes are handed over once.
@@ -167,6 +199,7 @@ services:
       BAO_BROKER_ROLE_ID: ${BAO_BROKER_ROLE_ID:?run make secrets}
       BAO_BROKER_SECRET_ID: ${BAO_BROKER_SECRET_ID:?run make secrets}
       BAO_RENEW_SECRET_ID: ${BAO_RENEW_SECRET_ID:-0}
+      BAO_SECRET_ID_TTL: ${BAO_SECRET_ID_TTL:-168h}
       GITLAB_OAUTH_CLIENT_SECRET: ${GITLAB_OAUTH_CLIENT_SECRET:?run make secrets}
       SERVICEDESK_API_KEY: ${SERVICEDESK_API_KEY:?run make secrets}
       KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET: ${KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET:?run make secrets}
@@ -174,7 +207,7 @@ services:
       - ./openbao/init.sh:/init.sh:ro
     networks: [core]
     depends_on:
-      openbao:
+      openbao-unseal:
         condition: service_healthy
     restart: "no"
 

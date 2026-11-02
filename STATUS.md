@@ -12,7 +12,7 @@ przy pobranych obrazach.
 | Produkt | Stan |
 | --- | --- |
 | Keycloak 26.8.1, realm `corp` | klienci `claude-code` (public, PKCE S256 wymuszone, bez ROPC, `aud=mcp-gateway`), `mcp-gateway`, `mcp-portal-bff`, `mcp-credential-broker`, `mcp-gateway-admin`, `opensearch`; standardowy token exchange w łańcuchu z C4 (gateway -> broker, BFF -> broker/admin, broker -> opensearch); mapper `groups` z `full.path=false`; jawna polityka DCR "Trusted Hosts" bez hostów; użytkownicy `alice`, `bob`, `carol`, `mallory` z grupami C9 |
-| OpenBao 2.7.2 (dev) | KV v2 `secret/`, Transit z kluczem `mcp-credential-broker`, AppRole brokera (polityka tylko na swoje ścieżki, `secret_id` 7 dni), audyt deklaratywny na stdout |
+| OpenBao 2.7.2 (dev; od 2026-11-02 raft na wolumenie `openbao-data` z `openbao-unseal`, docs/m5.md) | KV v2 `secret/`, Transit z kluczem `mcp-credential-broker`, AppRole brokera (polityka tylko na swoje ścieżki, `secret_id` 7 dni), audyt deklaratywny na stdout |
 | Redis 8.8.4 | ACL per komponent (`gateway`, `broker`, `mcp-<system>`, `admin`), `default` wyłączony, jawna lista komend (bez `SCAN`/`KEYS`/`EVAL`), prefiksy kluczy i kanał `credential.invalidated` wg `docs/integracja.md` |
 | PostgreSQL 18.6 | bazy `gateway` i `broker`, osobni użytkownicy, brak dostępu krzyżowego |
 | Mock Jiry (WireMock 3.13.2) | `/rest/api/2/myself` (C4.1) dla `<login>-pat`, inny PAT = inny użytkownik; dane tylko dla znanych PAT (token z IdP, cudzy PAT -> 401); projekty `ABC`, `DEF`, `HR` (`Restricted`), linki między projektami, zgłoszenie przeniesione; `make jira-auth` pokazuje, jakie poświadczenie dotarło; admin API z Basic auth, proxy zablokowane |
@@ -49,7 +49,7 @@ DoD briefu, punkty dotyczące M1:
 | M6 niespójna wersja kontraktów | `MCP_CONTRACTS_REF` w `.env`, README i STATUS opisują ref |
 | L1 EKU i weryfikacja nazwy | EKU per rola, `localhost` tylko w certyfikatach serwerowych; `put_secret` weryfikuje `MCP_BROKER_TLS_NAME` (decyzja CC-035) |
 | L2 niejawna blokada DCR | polityki rejestracji klientów zadeklarowane w realmie, "Trusted Hosts" z pustą listą |
-| L3 sekrety w argv | Redis: plik ACL z env; OpenBao: `BAO_DEV_ROOT_TOKEN_ID` i `secret_id=-` przez stdin; smoke: wszystko przez stdin; `make pat`: `SECRET` przez eksportowaną zmienną |
+| L3 sekrety w argv | Redis: plik ACL z env; OpenBao: token stosu z env (po 2026-11-02 tworzony przez `openbao-unseal`) i `secret_id=-` przez stdin; smoke: wszystko przez stdin; `make pat`: `SECRET` przez eksportowaną zmienną |
 | L4 WireMock admin i dziennik | stuby `--no-request-journal`; dziennik mocka Jiry świadomie otwarty (opis w compose i docs) |
 | L5 `|| true`, `secret_id_ttl=0`, brak audytu | idempotencja przez `secret-id/lookup`, `secret_id_ttl=168h`, audyt deklaratywny (`openbao/audit.hcl`); brak `token_bound_cidrs` uzasadniony w `init.sh` |
 | L6 płaska sieć | sieci `core` i `servers`; smoke sprawdza widoczność z `servers`; profil `full` renderuje się |
@@ -492,3 +492,19 @@ Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktó
 - (rozstrzygniete w M3) `acr` MFA to `mfa`, bez MFA `password`.
 - Stub `resolve` zwraca ten sam PAT (`jkowalski`) dla każdego użytkownika; demo M1 z tożsamością `alice`
   w Jirze wymaga prawdziwego brokera.
+
+## M5: trwały OpenBao i czasy sesji (2026-11-02)
+
+- OpenBao w dev przestał być `-dev`: raft jednowęzłowy (`file` nie istnieje w 2.7.2) na wolumenie `openbao-data`, `openbao/server.hcl`; usługa `openbao-unseal`
+  (`openbao/unseal.sh`) robi init raz i odpieczętowuje po każdym starcie, klucz i root token w `.secrets/openbao` (700/600, poza logami), `restart: unless-stopped`.
+  Token stosu `BAO_ROOT_TOKEN` zostaje (tworzony przez sidecar jako token `root` o tym id). Opis, granica (Stop bezpieczny; `make clean`/`reset`/`down -v` kasują) i
+  skutki dla `secret_id`: docs/m5.md.
+- `openbao/init.sh`: czeka na odpieczętowanie (120 s), konta serwisowego Service Desk nie nadpisuje, klientów GitLab i OpenSearch dopisuje przy różnicy, wygasły
+  `secret_id` zakłada od nowa po `tidy` (błąd `SecretID is already registered` wykryty testem trwałości).
+- `make openbao-migrate` (`CHECK=1` plan, `CONFIRM=1` wykonanie): jednorazowe przełączenie działającego stosu; napisane, NIE uruchomione (kasuje obecne sekrety OpenBao).
+- Testy: `scripts/openbao-persist-test.sh` (`make openbao-persist-test`, krok `openbao` w `make ci`): 30 PASS na jednorazowej instancji (restart samego serwera, stop i start obu
+  kontenerów, sekret, szyfrogram Transit, konto serwisowe i ważność `secret_id` bez zmian po `init.sh`, zapieczętowany serwer = 503 dla logowania brokera, późny unseal, brak klucza
+  w logach, wygasły `secret_id`); `scripts/openbao-init-test.sh` bez zmian w teście, przechodzi; `scripts/check-compose.py` 53 PASS (nowe kontrole OpenBao w trzech warstwach).
+- Keycloak: `ssoSessionIdleTimeout` 28800 i `ssoSessionMaxLifespan` 86400 w `keycloak/realm-corp.json` i na żywo (`PUT` dwóch pól, bez restartu; przed 3600/36000, po 28800/86400,
+  `accessTokenLifespan` 900). Step-up bez zmian (LoA 2 ma `loa-max-age` 0). Otwarte: `loa-max-age` poziomu 1 to 36000 (docs/m5.md).
+- Wymaganie wobec IdP produkcyjnego (Entra, D4) w docs/integracja.md; docs/uzytkownicy.md: grupy Service Desk alice i bob wg realmu.

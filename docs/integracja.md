@@ -61,7 +61,7 @@ Jiry przedstawia ten PAT jako `jkowalski`. Dopiero prawdziwy broker zwróci `ali
 | token BFF | `aud=mcp-credential-broker`, `azp=mcp-portal-bff`, `iss` i JWKS Keycloaka jak wyżej |
 | token gateway'a | wewnętrzny JWT C2 (JWKS gateway'a, nazwa TLS `MCP_GATEWAY_INTERNAL_TLS_NAME`), `aud=mcp-credential-broker` |
 | wymiana `subjectToken` na system `token-exchange` | klient `mcp-credential-broker`, sekret `KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET`, `audience=opensearch` + `scope=opensearch-audience` |
-| OpenBao | `http://openbao:8200` / `http://localhost:18200`; AppRole `role_id=BAO_BROKER_ROLE_ID`, `secret_id=BAO_BROKER_SECRET_ID` (ważny 7 dni, odnawia go `make up`); polityka: KV v2 `secret/data/mcp/connections/*`, Transit `transit/{encrypt,decrypt}/mcp-credential-broker`; audyt OpenBao na stdout kontenera `openbao` |
+| OpenBao | `http://openbao:8200` / `http://localhost:18200`; AppRole `role_id=BAO_BROKER_ROLE_ID`, `secret_id=BAO_BROKER_SECRET_ID` (ważny 7 dni, odnawia go `make up` lub `make openbao-renew`; OpenBao jest trwały, patrz docs/m5.md); polityka: KV v2 `secret/data/mcp/connections/*`, Transit `transit/{encrypt,decrypt}/mcp-credential-broker`; audyt OpenBao na stdout kontenera `openbao` |
 | whoami Jiry (C4.1) | `MCP_JIRA_URL=http://jira.internal:8080` (sieć `core`) / `http://localhost:18081` z hosta |
 | `connectUrl` w `409 credential_required` | `MCP_PORTAL_URL=http://localhost:18090` |
 | http do OpenBao i mocka Jiry | `MCP_ALLOW_PLAIN_HTTP=true` tylko w compose dev; broker poza dev wymaga https |
@@ -167,6 +167,18 @@ Klient `mcp-portal-bff` (sekret `KC_CLIENT_MCP_PORTAL_BFF_SECRET`), redirect
 Stub C5 (`https://localhost:18444`) i C4 (`https://localhost:18443`) wymagają certyfikatu
 `certs/mcp-portal-bff` (EKU tylko clientAuth). Nazwy TLS do weryfikacji: `MCP_BROKER_TLS_NAME`,
 `MCP_GATEWAY_INTERNAL_TLS_NAME`. Step-up (`acr`) jeszcze nie jest skonfigurowany (STATUS.md).
+
+## Wymagania wobec IdP produkcyjnego: czasy sesji (Entra, D4)
+
+Dev ustawia w realmie `corp` token dostępu 15 min, bezczynność sesji SSO 8 h i maksymalny czas sesji 24 h. Produkcyjny IdP (Entra ID, decyzja D4)
+ma dawać użytkownikowi to samo: przerwa w ciągu dnia (spotkanie, lunch, kilka godzin bez pracy z klientem AI) nie może wymuszać ponownego
+logowania, a kolejne logowanie ma być wymagane najwyżej raz na dobę. Do uzgodnienia z administratorem Entra:
+
+- sesja SSO / token odświeżania: okno bezczynności co najmniej 8 h i bezwzględny czas życia sesji co najmniej 24 h (w Entra to polityka sesji dostępu
+  warunkowego: częstotliwość logowania oraz trwałość sesji przeglądarki, nie czas życia samego tokenu);
+- token dostępu może pozostać krótki (15 min do 1 h); klient odnawia go tokenem odświeżania bez udziału użytkownika;
+- step-up (MFA przed operacjami wrażliwymi, np. rejestracja Authenticatora) musi wymuszać świeże uwierzytelnienie niezależnie od sesji
+  (`max_age=0` albo odpowiednik w kontekście uwierzytelnienia Entra), czyli długa sesja nie może go zastępować.
 
 ## Audyt jednego żądania (kryterium M1)
 

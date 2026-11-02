@@ -18,7 +18,7 @@ COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira $(if $(filter 1,$(M5_AC
         smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test trust-ca mocks-test m2 mock-auth \
         m3 otp reset-authenticator registry-refresh admin-password m3-switch \
         m4 m4-test m4-switch offboard registry-register openbao-test \
-        m5-switch m5-rollback m5-artifacts ci ci-local lb-test rollback-test compose-check mock-fault c2-keys openbao-init openbao-renew
+        m5-switch m5-rollback m5-artifacts ci ci-local lb-test rollback-test compose-check mock-fault c2-keys openbao-init openbao-renew openbao-persist-test openbao-migrate
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -50,7 +50,7 @@ up-full: certs ## start profile full (needs images of gateway, broker, mcp-jira 
 	$(COMPOSE) --profile full up -d --wait
 	@./scripts/wait-init.sh
 
-down: ## stop everything, keep volumes, secrets and certificates
+down: ## stop everything, keep volumes, secrets and certificates (OpenBao data included)
 	$(COMPOSE) --profile infra --profile full --profile m2 down
 
 reset: ## drop containers and volumes (realm and databases are recreated), then start infra again
@@ -179,6 +179,12 @@ m5-rollback: ## way back from a half done or rejected M5 switch: make m5-rollbac
 
 rollback-test: ## database part of the M5 rollback on a throw-away PostgreSQL (isolated network, does not touch the stack)
 	@./scripts/rollback-test.sh
+
+openbao-persist-test: ## dev OpenBao on a throw-away instance: data, Transit keys and AppRole survive restart and Stop/Start, unseal sidecar, init.sh overwrites nothing (isolated network and volumes, about 2 min)
+	@./scripts/openbao-persist-test.sh
+
+openbao-migrate: ## ONE-OFF switch of the running stack to the persistent OpenBao (volume openbao-data); ALL CURRENT OPENBAO SECRETS ARE LOST; CHECK=1 only plans, CONFIRM=1 does it; only on the order of the coordinator
+	@./scripts/openbao-migrate.sh $(if $(CHECK),--check,$(if $(CONFIRM),--confirm))
 
 openbao-init: ## run openbao/init.sh against the stack's OpenBao; an expired AppRole secret_id of the broker is recreated, a valid one is left alone; restarts nothing
 	$(COMPOSE) --profile full --profile m2 run --rm --no-deps openbao-init

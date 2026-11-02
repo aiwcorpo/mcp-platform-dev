@@ -41,6 +41,7 @@ make images                                    # obrazy gateway, broker, mcp-jir
 make images-m2 | make up-m2                    # M2: proxy (jedna domena), BFF, web, serwery ws-04; docs/m2.md
 make proxy-test | make mocks-test | make m2    # testy proxy, mocków i scenariusz M2; m2 zmienia stan stosu (patrz docs/m2.md)
 make m3 | make otp USER=alice | make reset-authenticator USER=alice | make registry-refresh   # M3 (docs/m3.md): scenariusz Authenticatora (zmienia stan: kasuje Authenticator alice), kod OTP logowania, reset rejestracji, odswiezenie manifestow
+make openbao-persist-test                      # trwałość OpenBao (dev) na jednorazowej instancji; `make openbao-migrate` to jednorazowe przełączenie działającego stosu (docs/m5.md)
 make m4 | make m4-test | make openbao-test     # M4 (docs/m4.md): kontrole infrastruktury (czesc po przelaczeniu SKIP), testy jednostkowe offboardingu i rejestru, init OpenBao w izolacji
 make offboard USER=<login> [DRY=1]              # IdP (grupy, wylogowanie), purge brokera i gateway'a (CN mcp-offboarding), powtorzone; odmawia kont wspolnych
 make registry-register | make m4-switch         # PUT manifestow certyfikatem kazdego serwera (CC-161); przelaczenie stosu na M4 (CHECK=1: tylko warunki wstepne)
@@ -54,7 +55,7 @@ make down | make reset | make clean
 
 | Profil | Polecenie | Co działa |
 | --- | --- | --- |
-| (bez profilu) | `make up-core` | Keycloak, OpenBao (+ jednorazowy `openbao-init`), Redis, PostgreSQL, mock Jiry |
+| (bez profilu) | `make up-core` | Keycloak, OpenBao (trwały, wolumen `openbao-data`; `openbao-unseal`; jednorazowy `openbao-init`), Redis, PostgreSQL, mock Jiry |
 | `infra` | `make up` | powyższe + stuby WireMock brokera (C4) i API admina gateway'a (C5) z `mcp-contracts` `MCP_CONTRACTS_REF` |
 | `full` | `make up-full` | infrastruktura + `mcp-gateway`, `mcp-credential-broker`, `mcp-jira` z obrazów z `.env` (`make images` buduje je z commitów repozytoriów obok); stuby są usuwane |
 
@@ -124,7 +125,7 @@ docker-compose.yml        usługi i profile
 .env                      porty i obrazy komponentów (bez sekretów)
 keycloak/realm-corp.json  realm corp (import przy starcie; hasła i sekrety jako ${ZMIENNE})
 mocks/jira/               mock Jiry (generowany: scripts/gen-jira-mock.py)
-openbao/                  init.sh (KV v2, Transit, AppRole brokera), audit.hcl (audyt na stdout)
+openbao/                  init.sh (KV v2, Transit, AppRole brokera), server.hcl (raft na wolumenie), unseal.sh (init i unseal w dev), audit.hcl (audyt na stdout)
 redis/start.sh            użytkownicy i ACL Redis per komponent
 postgres/init/            bazy gateway i broker
 scripts/                  init-secrets.sh, gen-certs.sh, fetch-contracts.sh, compose.sh, mcpdev.py, smoke.py

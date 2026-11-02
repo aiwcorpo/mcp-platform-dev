@@ -53,6 +53,23 @@ def check_ports(config, label):
     record(all(host == "127.0.0.1" for host, _ in ports), f"{label}: every published port binds 127.0.0.1")
 
 
+def check_openbao(config, label):
+    bao = config["services"]["openbao"]
+    unseal = config["services"]["openbao-unseal"]
+    init = config["services"]["openbao-init"]
+    record("-dev" not in " ".join(bao["command"]), f"{label}: OpenBao runs without -dev")
+    record(any(v.get("source") == "openbao-data" and v.get("target") == "/openbao/file" for v in bao["volumes"]),
+           f"{label}: OpenBao data is on the named volume openbao-data")
+    record(bao.get("restart") == "unless-stopped" and unseal.get("restart") == "unless-stopped",
+           f"{label}: openbao and openbao-unseal restart unless stopped")
+    record("openbao-unseal" in init["depends_on"], f"{label}: openbao-init waits for openbao-unseal")
+    keys = [v for v in unseal["volumes"] if v.get("target") == "/keys"]
+    record(len(keys) == 1 and keys[0]["source"].endswith("/.secrets/openbao"), f"{label}: only openbao-unseal mounts .secrets/openbao")
+    others = [n for n, svc in config["services"].items() if n != "openbao-unseal"
+              and any(".secrets/openbao" in str(v.get("source", "")) for v in svc.get("volumes", []))]
+    record(not others, f"{label}: no other service mounts .secrets/openbao", str(others))
+
+
 def check_m5(base, m5):
     new_ports = {port for host, port in published(m5) if (host, port) not in published(base)}
     new_ports -= {18000, 18445, 18100}
@@ -104,6 +121,7 @@ def main():
     for label, config in (("m3", base), ("m4", m4), ("m5", m5)):
         if config:
             check_ports(config, label)
+            check_openbao(config, label)
     if m4 and m5:
         check_m5(m4, m5)
     for ok, name, detail in RESULTS:
