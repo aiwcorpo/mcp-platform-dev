@@ -68,11 +68,11 @@ step_lint() {
   python3 -I -c '
 import ast, sys
 for name in sys.argv[1:]:
-    ast.parse(open(name).read(), name)' scripts/*.py mocks/systems/*.py ci/*.py proxy/test/*.py || status=1
+    ast.parse(open(name).read(), name)' scripts/*.py mocks/systems/*.py mocks/mcp/*.py mocks/mcp/tests/*.py ci/*.py proxy/test/*.py || status=1
   return $status
 }
 
-step_mocks() { (cd mocks/systems && python3 -I -m unittest discover -s tests); }
+step_mocks() { (cd mocks/systems && python3 -I -m unittest discover -s tests) && (cd mocks/mcp && python3 -I -m unittest discover -s tests); }
 step_unit() {
   local status=0
   step_mocks || status=1

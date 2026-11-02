@@ -1,0 +1,207 @@
+"""Receiver side of the internal JWT (C2): ES256 signature against the gateway JWKS and the rules of
+mcp-contracts/schemas/internal-jwt.schema.json that a schema cannot express. Standard library only (the mocks run on a plain
+python image), so the P-256 signature check is done here with integers; it is slow (milliseconds) and meant for stand-ins.
+
+verify() raises Rejected(reason); the reasons are those of mcp-contracts/test-vectors/jwt.
+"""
+import base64
+import hashlib
+import json
+
+P = 0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
+N = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+B = 0x5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B
+G = (0x6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296,
+     0x4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5)
+
+SERVICE_SUBJECT = "system:mcp-gateway"
+SERVICE_METHODS = {"initialize", "server/discover", "tools/list", "ping"}
+BROKER_TOOL_PATHS = {"/v1/credentials/resolve", "/v1/authenticator", "/v1/authenticator/verify", "/v1/authenticator/invalidate-codes"}
+COMMON_CLAIMS = {"iss", "aud", "sub", "grp", "rid", "prv", "iat", "exp", "jti"}
+USER_CLAIMS = COMMON_CLAIMS | {"usr", "azp", "tool", "mfa"}
+
+
+class Rejected(Exception):
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def b64url_decode(text):
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def b64url_encode(raw):
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def _add(a, b):
+    if a is None:
+        return b
+    if b is None:
+        return a
+    if a[0] == b[0]:
+        if (a[1] + b[1]) % P == 0:
+            return None
+        slope = (3 * a[0] * a[0] - 3) * pow(2 * a[1], -1, P) % P
+    else:
+        slope = (b[1] - a[1]) * pow(b[0] - a[0], -1, P) % P
+    x = (slope * slope - a[0] - b[0]) % P
+    return x, (slope * (a[0] - x) - a[1]) % P
+
+
+def _multiply(k, point):
+    result = None
+    while k:
+        if k & 1:
+            result = _add(result, point)
+        point = _add(point, point)
+        k >>= 1
+    return result
+
+
+def on_curve(point):
+    x, y = point
+    return 0 < x < P and 0 < y < P and (y * y - (x * x * x - 3 * x + B)) % P == 0
+
+
+def public_point(jwk):
+    if jwk.get("kty") != "EC" or jwk.get("crv") != "P-256":
+        raise ValueError("not a P-256 key")
+    point = (int.from_bytes(b64url_decode(jwk["x"]), "big"), int.from_bytes(b64url_decode(jwk["y"]), "big"))
+    if not on_curve(point):
+        raise ValueError("point not on the curve")
+    return point
+
+
+def verify_es256(signing_input, signature, point):
+    if len(signature) != 64:
+        return False
+    r = int.from_bytes(signature[:32], "big")
+    s = int.from_bytes(signature[32:], "big")
+    if not (0 < r < N and 0 < s < N):
+        return False
+    e = int.from_bytes(hashlib.sha256(signing_input).digest(), "big")
+    w = pow(s, -1, N)
+    candidate = _add(_multiply(e * w % N, G), _multiply(r * w % N, point))
+    return candidate is not None and candidate[0] % N == r
+
+
+def sign_es256(signing_input, private_scalar, nonce):
+    """Test helper: signs with the given nonce. A fixed nonce is fine for unit tests of a verifier, never for real keys."""
+    e = int.from_bytes(hashlib.sha256(signing_input).digest(), "big")
+    r = _multiply(nonce, G)[0] % N
+    s = pow(nonce, -1, N) * (e + r * private_scalar) % N
+    return r.to_bytes(32, "big") + s.to_bytes(32, "big")
+
+
+def _segments(token):
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise Rejected("invalid_claims")
+    try:
+        header = json.loads(b64url_decode(parts[0]))
+        payload = json.loads(b64url_decode(parts[1]))
+        signature = b64url_decode(parts[2])
+    except (ValueError, UnicodeDecodeError):
+        raise Rejected("invalid_claims") from None
+    if not isinstance(header, dict) or not isinstance(payload, dict):
+        raise Rejected("invalid_claims")
+    return header, payload, signature, (parts[0] + "." + parts[1]).encode()
+
+
+def _key_for(header, jwks, allow_test_keys, devstack):
+    kid = header.get("kid")
+    if not isinstance(kid, str) or not kid:
+        raise Rejected("unknown_kid")
+    if kid.startswith("test-") and not allow_test_keys:
+        raise Rejected("test_key_not_allowed")
+    if kid.startswith("dev-") and not (allow_test_keys and devstack):
+        raise Rejected("test_key_not_allowed")
+    for jwk in jwks.get("keys", []):
+        if jwk.get("kid") == kid:
+            try:
+                return public_point(jwk)
+            except (KeyError, ValueError):
+                raise Rejected("unknown_kid") from None
+    raise Rejected("unknown_kid")
+
+
+def _text(claims, name, limit=255):
+    value = claims.get(name)
+    if not isinstance(value, str) or not 0 < len(value) <= limit:
+        raise Rejected("invalid_claims")
+    return value
+
+
+def _checked_claims(claims, issuer, audience, now, skew, max_lifetime):
+    if not isinstance(claims.get("aud"), str):
+        raise Rejected("invalid_claims")
+    for name in ("iss", "sub", "rid", "prv", "jti"):
+        _text(claims, name, 255 if name != "jti" else 128)
+    for name in ("iat", "exp"):
+        if not isinstance(claims.get(name), int) or isinstance(claims[name], bool) or claims[name] < 0:
+            raise Rejected("invalid_claims")
+    if not isinstance(claims.get("grp"), list) or not all(isinstance(g, str) for g in claims["grp"]) \
+            or len(set(claims["grp"])) != len(claims["grp"]):
+        raise Rejected("invalid_claims")
+    if not set(claims) <= USER_CLAIMS:
+        raise Rejected("invalid_claims")
+    if claims["iss"] != issuer:
+        raise Rejected("wrong_issuer")
+    if claims["aud"] != audience:
+        raise Rejected("wrong_audience")
+    if claims["exp"] < now - skew:
+        raise Rejected("expired")
+    if claims["iat"] > now + skew:
+        raise Rejected("not_yet_valid")
+    if claims["exp"] - claims["iat"] > max_lifetime:
+        raise Rejected("lifetime_too_long")
+
+
+def _variant(claims, request):
+    kind, method = request.get("kind"), request.get("method")
+    path = request.get("path", "")
+    service = claims["sub"] == SERVICE_SUBJECT
+    if service:
+        if claims["grp"] or "tool" in claims or "usr" in claims or "azp" in claims or "mfa" in claims:
+            raise Rejected("invalid_claims")
+        allowed = (kind == "jsonrpc" and method in SERVICE_METHODS) \
+            or (kind == "http" and ((method, path) in {("GET", "/mcp-manifest"), ("GET", "/v1/systems")}))
+        if not allowed:
+            raise Rejected("service_token_not_allowed")
+        return
+    if claims["sub"].startswith("system:"):
+        raise Rejected("invalid_claims")
+    for name in ("usr", "azp"):
+        _text(claims, name)
+    needs_tool = (kind == "jsonrpc" and method == "tools/call") or (kind == "http" and path in BROKER_TOOL_PATHS)
+    if needs_tool:
+        if "tool" not in claims:
+            raise Rejected("tool_missing")
+        _text(claims, "tool", 64)
+        if kind == "jsonrpc" and claims["tool"] != request.get("toolName"):
+            raise Rejected("tool_mismatch")
+    elif "tool" in claims:
+        raise Rejected("tool_not_allowed")
+
+
+def verify(token, *, jwks, issuer, audience, now, request, seen_jtis=(), skew=30, max_lifetime=60,
+           allow_test_keys=False, devstack=False):
+    """Returns the claims of an acceptable token. `request`: {kind: jsonrpc|http, method, path, toolName, xRequestId}.
+    `seen_jtis` is a container of identifiers already used; the caller records the returned jti."""
+    if not token:
+        raise Rejected("missing_token")
+    header, claims, signature, signing_input = _segments(token)
+    if header.get("alg") != "ES256":
+        raise Rejected("alg_not_allowed")
+    point = _key_for(header, jwks, allow_test_keys, devstack)
+    if not verify_es256(signing_input, signature, point):
+        raise Rejected("bad_signature")
+    _checked_claims(claims, issuer, audience, now, skew, max_lifetime)
+    if claims["jti"] in seen_jtis:
+        raise Rejected("replayed_jti")
+    _variant(claims, request)
+    if request.get("xRequestId") != claims["rid"]:
+        raise Rejected("request_id_mismatch")
+    return claims
