@@ -4,6 +4,8 @@
 # Raft with one node, because OpenBao 2.7 no longer has the "file" storage backend ("unknown storage type file"). The node
 # bootstraps itself at `operator init`; the cluster address is loopback only and never published.
 ui = false
+# Raft storage does not use mlock-able memory; the flag also drops the need for the IPC_LOCK capability.
+disable_mlock = true
 api_addr = "http://openbao:8200"
 cluster_addr = "http://127.0.0.1:8201"
 

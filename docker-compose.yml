@@ -130,7 +130,6 @@ services:
   openbao:
     image: openbao/openbao:2.7.2@sha256:5046911075e137e154ce49ab051502f4ec7cf367d484ae4a4dce665d9b90561f
     command: ["server", "-config=/openbao/server.hcl", "-config=/openbao/audit.hcl"]
-    cap_add: [IPC_LOCK]
     restart: unless-stopped
     environment:
       BAO_ADDR: http://127.0.0.1:8200
@@ -151,8 +150,8 @@ services:
 
   # DEV ONLY. Initialises (once) and unseals OpenBao, and again after every restart of it; unseal key and the generated root
   # token go to ./.secrets/openbao (mode 600, never to a log). Runs as root so it can write the bind mount; on macOS Docker
-  # Desktop the files belong to the host user. Healthy = OpenBao unsealed and the stack token (BAO_ROOT_TOKEN) valid, which is
-  # what openbao-init waits for.
+  # Desktop the files belong to the host user. Healthy = the loop has seen OpenBao unsealed with the stack token (BAO_ROOT_TOKEN) valid
+  # (marker /tmp/ready; no token lookup per health check, which would fill the audit log), which is what openbao-init waits for.
   openbao-unseal:
     image: openbao/openbao:2.7.2@sha256:5046911075e137e154ce49ab051502f4ec7cf367d484ae4a4dce665d9b90561f
     entrypoint: ["/bin/sh", "/unseal.sh"]
@@ -161,6 +160,7 @@ services:
     environment:
       BAO_ADDR: http://openbao:8200
       BAO_ROOT_TOKEN: ${BAO_ROOT_TOKEN:?run make secrets}
+      BAO_ALLOW_REINIT: ${BAO_ALLOW_REINIT:-0}
     volumes:
       - ./openbao/unseal.sh:/unseal.sh:ro
       - ./.secrets/openbao:/keys
@@ -169,7 +169,7 @@ services:
       openbao:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "BAO_TOKEN=\"$$BAO_ROOT_TOKEN\" bao token lookup >/dev/null 2>&1"]
+      test: ["CMD", "test", "-e", "/tmp/ready"]
       interval: 3s
       timeout: 3s
       retries: 40
@@ -199,7 +199,7 @@ services:
       BAO_BROKER_ROLE_ID: ${BAO_BROKER_ROLE_ID:?run make secrets}
       BAO_BROKER_SECRET_ID: ${BAO_BROKER_SECRET_ID:?run make secrets}
       BAO_RENEW_SECRET_ID: ${BAO_RENEW_SECRET_ID:-0}
-      BAO_SECRET_ID_TTL: ${BAO_SECRET_ID_TTL:-168h}
+      BAO_SECRET_ID_TTL: ${BAO_SECRET_ID_TTL:-720h}
       GITLAB_OAUTH_CLIENT_SECRET: ${GITLAB_OAUTH_CLIENT_SECRET:?run make secrets}
       SERVICEDESK_API_KEY: ${SERVICEDESK_API_KEY:?run make secrets}
       KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET: ${KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET:?run make secrets}

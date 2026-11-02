@@ -51,18 +51,30 @@ path "transit/decrypt/mcp-authenticators" { capabilities = ["update"] }
 HCL
 
 bao auth list -format=json | grep -q '"approle/"' || bao auth enable approle
-# secret_id expires after 7 days (BAO_SECRET_ID_TTL, tests only); the AppRole now lives in persistent storage, so a valid one
+# secret_id expires after 30 days (BAO_SECRET_ID_TTL; was 7 days while a restart recreated it); the AppRole now lives in persistent storage, so a valid one
 # survives restarts with its remaining TTL, and `make up` or `make openbao-init` recreates an expired one. No CIDR binding: the
 # broker may run on the host, and the source address of host traffic differs between Docker setups.
 bao write auth/approle/role/mcp-credential-broker \
-  token_policies=mcp-credential-broker token_ttl=1h token_max_ttl=4h secret_id_ttl="${BAO_SECRET_ID_TTL:-168h}" >/dev/null
+  token_policies=mcp-credential-broker token_ttl=1h token_max_ttl=4h secret_id_ttl="${BAO_SECRET_ID_TTL:-720h}" >/dev/null
 bao write auth/approle/role/mcp-credential-broker/role-id role_id="$BAO_BROKER_ROLE_ID" >/dev/null
 
 lookup="$(printf '%s' "$BAO_BROKER_SECRET_ID" \
     | bao write -format=json auth/approle/role/mcp-credential-broker/secret-id/lookup secret_id=- 2>/dev/null || true)"
-# BAO_RENEW_SECRET_ID=1 (make openbao-renew, make m5-switch) replaces a secret_id that is still valid, so its 168 h start again;
-# without it a valid one is left alone and the TTL runs on.
-if [ "${BAO_RENEW_SECRET_ID:-0}" = 1 ] && printf '%s' "$lookup" | grep -q '"secret_id_accessor"'; then
+# BAO_RENEW_SECRET_ID=1 (make openbao-renew, make m5-switch) replaces a secret_id that is still valid, so its TTL starts again.
+# Without it a valid one is left alone, except when less than half of its TTL remains: a restart no longer recreates it (storage is
+# persistent), so every run of this script (make up) keeps it from running out unnoticed.
+epoch() { date -u -d "$(printf '%s' "$1" | sed 's/\.[0-9]*Z$//; s/Z$//; s/T/ /')" +%s 2>/dev/null || true; }
+renew="${BAO_RENEW_SECRET_ID:-0}"
+if [ "$renew" != 1 ] && printf '%s' "$lookup" | grep -q '"secret_id_accessor"'; then
+  created="$(epoch "$(printf '%s' "$lookup" | sed -n 's/.*"creation_time": *"\([^"]*\)".*/\1/p' | head -1)")"
+  expires="$(epoch "$(printf '%s' "$lookup" | sed -n 's/.*"expiration_time": *"\([^"]*\)".*/\1/p' | head -1)")"
+  now="$(date -u +%s)"
+  if [ -n "$created" ] && [ -n "$expires" ] && [ $(( (expires - now) * 2 )) -lt $(( expires - created )) ]; then
+    renew=1
+    echo "openbao-init: less than half of the broker secret_id TTL is left"
+  fi
+fi
+if [ "$renew" = 1 ] && printf '%s' "$lookup" | grep -q '"secret_id_accessor"'; then
   accessor="$(printf '%s' "$lookup" | sed -n 's/.*"secret_id_accessor": *"\([^"]*\)".*/\1/p' | head -1)"
   printf '%s' "$accessor" | bao write auth/approle/role/mcp-credential-broker/secret-id-accessor/destroy secret_id_accessor=- >/dev/null
   lookup=""

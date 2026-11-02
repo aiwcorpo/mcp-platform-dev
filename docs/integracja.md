@@ -61,7 +61,7 @@ Jiry przedstawia ten PAT jako `jkowalski`. Dopiero prawdziwy broker zwróci `ali
 | token BFF | `aud=mcp-credential-broker`, `azp=mcp-portal-bff`, `iss` i JWKS Keycloaka jak wyżej |
 | token gateway'a | wewnętrzny JWT C2 (JWKS gateway'a, nazwa TLS `MCP_GATEWAY_INTERNAL_TLS_NAME`), `aud=mcp-credential-broker` |
 | wymiana `subjectToken` na system `token-exchange` | klient `mcp-credential-broker`, sekret `KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET`, `audience=opensearch` + `scope=opensearch-audience` |
-| OpenBao | `http://openbao:8200` / `http://localhost:18200`; AppRole `role_id=BAO_BROKER_ROLE_ID`, `secret_id=BAO_BROKER_SECRET_ID` (ważny 7 dni, odnawia go `make up` lub `make openbao-renew`; OpenBao jest trwały, patrz docs/m5.md); polityka: KV v2 `secret/data/mcp/connections/*`, Transit `transit/{encrypt,decrypt}/mcp-credential-broker`; audyt OpenBao na stdout kontenera `openbao` |
+| OpenBao | `http://openbao:8200` / `http://localhost:18200`; AppRole `role_id=BAO_BROKER_ROLE_ID`, `secret_id=BAO_BROKER_SECRET_ID` (ważny 30 dni; `openbao-init`, czyli `make up` i `make openbao-init`, odnawia go, gdy zostało mniej niż pół TTL, `make openbao-renew` na żądanie; OpenBao jest trwały, patrz docs/m5.md); polityka: KV v2 `secret/data/mcp/connections/*`, Transit `transit/{encrypt,decrypt}/mcp-credential-broker`; audyt OpenBao na stdout kontenera `openbao` |
 | whoami Jiry (C4.1) | `MCP_JIRA_URL=http://jira.internal:8080` (sieć `core`) / `http://localhost:18081` z hosta |
 | `connectUrl` w `409 credential_required` | `MCP_PORTAL_URL=http://localhost:18090` |
 | http do OpenBao i mocka Jiry | `MCP_ALLOW_PLAIN_HTTP=true` tylko w compose dev; broker poza dev wymaga https |

@@ -500,11 +500,14 @@ Do przeniesienia do `CONTRACT_CHANGES.md` przez człowieka lub ws-00; kontraktó
   Token stosu `BAO_ROOT_TOKEN` zostaje (tworzony przez sidecar jako token `root` o tym id). Opis, granica (Stop bezpieczny; `make clean`/`reset`/`down -v` kasują) i
   skutki dla `secret_id`: docs/m5.md.
 - `openbao/init.sh`: czeka na odpieczętowanie (120 s), konta serwisowego Service Desk nie nadpisuje, klientów GitLab i OpenSearch dopisuje przy różnicy, wygasły
-  `secret_id` zakłada od nowa po `tidy` (błąd `SecretID is already registered` wykryty testem trwałości).
-- `make openbao-migrate` (`CHECK=1` plan, `CONFIRM=1` wykonanie): jednorazowe przełączenie działającego stosu; napisane, NIE uruchomione (kasuje obecne sekrety OpenBao).
-- Testy: `scripts/openbao-persist-test.sh` (`make openbao-persist-test`, krok `openbao` w `make ci`): 30 PASS na jednorazowej instancji (restart samego serwera, stop i start obu
-  kontenerów, sekret, szyfrogram Transit, konto serwisowe i ważność `secret_id` bez zmian po `init.sh`, zapieczętowany serwer = 503 dla logowania brokera, późny unseal, brak klucza
+  `secret_id` zakłada od nowa po `tidy` (błąd `SecretID is already registered` wykryty testem trwałości); `secret_id_ttl` 720h (było 168h) i odnowienie przy mniej niż połowie TTL.
+- `make openbao-migrate` (`CHECK=1` plan z liczbami wierszy brokera, `CONFIRM=1` wykonanie): jednorazowe przełączenie działającego stosu; napisane, NIE uruchomione (kasuje obecne sekrety OpenBao;
+  dane nie do przeniesienia: klucze Transit nieeksportowalne). Blokada `scripts/openbao-guard.sh` (w `compose.sh` i przed `make up*`) odrzuca `up`, które odtworzyłoby działający OpenBao `-dev`.
+  `openbao-unseal` odmawia init przy pustym serwerze i istniejącym `unseal-key` (`BAO_ALLOW_REINIT=1` robi kopię `.bak`). Po przełączeniu wiersze bazy zostają (portal: connected/active, 409 przy rejestracji):
+  najpierw usunąć, potem zarejestrować (docs/m5.md); `m5.py connections compare` zgłasza też wiersze `user-secret` bez sekretu. Uwagi przeglądu Opus: H1-H3, M1-M5, L1, L3-L5, L7 zrobione; L2 i L8 nieznane wykonawcy.
+- Testy: `scripts/openbao-persist-test.sh` (`make openbao-persist-test`, krok `openbao` w `make ci`): na jednorazowej instancji (restart samego serwera, stop i start obu
+  kontenerów, odtworzenie kontenera na tym samym wolumenie, stary token wobec nowej instancji, odmowa init przy istniejącym kluczu, sekret, szyfrogram Transit, konto serwisowe i ważność `secret_id` bez zmian po `init.sh`, zapieczętowany serwer = 503 dla logowania brokera, późny unseal, brak klucza
   w logach, wygasły `secret_id`); `scripts/openbao-init-test.sh` bez zmian w teście, przechodzi; `scripts/check-compose.py` 53 PASS (nowe kontrole OpenBao w trzech warstwach).
 - Keycloak: `ssoSessionIdleTimeout` 28800 i `ssoSessionMaxLifespan` 86400 w `keycloak/realm-corp.json` i na żywo (`PUT` dwóch pól, bez restartu; przed 3600/36000, po 28800/86400,
-  `accessTokenLifespan` 900). Step-up bez zmian (LoA 2 ma `loa-max-age` 0). Otwarte: `loa-max-age` poziomu 1 to 36000 (docs/m5.md).
+  `accessTokenLifespan` 900). Step-up bez zmian (LoA 2 ma `loa-max-age` 0). `loa-max-age` poziomu 1 podniesiony z 36000 do 86400 (plik i żywy Keycloak, odczyt przed i po; docs/m5.md).
 - Wymaganie wobec IdP produkcyjnego (Entra, D4) w docs/integracja.md; docs/uzytkownicy.md: grupy Service Desk alice i bob wg realmu.

@@ -15,5 +15,11 @@ if [ "${M5_ACTIVE:-$(grep -s '^M5_ACTIVE=' "$root/.env" | cut -d= -f2-)}" = 1 ];
   files+=(-f "$root/docker-compose.m5.yml")
   envs+=(--env-file "$root/m5.env")
 fi
-exec docker compose --project-directory "$root" -f "$root/docker-compose.yml" ${files[@]+"${files[@]}"} \
-  --env-file "$root/.env" --env-file "$root/.secrets/dev.env" ${envs[@]+"${envs[@]}"} "$@"
+base=(docker compose --project-directory "$root" -f "$root/docker-compose.yml" ${files[@]+"${files[@]}"} \
+  --env-file "$root/.env" --env-file "$root/.secrets/dev.env" ${envs[@]+"${envs[@]}"})
+
+# Refuses an `up` that would replace a running in-memory (-dev) OpenBao and so delete its secrets (scripts/openbao-guard.sh).
+for arg in "$@"; do
+  if [ "$arg" = up ]; then "$root/scripts/openbao-guard.sh" "$@"; break; fi
+done
+exec "${base[@]}" "$@"

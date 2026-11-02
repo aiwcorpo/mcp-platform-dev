@@ -4,9 +4,11 @@
   m5.py bundle-latest                     print the revision of the latest main bundle (exit 1 when it cannot be read)
   m5.py bundle-wait REVISION SECONDS [MAJOR]   wait for a main bundle other than REVISION whose manifest schemaVersion starts with MAJOR (default 5.)
   m5.py connections snapshot FILE         counts of broker connections per user, system and state (alice, bob, carol, mallory)
-  m5.py connections compare FILE          the same now, compared with FILE; exit 1 when a count differs
+  m5.py connections compare FILE          the same now, compared with FILE; exit 1 when a count differs, or when a connected row has no
+                                          secret in OpenBao (database rows alone stay unchanged when OpenBao is replaced by an empty one)
   m5.py endpoint-check                    /mcp through the public origin: 401 challenge, metadata without query, /v/ gone
 """
+import hashlib
 import io
 import json
 import ssl
@@ -94,6 +96,38 @@ def connection_counts():
     return counts
 
 
+def secretless_connections():
+    """Rows of state connected and type user-secret (OAuth tokens are not kept under this path) whose secret is not in OpenBao (names only: key listing, no value is read). A replaced, empty OpenBao
+    leaves the database counts as they were, so comparing counts alone says nothing about the secrets."""
+    subs = {}
+    for name in USERS:
+        _, found = mcpdev.kc_admin("GET", f"/users?username={name}&exact=true")
+        subs[found[0]["id"]] = name
+    quoted = ",".join("'" + sub + "'" for sub in subs)
+    out = subprocess.run([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2", "exec", "-T", "postgres", "psql", "-U", "broker",
+                          "-d", "broker", "-At", "-F", "|", "-v", "ON_ERROR_STOP=1", "-c",
+                          f"select sub, system from connection where state = 'connected' and type = 'user-secret' and sub in ({quoted})"],
+                         capture_output=True, text=True)
+    if out.returncode != 0:
+        raise OSError("psql failed: " + out.stderr.strip()[:200])
+    token = mcpdev.cfg("BAO_ROOT_TOKEN")
+    missing = []
+    for line in out.stdout.splitlines():
+        sub, system = line.split("|")
+        path = f"secret/metadata/mcp/connections/{hashlib.sha256(sub.encode()).hexdigest()}"
+        request = urllib.request.Request(f"http://localhost:{mcpdev.cfg('OPENBAO_PORT')}/v1/{path}?list=true", headers={"X-Vault-Token": token})
+        try:
+            with urllib.request.urlopen(request, timeout=10) as reply:
+                keys = json.load(reply)["data"]["keys"]
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+            keys = []
+        if f"{system}" not in [k.rstrip("/") for k in keys]:
+            missing.append(f"{subs[sub]}/{system}")
+    return missing
+
+
 def connections(action, file):
     now = connection_counts()
     if action == "snapshot":
@@ -101,6 +135,10 @@ def connections(action, file):
         print("connections:", {user: sum(v.values()) for user, v in now.items()})
         return 0
     before = json.loads(Path(file).read_text())
+    missing = secretless_connections()
+    if missing:
+        print("connected rows without a secret in OpenBao: " + ", ".join(missing), file=sys.stderr)
+        return 1
     if before != now:
         for user in USERS:
             if before.get(user) != now.get(user):

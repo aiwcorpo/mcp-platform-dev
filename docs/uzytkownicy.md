@@ -19,7 +19,7 @@ Czasy sesji realmu: token dostępu 15 min (`accessTokenLifespan` 900), sesja SSO
 (`ssoSessionIdleTimeout` 28800) i najpóźniej po 24 h od logowania (`ssoSessionMaxLifespan` 86400). Wcześniej było
 1 h i 10 h, więc przerwa w ciągu dnia wymuszała ponowne logowanie. Step-up (poziom `mfa`, kod OTP) nie zależy od tych
 wartości: poziom 2 ma `loa-max-age` 0, a BFF wysyła `max_age=0`, więc każdy step-up pyta o hasło i OTP od nowa.
-Poziom 1 (samo hasło) ma `loa-max-age` 36000 (10 h), czyli krócej niż nowe 24 h: patrz `docs/m5.md`, sekcja o sesjach.
+Poziom 1 (samo hasło) ma `loa-max-age` 86400 (24 h, było 36000), żeby nie skracał sesji poniżej `ssoSessionMaxLifespan`: patrz `docs/m5.md`, sekcja o sesjach.
 
 Claim `groups` zawiera nazwy bez ścieżki (`mcp-jira-read`, nie `/mcp-jira-read`): mapper
 `oidc-group-membership-mapper` z `full.path=false` (CC-007) w client scope `groups`.
