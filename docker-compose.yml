@@ -13,6 +13,11 @@
 
 name: ${COMPOSE_PROJECT_NAME:-mcp-dev}
 
+# One-shot jobs (openbao-init, server-state-init, registry-data-init) are dependencies with required: false. `docker compose start`
+# and Start in Docker Desktop do not create containers: with required: true they stop at "is missing dependency" once the job
+# container is gone, and with the container present they run the job again. scripts/wait-init.sh removes the finished jobs after
+# `make up`, so Start never repeats them; `up` still runs them (and waits for them) whenever the containers do not exist.
+
 x-system-mock: &system-mock
   image: python:3.12-alpine@sha256:0687a6bc9716edc2a6ee0fbfb0f87e7ee358b262b67c9215de91bc9b2d38ba71
   command: ["python3", "/mocks/server.py"]
@@ -603,7 +608,7 @@ services:
     healthcheck: *tcp-8443-health
     depends_on:
       keycloak: {condition: service_healthy}
-      openbao-init: {condition: service_completed_successfully}
+      openbao-init: {condition: service_completed_successfully, required: false}
       redis: {condition: service_healthy}
       postgres: {condition: service_healthy}
 
@@ -662,7 +667,7 @@ services:
         aliases: [mcp-jira.internal]
     healthcheck: *bash-8443-health
     depends_on:
-      server-state-init: {condition: service_completed_successfully}
+      server-state-init: {condition: service_completed_successfully, required: false}
       redis: {condition: service_healthy}
       jira-mock: {condition: service_healthy}
 
@@ -817,7 +822,7 @@ services:
         aliases: [mcp-confluence.internal]
     healthcheck: *bash-8443-health
     depends_on:
-      server-state-init: {condition: service_completed_successfully}
+      server-state-init: {condition: service_completed_successfully, required: false}
       redis: {condition: service_healthy}
       confluence-mock: {condition: service_healthy}
 
@@ -860,7 +865,7 @@ services:
         aliases: [mcp-gitlab.internal]
     healthcheck: *bash-8443-health
     depends_on:
-      server-state-init: {condition: service_completed_successfully}
+      server-state-init: {condition: service_completed_successfully, required: false}
       redis: {condition: service_healthy}
       gitlab-mock: {condition: service_healthy}
 
@@ -902,7 +907,7 @@ services:
         aliases: [mcp-servicedesk.internal]
     healthcheck: *bash-8443-health
     depends_on:
-      server-state-init: {condition: service_completed_successfully}
+      server-state-init: {condition: service_completed_successfully, required: false}
       redis: {condition: service_healthy}
       servicedesk-mock: {condition: service_healthy}
 
@@ -945,6 +950,6 @@ services:
         aliases: [mcp-opensearch.internal]
     healthcheck: *bash-8443-health
     depends_on:
-      server-state-init: {condition: service_completed_successfully}
+      server-state-init: {condition: service_completed_successfully, required: false}
       redis: {condition: service_healthy}
       opensearch-mock: {condition: service_healthy}

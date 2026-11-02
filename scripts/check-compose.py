@@ -70,6 +70,14 @@ def check_openbao(config, label):
     record(not others, f"{label}: no other service mounts .secrets/openbao", str(others))
 
 
+def check_one_shot_jobs(config, label):
+    jobs = {n for n, svc in config["services"].items() if svc.get("restart") == "no" and n.endswith("-init")}
+    record(jobs >= {"openbao-init", "server-state-init"}, f"{label}: the one-shot jobs are found", str(sorted(jobs)))
+    strict = [f"{n} -> {dep}" for n, svc in config["services"].items()
+              for dep, spec in (svc.get("depends_on") or {}).items() if dep in jobs and spec.get("required", True)]
+    record(not strict, f"{label}: no service requires a one-shot job to exist (compose start would fail without it)", str(strict))
+
+
 def check_m5(base, m5):
     new_ports = {port for host, port in published(m5) if (host, port) not in published(base)}
     new_ports -= {18000, 18445, 18100}
@@ -122,6 +130,7 @@ def main():
         if config:
             check_ports(config, label)
             check_openbao(config, label)
+            check_one_shot_jobs(config, label)
     if m4 and m5:
         check_m5(m4, m5)
     for ok, name, detail in RESULTS:

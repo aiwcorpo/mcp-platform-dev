@@ -18,7 +18,7 @@ COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira $(if $(filter 1,$(M5_AC
         smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test trust-ca mocks-test m2 mock-auth \
         m3 otp reset-authenticator registry-refresh admin-password m3-switch \
         m4 m4-test m4-switch offboard registry-register openbao-test \
-        m5-switch m5-rollback m5-artifacts ci ci-local lb-test rollback-test compose-check mock-fault c2-keys openbao-init openbao-renew openbao-persist-test openbao-migrate openbao-guard
+        m5-switch m5-rollback m5-artifacts ci ci-local lb-test rollback-test compose-check start-test mock-fault c2-keys openbao-init openbao-renew openbao-persist-test openbao-migrate openbao-guard
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -97,7 +97,7 @@ images: ## build the component images of profile full from git refs of the sibli
 m1: ## M1 scenarios (F1 A1 A2 A3 A9 A15) against the running make up-full; needs ../mcp-e2e (read only)
 	@$(PY) -I scripts/m1-compose.py
 
-smoke: ## smoke test of the running profile infra
+smoke: ## smoke test of the running stack (contract stubs or real broker and gateway, detected; writes no user data in the real mode)
 	@$(PY) scripts/smoke.py
 
 users: ## test users and their generated passwords (NOT FOR PRODUCTION)
@@ -211,6 +211,9 @@ lb-test: ## balancers of gateway and broker against stand-in instances (isolated
 
 compose-check: ## rendered compose configuration of the M3, M4 and M5 layers (nothing is started)
 	@$(PY) -I scripts/check-compose.py
+
+start-test: ## compose start after the one-shot job container is gone (own throw-away project, does not touch the stack, about 40 s)
+	@./scripts/start-test.sh
 
 mock-fault: ## latency and 429 of a system mock: make mock-fault ARGS="set gitlab latencyMs=200 rateLimitPerSecond=20" (show / clear <system>|all)
 	@$(PY) scripts/mock-fault.py $(ARGS)

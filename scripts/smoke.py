@@ -72,24 +72,32 @@ ref = mcpdev.cfg("MCP_CONTRACTS_REF")
 ref_file = ROOT / "out" / "contracts" / "REF"
 check(f"stubs extracted from mcp-contracts {ref}",
       ref_file.exists() and ref_file.read_text().split()[0] == ref, ref_file.read_text() if ref_file.exists() else "missing")
-mounts = run("docker", "inspect", "--format", "{{range .Mounts}}{{.Source}} {{end}}", f"{PROJECT}-broker-mock-1")
-check("broker stub mounts out/contracts, not the mcp-contracts working copy",
-      str(ROOT / "out" / "contracts") in mounts.stdout and "mcp-contracts" not in mounts.stdout, mounts.stdout)
-check("broker stub does not mount CA key or other identities' keys",
-      "ca.key" not in mounts.stdout and "mcp-gateway/tls.key" not in mounts.stdout, mounts.stdout)
 
 print("== containers")
-ps = run(*COMPOSE, "--profile", "infra", "ps", "--all", "--format", "json")
+ps = run(*COMPOSE, "--profile", "infra", "--profile", "full", "--profile", "m2", "--profile", "ci", "ps", "--all", "--format", "json")
 services = {}
 for line in ps.stdout.splitlines():
     if line.strip():
         row = json.loads(line)
         services[row["Service"]] = row
-for svc in ("keycloak", "openbao", "redis", "postgres", "jira-mock", "broker-mock", "gateway-admin-mock"):
+# Either the C4/C5 stubs (make up) or the real broker and gateway (make up-full and later layers) answer on the broker side;
+# the stubs share the aliases of the real components, so they never run together.
+stub_mode = services.get("broker-mock", {}).get("State") == "running"
+print(f"   mode: {'contract stubs' if stub_mode else 'real broker and gateway'}")
+if stub_mode:
+    mounts = run("docker", "inspect", "--format", "{{range .Mounts}}{{.Source}} {{end}}", f"{PROJECT}-broker-mock-1")
+    check("broker stub mounts out/contracts, not the mcp-contracts working copy",
+          str(ROOT / "out" / "contracts") in mounts.stdout and "mcp-contracts" not in mounts.stdout, mounts.stdout)
+    check("broker stub does not mount CA key or other identities' keys",
+          "ca.key" not in mounts.stdout and "mcp-gateway/tls.key" not in mounts.stdout, mounts.stdout)
+component_services = ("broker-mock", "gateway-admin-mock") if stub_mode else ("mcp-credential-broker", "mcp-gateway")
+for svc in ("keycloak", "openbao", "redis", "postgres", "jira-mock") + component_services:
     row = services.get(svc, {})
     check(f"{svc} healthy", row.get("Health") == "healthy", row.get("Status", "missing"))
-init = services.get("openbao-init", {})
-check("openbao-init completed", init.get("State") == "exited" and init.get("ExitCode") == 0, init.get("Status", "missing"))
+# wait-init.sh removes the finished job after make up, so a missing container is the normal state; the AppRole login below proves its result.
+init = services.get("openbao-init")
+check("openbao-init did not fail", init is None or (init.get("State") == "exited" and init.get("ExitCode") == 0),
+      init.get("Status", "") if init else "")
 
 print("== Keycloak realm corp (C1, C9)")
 issuer = f"{mcpdev.KEYCLOAK_URL}/realms/{mcpdev.REALM}"
@@ -190,21 +198,39 @@ rows = mcpdev.jira_auth()
 check("journal shows which credential reached Jira (PAT vs passthrough)",
       any(r["credential"] == "PAT alice-pat" for r in rows) and any("passthrough" in r["credential"] for r in rows))
 
-print("== broker stub over mTLS (C4 PUT /v1/connections/{system}/secret)")
-status, body = mcpdev.put_secret("alice", "jira", "alice-pat")
-check(f"put-secret alice jira -> 200 connected (TLS name {BROKER_TLS_NAME} verified)",
-      status == 200 and body.get("status") == "connected", f"{status} {body}")
-check("put-secret rejects a broker certificate with another name",
-      expect_fail(lambda: mcpdev.put_secret("alice", "jira", "alice-pat", tls_name="mcp-jira.internal")))
-check("put-secret with untrusted client cert rejected",
-      expect_fail(lambda: mcpdev.put_secret("alice", "jira", "alice-pat", identity="untrusted/mcp-gateway")))
-broker = f"https://localhost:{mcpdev.cfg('BROKER_MOCK_PORT', '18443')}"
-nocert = run("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--cacert", str(ROOT / "certs/ca/ca.crt"),
-             f"{broker}/v1/systems")
-check("broker stub without client cert rejected", nocert.stdout == "000", nocert.stdout)
-journal = run("curl", "-s", "--cacert", str(ROOT / "certs/ca/ca.crt"), "--cert", str(ROOT / "certs/mcp-portal-bff/tls.crt"),
-              "--key", str(ROOT / "certs/mcp-portal-bff/tls.key"), f"{broker}/__admin/requests")
-check("broker stub keeps no request journal (PATs)", "alice-pat" not in journal.stdout, journal.stdout[:200])
+broker_ca = str(ROOT / "certs/ca/ca.crt")
+bff_cert = ("--cert", str(ROOT / "certs/mcp-portal-bff/tls.crt"), "--key", str(ROOT / "certs/mcp-portal-bff/tls.key"))
+if stub_mode:
+    print("== broker stub over mTLS (C4 PUT /v1/connections/{system}/secret)")
+    status, body = mcpdev.put_secret("alice", "jira", "alice-pat")
+    check(f"put-secret alice jira -> 200 connected (TLS name {BROKER_TLS_NAME} verified)",
+          status == 200 and body.get("status") == "connected", f"{status} {body}")
+    check("put-secret rejects a broker certificate with another name",
+          expect_fail(lambda: mcpdev.put_secret("alice", "jira", "alice-pat", tls_name="mcp-jira.internal")))
+    check("put-secret with untrusted client cert rejected",
+          expect_fail(lambda: mcpdev.put_secret("alice", "jira", "alice-pat", identity="untrusted/mcp-gateway")))
+    broker = f"https://localhost:{mcpdev.cfg('BROKER_MOCK_PORT', '18443')}"
+    nocert = run("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--cacert", broker_ca, f"{broker}/v1/systems")
+    check("broker stub without client cert rejected", nocert.stdout == "000", nocert.stdout)
+    journal = run("curl", "-s", "--cacert", broker_ca, *bff_cert, f"{broker}/__admin/requests")
+    check("broker stub keeps no request journal (PATs)", "alice-pat" not in journal.stdout, journal.stdout[:200])
+else:
+    # Read-only: no secret is written, so the connections of the real test users stay as they are.
+    print("== broker over mTLS (C4, real component)")
+    broker_port = mcpdev.cfg("BROKER_PORT", "18100")
+    broker = f"https://{BROKER_TLS_NAME}:{broker_port}"
+    resolve = ("--resolve", f"{BROKER_TLS_NAME}:{broker_port}:127.0.0.1")
+    nocert = run("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--cacert", broker_ca, *resolve, f"{broker}/v1/systems")
+    check("broker without client certificate rejected", nocert.stdout == "000", nocert.stdout)
+    notoken = run("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--cacert", broker_ca, *resolve, *bff_cert, f"{broker}/v1/systems")
+    check("broker with the BFF certificate but without a bearer token -> 401", notoken.stdout == "401", notoken.stdout)
+    badcert = run("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--cacert", broker_ca, *resolve,
+                  "--cert", str(ROOT / "certs/untrusted/mcp-gateway/tls.crt"), "--key", str(ROOT / "certs/untrusted/mcp-gateway/tls.key"),
+                  f"{broker}/v1/systems")
+    check("broker with a certificate of another CA rejected", badcert.stdout == "000", badcert.stdout)
+    # The handshake fails on the name before any request is sent, so nothing is written for alice.
+    check("a broker certificate with another name is rejected before any request",
+          expect_fail(lambda: mcpdev.put_secret("alice", "jira", "alice-pat", tls_name="mcp-jira.internal")))
 
 print("== OpenBao (KV v2, Transit, AppRole, audit)")
 login_out = compose_exec(

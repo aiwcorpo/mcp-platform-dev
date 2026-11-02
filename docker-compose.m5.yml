@@ -221,7 +221,7 @@ services:
     volumes:
       - registry-data:/var/lib/registry
     depends_on:
-      registry-data-init: {condition: service_completed_successfully}
+      registry-data-init: {condition: service_completed_successfully, required: false}
     ports:
       - 127.0.0.1:${REGISTRY_PORT}:5000
     security_opt: [no-new-privileges:true]

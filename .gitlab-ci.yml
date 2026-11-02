@@ -1,7 +1,9 @@
 # Thin wrapper: all logic is in ci/run.sh (make ci runs the same steps). The image is the one of ci/Dockerfile; build it where the
 # runner is (docker build -f ci/Dockerfile -t mcp-ci:local .) or push it to the registry of the project and set MCP_CI_IMAGE.
 # No secrets are used. The Docker socket (the docker-tests job) is given to the default branch only: a merge request runs
-# the static job alone, in a container without the daemon of the host.
+# the static job alone, in a container without the daemon of the host. The tag docker-socket must belong to a protected runner
+# (Settings, CI/CD, Runners: "Protected"), so that only pipelines of protected branches can be picked up by it; without that a
+# branch could name the tag in its own copy of this file.
 variables:
   MCP_CI_IMAGE: mcp-ci:local
 
@@ -18,8 +20,8 @@ docker-tests:
   image: $MCP_CI_IMAGE
   tags: [docker-socket]
   rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE != "merge_request_event"
   variables:
     CI_REQUIRE_DOCKER: "1"
   script:
-    - ci/run.sh unit proxy lb
+    - ci/run.sh unit proxy lb start

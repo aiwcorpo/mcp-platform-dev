@@ -3,7 +3,7 @@
 # and under any CI system: .gitlab-ci.yml, a Jenkinsfile or a GitHub workflow only call this script.
 #
 #   ci/run.sh                 all steps
-#   ci/run.sh lint mocks      selected steps: lint mocks unit compose style proxy lb openbao
+#   ci/run.sh lint mocks      selected steps: lint mocks unit compose style proxy lb start openbao
 #
 # lint     bash -n and (when installed) shellcheck of the scripts, syntax of the Python files
 # mocks    unit tests of the system mocks (incl. latency and 429); no Docker needed
@@ -13,6 +13,7 @@
 # style    typographic characters, tool traces and placeholder content (ci/check-style.py)
 # proxy    rules of the reverse proxy in both layers against stand-in upstreams (needs Docker)
 # lb       load balancers of gateway and broker against stand-in instances (needs Docker)
+# start    compose start after the one-shot job container is gone, on a throw-away project (needs Docker, about 40 s)
 # openbao  init.sh and the persistence of the dev OpenBao on throw-away instances: restart, Stop/Start, unseal, nothing overwritten (needs Docker, about 3 min)
 # Steps that need Docker are skipped with a message when no daemon answers, unless CI_REQUIRE_DOCKER=1 (then they fail); under
 # CI=true that is the default, and a missing shellcheck is an error too.
@@ -23,7 +24,7 @@ set -uo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root" || exit 1
 steps=("$@")
-[ "${#steps[@]}" -gt 0 ] || steps=(lint unit compose style proxy lb openbao)
+[ "${#steps[@]}" -gt 0 ] || steps=(lint unit compose style proxy lb start openbao)
 failed=()
 skipped=()
 
@@ -99,6 +100,11 @@ step_lb() {
   ./scripts/lb-test.sh
 }
 
+step_start() {
+  need_docker start || return $(( $? == 1 ? 0 : 1 ))
+  ./scripts/start-test.sh
+}
+
 step_openbao() {
   need_docker openbao || return $(( $? == 1 ? 0 : 1 ))
   ./scripts/openbao-init-test.sh >/dev/null && ./scripts/openbao-persist-test.sh
@@ -106,7 +112,7 @@ step_openbao() {
 
 # Validate every name before running anything: an unknown or empty name is an error, never a green run.
 for step in "${steps[@]}"; do
-  case "$step" in lint|mocks|unit|compose|style|proxy|lb|openbao) ;; *) echo "ci: unknown step '$step'" >&2; exit 2 ;; esac
+  case "$step" in lint|mocks|unit|compose|style|proxy|lb|start|openbao) ;; *) echo "ci: unknown step '$step'" >&2; exit 2 ;; esac
 done
 
 # The step functions report failure through their return status (no reliance on set -e, which is off inside "||").

@@ -16,7 +16,7 @@ jobs:
     container:
       image: mcp-ci:local
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
       - run: ci/run.sh lint mocks compose style
@@ -24,6 +24,7 @@ jobs:
   docker-tests:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: ci-main
     container:
       image: mcp-ci:local
       volumes:
@@ -31,7 +32,7 @@ jobs:
     env:
       CI_REQUIRE_DOCKER: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - run: ci/run.sh unit proxy lb
+      - run: ci/run.sh unit proxy lb start
