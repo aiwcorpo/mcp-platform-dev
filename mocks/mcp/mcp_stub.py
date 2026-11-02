@@ -292,6 +292,12 @@ def make_handler(stub):
             self.request = stub.tls.wrap_socket(self.request, server_side=True)
             super().setup()
 
+        def finish(self):
+            try:
+                super().finish()
+            finally:
+                self.request.close()
+
         def log_message(self, fmt, *args):
             sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
 
