@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
-"""Smoke test of the running environment (profile infra). Exit code 1 if any check fails.
+"""Smoke test of the running environment. Exit code 1 if any check fails.
+
+  smoke.py            READ ONLY: nothing is written to OpenBao, Redis, the mocks or the broker, no shared test user (alice, bob, carol,
+                      mallory) logs in and no wrong password is tried; token checks use one throw-away Keycloak user that is deleted
+                      afterwards (Keycloak itself gets that user, and the broker and gateway get a purge for its id).
+  smoke.py --write    adds the checks that write (Redis keys with a TTL, an OpenBao KV path and Transit call, a mapping of the Jira mock,
+                      a wrong password of the throw-away user). Needs CONFIRM=1 in the environment (make smoke-write CONFIRM=1).
+                      Never publishes on the live channel credential.invalidated.
 Secrets are handed to processes inside containers through stdin, never through argv."""
 
+import argparse
 import base64
 import contextlib
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -27,6 +36,11 @@ BROKER_TLS_NAME = mcpdev.cfg("MCP_BROKER_TLS_NAME", "mcp-credential-broker.inter
 GATEWAY_TLS_NAME = mcpdev.cfg("MCP_GATEWAY_INTERNAL_TLS_NAME", "mcp-gateway.internal")
 COMPONENT_AUDIENCES = {"mcp-gateway", "mcp-credential-broker", "mcp-gateway-admin", "opensearch"}
 failures = []
+arguments = argparse.ArgumentParser()
+arguments.add_argument("--write", action="store_true")
+WRITE = arguments.parse_args().write
+if WRITE and os.environ.get("CONFIRM") != "1":
+    sys.exit("smoke: --write changes the running stack (short-lived test keys, one OpenBao path, one Jira mock mapping); run make smoke-write CONFIRM=1")
 
 
 def check(name, condition, detail=""):
@@ -94,89 +108,111 @@ component_services = ("broker-mock", "gateway-admin-mock") if stub_mode else ("m
 for svc in ("keycloak", "openbao", "redis", "postgres", "jira-mock") + component_services:
     row = services.get(svc, {})
     check(f"{svc} healthy", row.get("Health") == "healthy", row.get("Status", "missing"))
-# wait-init.sh removes the finished job after make up, so a missing container is the normal state; the AppRole login below proves its result.
+# wait-init.sh removes the finished job after make up, so a missing container is the normal state; the read of the AppRole below proves its result.
 init = services.get("openbao-init")
 check("openbao-init did not fail", init is None or (init.get("State") == "exited" and init.get("ExitCode") == 0),
       init.get("Status", "") if init else "")
 
-print("== Keycloak realm corp (C1, C9)")
-issuer = f"{mcpdev.KEYCLOAK_URL}/realms/{mcpdev.REALM}"
-alice_token = mcpdev.login("alice")
-alice = mcpdev.decode_jwt(alice_token)
-check("alice: aud == mcp-gateway", alice.get("aud") == "mcp-gateway", str(alice.get("aud")))
-check("alice: azp == claude-code", alice.get("azp") == "claude-code")
-check("alice: iss is the fixed frontend URL", alice.get("iss") == issuer, alice.get("iss"))
-check("alice: required C1 claims present",
-      all(k in alice for k in ("iss", "sub", "aud", "exp", "iat", "azp", "preferred_username", "groups")))
-groups = alice.get("groups", [])
-check("alice: groups without path (CC-007)", groups and not any(g.startswith("/") for g in groups), str(groups))
-check("alice: jira read/write + proj-ABC",
-      {"mcp-jira-read", "mcp-jira-write", "mcp-jira-proj-ABC"} <= set(groups), str(groups))
-check("alice: token lifetime <= 60 min", alice["exp"] - alice["iat"] <= 3600)
-bob = mcpdev.decode_jwt(mcpdev.login("bob"))
-check("bob: jira read only", "mcp-jira-read" in bob["groups"] and "mcp-jira-write" not in bob["groups"])
-carol = mcpdev.decode_jwt(mcpdev.login("carol"))
-check("carol: mcp-platform-admin", "mcp-platform-admin" in carol["groups"])
-mallory = mcpdev.decode_jwt(mcpdev.login("mallory"))
-check("mallory: no groups", not mallory.get("groups"))
+def tls_refused(result):
+    """curl exit 35 or 56: the handshake was refused or cut. 7 (port closed), 58 and 60 are other failures and no proof of anything."""
+    return result.returncode in (35, 56)
 
-check("claude-code cannot ask for the broker audience scope",
-      expect_fail(lambda: mcpdev.login("alice", scope="openid mcp-credential-broker-audience")))
-check("wrong password rejected", expect_fail(lambda: mcpdev.login("alice", password="wrong")))
 
-try:
-    urllib.request.urlopen(urllib.request.Request(
-        f"{issuer}/clients-registrations/openid-connect", method="POST",
-        data=json.dumps({"redirect_uris": ["http://localhost:1/cb"], "token_endpoint_auth_method": "none"}).encode(),
-        headers={"Content-Type": "application/json"}))
-    dcr_status = 201
-except urllib.error.HTTPError as e:
-    dcr_status = e.code
-check("anonymous dynamic client registration rejected (explicit Trusted Hosts policy)", dcr_status == 403,
-      str(dcr_status))
+def curl_status(*args):
+    done = run("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", *args)
+    return done
 
-print("== token exchange (C4)")
-gw_token = mcpdev.exchange(alice_token, "mcp-gateway", "mcp-credential-broker")
-gw = mcpdev.decode_jwt(gw_token)
-check("gateway: alice -> aud=mcp-credential-broker", gw.get("aud") == "mcp-credential-broker", str(gw.get("aud")))
-check("gateway: exchanged token keeps sub", gw.get("sub") == alice["sub"])
-bff = mcpdev.decode_jwt(mcpdev.exchange(mcpdev.login("alice", "mcp-portal-bff"), "mcp-portal-bff", "mcp-credential-broker"))
-check("bff: alice -> aud=mcp-credential-broker, azp=mcp-portal-bff",
-      bff.get("aud") == "mcp-credential-broker" and bff.get("azp") == "mcp-portal-bff")
-os_token = mcpdev.decode_jwt(mcpdev.exchange(gw_token, "mcp-credential-broker", "opensearch"))
-check("broker: subjectToken (aud=broker) -> aud=opensearch", os_token.get("aud") == "opensearch"
-      and os_token.get("sub") == alice["sub"], str(os_token.get("aud")))
-check("gateway cannot exchange to opensearch", expect_fail(lambda: mcpdev.exchange(alice_token, "mcp-gateway", "opensearch")))
-check("gateway cannot exchange to mcp-gateway-admin",
-      expect_fail(lambda: mcpdev.exchange(alice_token, "mcp-gateway", "mcp-gateway-admin")))
-check("gateway cannot turn a broker token into aud=opensearch",
-      expect_fail(lambda: mcpdev.exchange(gw_token, "mcp-gateway", "opensearch")))
-check("bff cannot exchange a token issued to the gateway",
-      expect_fail(lambda: mcpdev.exchange(gw_token, "mcp-portal-bff", "mcp-credential-broker")))
-check("claude-code (public) cannot exchange",
-      expect_fail(lambda: mcpdev.exchange(alice_token, "claude-code", "mcp-credential-broker")))
-check("bff cannot exchange the claude-code token",
-      expect_fail(lambda: mcpdev.exchange(alice_token, "mcp-portal-bff", "mcp-credential-broker")))
-try:
-    no_aud = mcpdev.decode_jwt(mcpdev.exchange(alice_token, "mcp-gateway"))
-    check("gateway exchange without audience yields no component audience", not audiences(no_aud) & COMPONENT_AUDIENCES,
-          str(no_aud.get("aud")))
-except mcpdev.Fail:
-    check("gateway exchange without audience yields no component audience", True)
 
-# A component inside the network talks to http://keycloak:8080; `iss` must stay the same.
-form = urllib.parse.urlencode({
-    "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange", "client_id": "mcp-gateway",
-    "client_secret": mcpdev.cfg("KC_CLIENT_MCP_GATEWAY_SECRET"), "subject_token": alice_token,
-    "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
-    "audience": "mcp-credential-broker", "scope": "mcp-credential-broker-audience"})
-inside = compose_exec("jira-mock", "curl -s --data-binary @- http://keycloak:8080/realms/corp/protocol/openid-connect/token",
-                      stdin=form)
-try:
-    inside_claims = mcpdev.decode_jwt(json.loads(inside.stdout)["access_token"])
-    check("exchange from inside the network: same iss", inside_claims.get("iss") == issuer, inside_claims.get("iss"))
-except (ValueError, KeyError) as e:
-    check("exchange from inside the network: same iss", False, f"{e}: {inside.stdout[:200]}")
+print("== throw-away user for the token checks")
+with mcpdev.TempUser(["mcp-client-claude-code", "mcp-jira-read", "mcp-jira-write", "mcp-jira-proj-ABC", "mcp-opensearch-read"], otp=False) as probe:
+    print("== Keycloak realm corp (C1, C9)")
+    issuer = f"{mcpdev.KEYCLOAK_URL}/realms/{mcpdev.REALM}"
+    user_token = mcpdev.login(probe.name)
+    claims = mcpdev.decode_jwt(user_token)
+    check("probe user: aud == mcp-gateway", claims.get("aud") == "mcp-gateway", str(claims.get("aud")))
+    check("probe user: azp == claude-code", claims.get("azp") == "claude-code")
+    check("probe user: iss is the fixed frontend URL", claims.get("iss") == issuer, claims.get("iss"))
+    check("probe user: required C1 claims present",
+          all(k in claims for k in ("iss", "sub", "aud", "exp", "iat", "azp", "preferred_username", "groups")))
+    groups = claims.get("groups", [])
+    check("probe user: groups without path (CC-007)", groups and not any(g.startswith("/") for g in groups), str(groups))
+    check("probe user: jira read/write + proj-ABC", {"mcp-jira-read", "mcp-jira-write", "mcp-jira-proj-ABC"} <= set(groups), str(groups))
+    check("probe user: token lifetime <= 60 min", claims["exp"] - claims["iat"] <= 3600)
+
+
+    def realm_groups(login_name):
+        status, found = mcpdev.kc_admin("GET", f"/users?username={login_name}&exact=true")
+        if status != 200 or not found:
+            return None
+        return {g["name"] for g in mcpdev.kc_admin("GET", f"/users/{found[0]['id']}/groups")[1]}
+
+
+    # The shared users are read in the realm (admin API), never logged in.
+    alice_groups, bob_groups = realm_groups("alice"), realm_groups("bob")
+    check("alice (realm): jira read/write + proj-ABC", bool(alice_groups) and {"mcp-jira-read", "mcp-jira-write", "mcp-jira-proj-ABC"} <= alice_groups, str(alice_groups))
+    check("bob (realm): jira read only", bool(bob_groups) and "mcp-jira-read" in bob_groups and "mcp-jira-write" not in bob_groups, str(bob_groups))
+    check("carol (realm): mcp-platform-admin", "mcp-platform-admin" in (realm_groups("carol") or set()))
+    check("mallory (realm): no mcp- groups", realm_groups("mallory") is not None and not any(g.startswith("mcp-") for g in realm_groups("mallory")))
+
+    check("claude-code cannot ask for the broker audience scope",
+          expect_fail(lambda: mcpdev.login(probe.name, scope="openid mcp-credential-broker-audience")))
+
+    try:
+        urllib.request.urlopen(urllib.request.Request(
+            f"{issuer}/clients-registrations/openid-connect", method="POST",
+            data=json.dumps({"redirect_uris": ["http://localhost:1/cb"], "token_endpoint_auth_method": "none"}).encode(),
+            headers={"Content-Type": "application/json"}))
+        dcr_status = 201
+    except urllib.error.HTTPError as e:
+        dcr_status = e.code
+    check("anonymous dynamic client registration rejected (explicit Trusted Hosts policy)", dcr_status == 403, str(dcr_status))
+
+    print("== token exchange (C4)")
+    gw_token = mcpdev.exchange(user_token, "mcp-gateway", "mcp-credential-broker")
+    gw = mcpdev.decode_jwt(gw_token)
+    check("gateway: user -> aud=mcp-credential-broker", gw.get("aud") == "mcp-credential-broker", str(gw.get("aud")))
+    check("gateway: exchanged token keeps sub", gw.get("sub") == claims["sub"])
+    bff = mcpdev.decode_jwt(mcpdev.exchange(mcpdev.login(probe.name, "mcp-portal-bff"), "mcp-portal-bff", "mcp-credential-broker"))
+    check("bff: user -> aud=mcp-credential-broker, azp=mcp-portal-bff",
+          bff.get("aud") == "mcp-credential-broker" and bff.get("azp") == "mcp-portal-bff")
+    os_token = mcpdev.decode_jwt(mcpdev.exchange(gw_token, "mcp-credential-broker", "opensearch"))
+    check("broker: subjectToken (aud=broker) -> aud=opensearch", os_token.get("aud") == "opensearch"
+          and os_token.get("sub") == claims["sub"], str(os_token.get("aud")))
+    check("gateway cannot exchange to opensearch", expect_fail(lambda: mcpdev.exchange(user_token, "mcp-gateway", "opensearch")))
+    check("gateway cannot exchange to mcp-gateway-admin",
+          expect_fail(lambda: mcpdev.exchange(user_token, "mcp-gateway", "mcp-gateway-admin")))
+    check("gateway cannot turn a broker token into aud=opensearch",
+          expect_fail(lambda: mcpdev.exchange(gw_token, "mcp-gateway", "opensearch")))
+    check("bff cannot exchange a token issued to the gateway",
+          expect_fail(lambda: mcpdev.exchange(gw_token, "mcp-portal-bff", "mcp-credential-broker")))
+    check("claude-code (public) cannot exchange",
+          expect_fail(lambda: mcpdev.exchange(user_token, "claude-code", "mcp-credential-broker")))
+    check("bff cannot exchange the claude-code token",
+          expect_fail(lambda: mcpdev.exchange(user_token, "mcp-portal-bff", "mcp-credential-broker")))
+    try:
+        no_aud = mcpdev.decode_jwt(mcpdev.exchange(user_token, "mcp-gateway"))
+        check("gateway exchange without audience yields no component audience", not audiences(no_aud) & COMPONENT_AUDIENCES,
+              str(no_aud.get("aud")))
+    except mcpdev.Fail:
+        check("gateway exchange without audience yields no component audience", True)
+
+    # A component inside the network talks to http://keycloak:8080; `iss` must stay the same.
+    form = urllib.parse.urlencode({
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange", "client_id": "mcp-gateway",
+        "client_secret": mcpdev.cfg("KC_CLIENT_MCP_GATEWAY_SECRET"), "subject_token": user_token,
+        "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
+        "audience": "mcp-credential-broker", "scope": "mcp-credential-broker-audience"})
+    inside = compose_exec("jira-mock", "curl -s --data-binary @- http://keycloak:8080/realms/corp/protocol/openid-connect/token",
+                          stdin=form)
+    try:
+        inside_claims = mcpdev.decode_jwt(json.loads(inside.stdout)["access_token"])
+        check("exchange from inside the network: same iss", inside_claims.get("iss") == issuer, inside_claims.get("iss"))
+    except (ValueError, KeyError) as e:
+        check("exchange from inside the network: same iss", False, f"{e}: {inside.stdout[:200]}")
+
+    user_token_for_mock = user_token
+    if WRITE:
+        check("wrong password of the probe user rejected", expect_fail(lambda: mcpdev.login(probe.name, password="wrong")))
 
 print("== Jira mock (C4.1 whoami, invariant 2)")
 for pat, expected in (("alice-pat", "alice"), ("bob-pat", "bob"), ("someone-elses-pat", "someone-else")):
@@ -190,7 +226,7 @@ check("issue ABC-1 readable with alice-pat", status == 200 and json.loads(body)[
 status, body = http_get(f"{JIRA}/rest/api/2/project/HR", {"Authorization": "Bearer alice-pat"})
 check("project HR has category Restricted",
       status == 200 and json.loads(body).get("projectCategory", {}).get("name") == "Restricted")
-status, _ = http_get(f"{JIRA}/rest/api/2/issue/ABC-1", {"Authorization": f"Bearer {alice_token}"})
+status, _ = http_get(f"{JIRA}/rest/api/2/issue/ABC-1", {"Authorization": f"Bearer {user_token_for_mock}"})
 check("data with an IdP token (passthrough) -> 401", status == 401, str(status))
 status, _ = http_get(f"{JIRA}/rest/api/2/search?jql=project%3DABC", {"Authorization": "Bearer someone-elses-pat"})
 check("data with an unknown PAT -> 401", status == 401, str(status))
@@ -200,83 +236,39 @@ check("journal shows which credential reached Jira (PAT vs passthrough)",
 
 broker_ca = str(ROOT / "certs/ca/ca.crt")
 bff_cert = ("--cert", str(ROOT / "certs/mcp-portal-bff/tls.crt"), "--key", str(ROOT / "certs/mcp-portal-bff/tls.key"))
+other_ca_cert = ("--cert", str(ROOT / "certs/untrusted/mcp-gateway/tls.crt"), "--key", str(ROOT / "certs/untrusted/mcp-gateway/tls.key"))
 if stub_mode:
-    print("== broker stub over mTLS (C4 PUT /v1/connections/{system}/secret)")
-    status, body = mcpdev.put_secret("alice", "jira", "alice-pat")
-    check(f"put-secret alice jira -> 200 connected (TLS name {BROKER_TLS_NAME} verified)",
-          status == 200 and body.get("status") == "connected", f"{status} {body}")
-    check("put-secret rejects a broker certificate with another name",
-          expect_fail(lambda: mcpdev.put_secret("alice", "jira", "alice-pat", tls_name="mcp-jira.internal")))
-    check("put-secret with untrusted client cert rejected",
-          expect_fail(lambda: mcpdev.put_secret("alice", "jira", "alice-pat", identity="untrusted/mcp-gateway")))
-    broker = f"https://localhost:{mcpdev.cfg('BROKER_MOCK_PORT', '18443')}"
-    nocert = run("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--cacert", broker_ca, f"{broker}/v1/systems")
-    check("broker stub without client cert rejected", nocert.stdout == "000", nocert.stdout)
-    journal = run("curl", "-s", "--cacert", broker_ca, *bff_cert, f"{broker}/__admin/requests")
-    check("broker stub keeps no request journal (PATs)", "alice-pat" not in journal.stdout, journal.stdout[:200])
+    print("== broker stub over mTLS (C4)")
+    port = mcpdev.cfg("BROKER_MOCK_PORT", "18443")
+    broker = f"https://{BROKER_TLS_NAME}:{port}"
 else:
-    # Read-only: no secret is written, so the connections of the real test users stay as they are.
     print("== broker over mTLS (C4, real component)")
-    broker_port = mcpdev.cfg("BROKER_PORT", "18100")
-    broker = f"https://{BROKER_TLS_NAME}:{broker_port}"
-    resolve = ("--resolve", f"{BROKER_TLS_NAME}:{broker_port}:127.0.0.1")
-    nocert = run("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--cacert", broker_ca, *resolve, f"{broker}/v1/systems")
-    check("broker without client certificate rejected", nocert.stdout == "000", nocert.stdout)
-    notoken = run("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--cacert", broker_ca, *resolve, *bff_cert, f"{broker}/v1/systems")
+    port = mcpdev.cfg("BROKER_PORT", "18100")
+    broker = f"https://{BROKER_TLS_NAME}:{port}"
+resolve = ("--resolve", f"{BROKER_TLS_NAME}:{port}:127.0.0.1")
+check("broker without client certificate: handshake refused (a closed port is no proof)", tls_refused(curl_status("--cacert", broker_ca, *resolve, f"{broker}/v1/systems")))
+check("broker with a certificate of another CA: handshake refused", tls_refused(curl_status("--cacert", broker_ca, *resolve, *other_ca_cert, f"{broker}/v1/systems")))
+mismatch = curl_status("--cacert", broker_ca, "--resolve", f"wrong-name.internal:{port}:127.0.0.1", *bff_cert, f"https://wrong-name.internal:{port}/v1/systems")
+check("the broker certificate is checked against the name (curl exit 60, on the listening port)", mismatch.returncode == 60, f"exit {mismatch.returncode}")
+if not stub_mode:
+    notoken = curl_status("--cacert", broker_ca, *resolve, *bff_cert, f"{broker}/v1/systems")
     check("broker with the BFF certificate but without a bearer token -> 401", notoken.stdout == "401", notoken.stdout)
-    badcert = run("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--cacert", broker_ca, *resolve,
-                  "--cert", str(ROOT / "certs/untrusted/mcp-gateway/tls.crt"), "--key", str(ROOT / "certs/untrusted/mcp-gateway/tls.key"),
-                  f"{broker}/v1/systems")
-    check("broker with a certificate of another CA rejected", badcert.stdout == "000", badcert.stdout)
-    # The handshake fails on the name before any request is sent, so nothing is written for alice.
-    check("a broker certificate with another name is rejected before any request",
-          expect_fail(lambda: mcpdev.put_secret("alice", "jira", "alice-pat", tls_name="mcp-jira.internal")))
-
-print("== OpenBao (KV v2, Transit, AppRole, audit)")
-login_out = compose_exec(
-    "openbao", f"bao write -field=token auth/approle/login role_id={mcpdev.cfg('BAO_BROKER_ROLE_ID')} secret_id=-",
-    stdin=mcpdev.cfg("BAO_BROKER_SECRET_ID"))
-broker_token = login_out.stdout.strip()
-check("approle mcp-credential-broker login", login_out.returncode == 0 and broker_token, login_out.stderr[-200:])
-as_broker = "read -r BAO_TOKEN; export BAO_TOKEN; "
-enc = compose_exec("openbao", as_broker + "bao write -field=ciphertext transit/encrypt/mcp-credential-broker plaintext=dGVzdA==",
-                   stdin=broker_token + "\n")
-check("broker token can use transit key", enc.stdout.startswith("vault:v1:"), enc.stderr[-200:])
-kv = compose_exec("openbao", as_broker + "bao kv put -mount=secret mcp/connections/smoke/jira probe=1 >/dev/null && "
-                  "bao kv delete -mount=secret mcp/connections/smoke/jira >/dev/null", stdin=broker_token + "\n")
-check("broker token can write KV v2 connections path", kv.returncode == 0, kv.stderr[-200:])
-deny = compose_exec("openbao", as_broker + "bao kv get -mount=secret other/path", stdin=broker_token + "\n")
-check("broker token denied outside its path", deny.returncode != 0 and "permission denied" in deny.stderr)
-audit_list = compose_exec("openbao", as_broker + "bao audit list", stdin=mcpdev.cfg("BAO_ROOT_TOKEN") + "\n")
+print("== OpenBao (read only: policy, AppRole, Transit key, audit device)")
+root_in = mcpdev.cfg("BAO_ROOT_TOKEN") + "\n"
+as_root = "read -r BAO_TOKEN; export BAO_TOKEN; "
+role = compose_exec("openbao", as_root + "bao read -field=token_policies auth/approle/role/mcp-credential-broker", stdin=root_in)
+check("AppRole mcp-credential-broker exists (init has run)", role.returncode == 0 and role.stdout.strip() != "", role.stderr[-200:])
+key = compose_exec("openbao", as_root + "bao read -field=type transit/keys/mcp-credential-broker", stdin=root_in)
+check("Transit key mcp-credential-broker exists", key.returncode == 0 and key.stdout.strip() != "", key.stderr[-200:])
+audit_list = compose_exec("openbao", as_root + "bao audit list", stdin=root_in)
 check("audit device enabled", "stdout/" in audit_list.stdout, audit_list.stderr[-200:])
 
-print("== Redis ACL per component")
-
-
-def redis_as(user, *commands):
-    script = "read -r REDISCLI_AUTH; export REDISCLI_AUTH; " + "; ".join(
-        f"redis-cli --no-auth-warning --user {user} {c}" for c in commands)
-    pw = mcpdev.cfg(f"REDIS_{user.upper().replace('-', '_')}_PASSWORD")
-    return [line for line in compose_exec("redis", script, stdin=pw + "\n").stdout.splitlines() if line.strip()]
-
-
+print("== Redis ACL per component (read only)")
 noauth = compose_exec("redis", "redis-cli ping")
 check("default user disabled (NOAUTH)", "NOAUTH" in noauth.stdout + noauth.stderr, noauth.stdout)
-out = redis_as("gateway", "set gw:smoke 1", "set broker:smoke 1", "publish credential.invalidated x", "flushall")
-check("gateway: own prefix gw:*", out[0] == "OK", str(out))
-check("gateway: no broker keys, no publish, no flushall", all("NOPERM" in o for o in out[1:]), str(out))
-out = redis_as("broker", "set broker:smoke 1", "set jti:mcp-credential-broker:smoke 1",
-               "publish credential.invalidated x", "set gw:smoke 1", "publish other.channel x")
-check("broker: broker:*, jti:mcp-credential-broker:*, publish credential.invalidated",
-      out[:2] == ["OK", "OK"] and out[2].isdigit(), str(out))
-check("broker: no gateway keys, no other channels", all("NOPERM" in o for o in out[3:]), str(out))
-out = redis_as("mcp-jira", "set jti:mcp-jira:smoke 1 EX 60", "set jti:mcp-confluence:smoke 1", "publish credential.invalidated x")
-check("mcp-jira: only jti:mcp-jira:*", out[0] == "OK" and all("NOPERM" in o for o in out[1:]), str(out))
-out = redis_as("mcp-jira", "scan 0", "keys '*'", "randomkey", "eval 'return 1' 0", "script flush", "get gw:smoke")
-check("mcp-jira: no SCAN, KEYS, RANDOMKEY, EVAL, SCRIPT, no gw:* keys",
-      len(out) == 6 and all("NOPERM" in o for o in out), str(out))
-out = redis_as("gateway", "scan 0", "keys '*'")
-check("gateway: no SCAN, KEYS", len(out) == 2 and all("NOPERM" in o for o in out), str(out))
+users = compose_exec("redis", "read -r REDISCLI_AUTH; export REDISCLI_AUTH; redis-cli --no-auth-warning --user admin ACL USERS",
+                     stdin=mcpdev.cfg("REDIS_ADMIN_PASSWORD") + "\n").stdout.split()
+check("ACL users of the components exist", {"gateway", "broker", "mcp-jira", "portal-bff"} <= set(users), str(users))
 
 print("== PostgreSQL")
 for user, db, ok in (("broker", "broker", True), ("gateway", "gateway", True), ("broker", "gateway", False)):
@@ -304,17 +296,63 @@ for method, path in (("GET", "/__admin/mappings"), ("POST", "/__admin/mappings")
     check(f"servers network: Jira mock {method} {path} without admin credentials -> 401", res.stdout == "401",
           res.stdout)
 
-# Even with admin credentials the mock must not proxy into the core network (SSRF).
-admin = {"Authorization": "Basic " + base64.b64encode(
-    f"admin:{mcpdev.cfg('JIRA_MOCK_ADMIN_PASSWORD')}".encode()).decode(), "Content-Type": "application/json"}
-probe = {"request": {"urlPath": "/smoke-proxy-probe"}, "response": {"proxyBaseUrl": "http://keycloak:8080"}}
-with urllib.request.urlopen(urllib.request.Request(f"{JIRA}/__admin/mappings", data=json.dumps(probe).encode(),
-                                                   headers=admin, method="POST")) as resp:
-    probe_id = json.load(resp)["id"]
-status, body = http_get(f"{JIRA}/smoke-proxy-probe")
-urllib.request.urlopen(urllib.request.Request(f"{JIRA}/__admin/mappings/{probe_id}", headers=admin, method="DELETE"))
-check("Jira mock refuses to proxy to the core network", status != 200 and "keycloak" not in body.lower(),
-      f"{status} {body[:120]}")
+if WRITE and stub_mode:
+    with mcpdev.TempUser(["mcp-client-claude-code"], otp=False) as writer:
+        status, body = mcpdev.put_secret(writer.name, "jira", "alice-pat")
+        check(f"put-secret to the stub -> 200 connected (TLS name {BROKER_TLS_NAME} verified)", status == 200 and body.get("status") == "connected", f"{status} {body}")
+
+if WRITE:
+    print("== writes (--write): Redis keys with a TTL, an OpenBao path, a Jira mock mapping")
+
+    def redis_as(user, *commands):
+        script = "read -r REDISCLI_AUTH; export REDISCLI_AUTH; " + "; ".join(
+            f"redis-cli --no-auth-warning --user {user} {c}" for c in commands)
+        pw = mcpdev.cfg(f"REDIS_{user.upper().replace('-', '_')}_PASSWORD")
+        return [line for line in compose_exec("redis", script, stdin=pw + "\n").stdout.splitlines() if line.strip()]
+
+    out = redis_as("gateway", "set gw:smoke 1 EX 60", "set broker:smoke 1 EX 60", "flushall")
+    check("gateway: own prefix gw:*", out[0] == "OK", str(out))
+    check("gateway: no broker keys, no flushall", all("NOPERM" in o for o in out[1:]), str(out))
+    out = redis_as("broker", "set broker:smoke 1 EX 60", "set jti:mcp-credential-broker:smoke 1 EX 60", "set gw:smoke 1 EX 60",
+                   "publish other.channel x")
+    check("broker: broker:*, jti:mcp-credential-broker:*", out[:2] == ["OK", "OK"], str(out))
+    check("broker: no gateway keys, no other channels", all("NOPERM" in o for o in out[2:]), str(out))
+    out = redis_as("mcp-jira", "set jti:mcp-jira:smoke 1 EX 60", "set jti:mcp-confluence:smoke 1 EX 60", "publish other.channel x")
+    check("mcp-jira: only jti:mcp-jira:*", out[0] == "OK" and all("NOPERM" in o for o in out[1:]), str(out))
+    out = redis_as("mcp-jira", "scan 0", "keys '*'", "randomkey", "eval 'return 1' 0", "script flush", "get gw:smoke")
+    check("mcp-jira: no SCAN, KEYS, RANDOMKEY, EVAL, SCRIPT, no gw:* keys", len(out) == 6 and all("NOPERM" in o for o in out), str(out))
+    out = redis_as("gateway", "scan 0", "keys '*'")
+    check("gateway: no SCAN, KEYS", len(out) == 2 and all("NOPERM" in o for o in out), str(out))
+
+    login_out = compose_exec(
+        "openbao", f"bao write -field=token auth/approle/login role_id={mcpdev.cfg('BAO_BROKER_ROLE_ID')} secret_id=-",
+        stdin=mcpdev.cfg("BAO_BROKER_SECRET_ID"))
+    broker_token = login_out.stdout.strip()
+    check("approle mcp-credential-broker login", login_out.returncode == 0 and broker_token, login_out.stderr[-200:])
+    as_broker = "read -r BAO_TOKEN; export BAO_TOKEN; "
+    enc = compose_exec("openbao", as_broker + "bao write -field=ciphertext transit/encrypt/mcp-credential-broker plaintext=dGVzdA==",
+                       stdin=broker_token + "\n")
+    check("broker token can use transit key", enc.stdout.startswith("vault:v1:"), enc.stderr[-200:])
+    # The path expires by itself (delete-version-after) and its metadata is removed at the end, so no version stays in the raft.
+    smoke_path = "mcp/connections/smoke/jira"
+    compose_exec("openbao", as_root + f"bao kv metadata put -mount=secret -delete-version-after=60s {smoke_path} >/dev/null", stdin=root_in)
+    kv = compose_exec("openbao", as_broker + f"bao kv put -mount=secret {smoke_path} probe=1 >/dev/null", stdin=broker_token + "\n")
+    check("broker token can write KV v2 connections path", kv.returncode == 0, kv.stderr[-200:])
+    compose_exec("openbao", as_root + f"bao kv metadata delete -mount=secret {smoke_path} >/dev/null", stdin=root_in)
+    deny = compose_exec("openbao", as_broker + "bao kv get -mount=secret other/path", stdin=broker_token + "\n")
+    check("broker token denied outside its path", deny.returncode != 0 and "permission denied" in deny.stderr)
+
+    admin = {"Authorization": "Basic " + base64.b64encode(
+        f"admin:{mcpdev.cfg('JIRA_MOCK_ADMIN_PASSWORD')}".encode()).decode(), "Content-Type": "application/json"}
+    probe_mapping = {"request": {"urlPath": "/smoke-proxy-probe"}, "response": {"proxyBaseUrl": "http://keycloak:8080"}}
+    with urllib.request.urlopen(urllib.request.Request(f"{JIRA}/__admin/mappings", data=json.dumps(probe_mapping).encode(),
+                                                       headers=admin, method="POST")) as resp:
+        probe_id = json.load(resp)["id"]
+    try:
+        status, body = http_get(f"{JIRA}/smoke-proxy-probe")
+    finally:
+        urllib.request.urlopen(urllib.request.Request(f"{JIRA}/__admin/mappings/{probe_id}", headers=admin, method="DELETE"))
+    check("Jira mock refuses to proxy to the core network", status != 200 and "keycloak" not in body.lower(), f"{status} {body[:120]}")
 
 print("== certificates (C3, C4, C5, CC-035)")
 certs = ROOT / "certs"

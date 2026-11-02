@@ -12,7 +12,7 @@ pipeline {
       steps { sh 'ci/run.sh lint mocks compose style' }
     }
     stage('docker-tests') {
-      when { branch 'main' }
+      when { beforeAgent true; branch 'main' }
       agent { docker { image 'mcp-ci:local'; label 'docker'; args '-v /var/run/docker.sock:/var/run/docker.sock' } }
       environment { CI_REQUIRE_DOCKER = '1' }
       steps { sh 'ci/run.sh unit proxy lb start' }

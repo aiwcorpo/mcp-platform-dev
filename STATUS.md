@@ -527,4 +527,10 @@ Opis i dowody: [docs/m6.md](docs/m6.md).
 - XH: profil `e2e-prod` (osobny projekt `mcp-e2e-prod`): gateway bez `devstack`, broker i serwer MCP stand-in, `scripts/e2e-prod.sh`, `make e2e-prod-test` 10 PASS (CC-166, `environment_mismatch`,
   trzymany manifest, klucze `dev-`, lista 253 narzędzi w 3 stronach).
 - Usunięty `m4-bao-test-35500-server` (kontener `-dev` w pamięci, bez wolumenów, pozostałość po przerwanym `openbao-init-test.sh`) i jego sieć.
-- Pytania: czy CC "system bulk" (docs/m6.md, punkt 4) czy zostajemy przy tożsamości `mcp-confluence`; ustawienie Environment `ci-main` i runnera chronionego w platformie CI.
+- Po przeglądzie (review-ws01-m6-e1): hash stand-inu liczony z poświadczenia bazowego, `bulk.sh` rejestruje przed usunięciem i jest idempotentny, `make up*` odmawia przy stand-inie (`bulk-guard`),
+  `make smoke` naprawdę tylko do odczytu, zapisy w `make smoke-write CONFIRM=1` (niewykonane na stosie), `init-failed.sh` zatrzymuje usługi zależne od nieudanego init, `beforeAgent true` w Jenkinsfile,
+  gateway bez martwego `MaxRAMPercentage` (sterta 60% z obrazu; następny `make up*` odtworzy oba gatewaye), L3, L6, L7, L10, L13. Decyzja koordynatora: system `bulk` zostaje na tożsamości `mcp-confluence`, bez CC.
+- Znane, nie zrobione (LOW z przeglądu): L2 smoke nie testuje gatewaya poza zdrowiem i osiągalnością sieci tylko po nazwie; L4 `jti` w stand-inie nie jest atomowe i `crit` nie jest odrzucane; L5 gateway e2e-prod używa
+  keystore `mcp-gateway` stosu, osobne CA profilu byłoby czystsze; L8 paczka polityk i `ca-trust.p12` odświeża `reset-keys`; L9 `ubuntu-latest` nie ma `mcp-ci:local` i obraz CI to tag, nie digest; L11 tryby plików
+  kluczy działają na Docker Desktop, nie na Linuksie; L12 `bulk.sh` nie porównuje artefaktu z hashami rejestru; zadania po `apply-*` nie są usuwane (idempotentne).
+- Pytania: ustawienie Environment `ci-main` i runnera chronionego w platformie CI.

@@ -43,5 +43,18 @@ c stop >/dev/null 2>&1
 c start >/dev/null 2>&1
 check "second stop and start keeps the service up" "running" "$(state)"
 
+# A job that fails: up --wait fails, and init-failed.sh (called by the up targets of the Makefile) stops the service that depends on it.
+c down -v >/dev/null 2>&1
+sed -i.bak 's/"echo job-ran"/"exit 7"/' "$tmp/compose.yml" && rm -f "$tmp/compose.yml.bak"
+cat > "$tmp/compose-wrapper.sh" <<WRAP
+#!/bin/sh
+exec docker compose -p $project -f $tmp/compose.yml "\$@"
+WRAP
+chmod +x "$tmp/compose-wrapper.sh"
+if c up -d --wait >/dev/null 2>&1; then up_status=0; else up_status=1; fi
+check "a failed job makes up --wait fail" "1" "$up_status"
+INIT_FAILED_COMPOSE="$tmp/compose-wrapper.sh" INIT_FAILED_JOBS=init INIT_FAILED_PROFILES=0 "$root/scripts/init-failed.sh" >/dev/null 2>&1
+check "init-failed.sh stops the service that depends on the failed job" "exited" "$(state)"
+
 echo "start-test: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

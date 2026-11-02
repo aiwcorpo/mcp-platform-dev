@@ -150,6 +150,21 @@ class BaseManifestTest(unittest.TestCase):
         self.assertEqual("0.1.0-SNAPSHOT", manifest["version"])
         self.assertEqual(self.base["resourceTypes"], manifest["resourceTypes"])
 
+    def test_every_hash_is_recomputable_from_the_credential_of_the_manifest(self):
+        for settings in (mcp_stub.Settings(base_manifest=self.path, tool_count=3, credential_required=False, credential_types=()),
+                         mcp_stub.Settings(base_manifest=self.path, tool_count=3)):
+            manifest = mcp_stub.build_manifest(settings)
+            for tool in manifest["tools"]:
+                self.assertEqual(tool["definitionHash"],
+                                 mcp_stub.definition_hash(tool["definition"], tool, manifest["system"], manifest["credential"]), tool["name"])
+
+    def test_a_real_tool_is_not_answered_with_a_success(self):
+        stub = make_stub(base_manifest=self.path, tool_count=2)
+        _, body = rpc(stub, token(user_claims("mcp-confluence", "j1", tool="get_page")), "tools/call", {"name": "get_page"})
+        self.assertIs(True, body["result"]["isError"])
+        _, body = rpc(stub, token(user_claims("mcp-confluence", "j2", tool="read_item_001")), "tools/call", {"name": "read_item_001"})
+        self.assertIs(False, body["result"]["isError"])
+
     def test_the_stand_in_lists_the_definitions_of_its_manifest(self):
         stub = make_stub(base_manifest=self.path, tool_count=2)
         _, body = rpc(stub, token(service_claims("mcp-confluence", "j1")), "tools/list")
@@ -313,6 +328,14 @@ class TlsTest(unittest.TestCase):
     def test_another_certificate_of_the_same_ca_is_refused(self):
         status, _ = self.post_ping("other", "t2")
         self.assertEqual(403, status)
+
+    def test_a_negative_content_length_is_refused(self):
+        conn = self.connection("gateway")
+        try:
+            conn.request("POST", "/mcp", b"", {"Content-Length": "-1"})
+            self.assertEqual(413, conn.getresponse().status)
+        finally:
+            conn.close()
 
     def test_no_client_certificate_fails_the_handshake(self):
         with self.assertRaises((ssl.SSLError, ConnectionError)):

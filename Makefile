@@ -18,7 +18,7 @@ COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira $(if $(filter 1,$(M5_AC
         smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test trust-ca mocks-test m2 mock-auth \
         m3 otp reset-authenticator registry-refresh admin-password m3-switch \
         m4 m4-test m4-switch offboard registry-register openbao-test \
-        m5-switch m5-rollback m5-artifacts ci ci-local lb-test rollback-test compose-check start-test mock-fault c2-keys openbao-init openbao-renew openbao-persist-test openbao-migrate openbao-guard bulk-on bulk-off bulk-status e2e-prod-up e2e-prod-down e2e-prod-test
+        m5-switch m5-rollback m5-artifacts ci ci-local lb-test rollback-test compose-check start-test mock-fault c2-keys openbao-init openbao-renew openbao-persist-test openbao-migrate openbao-guard bulk-guard smoke-write bulk-on bulk-off bulk-status e2e-prod-up e2e-prod-down e2e-prod-test
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -34,20 +34,20 @@ contracts: ## extract C4/C5 stubs and audit vectors of MCP_CONTRACTS_REF into ou
 	@./scripts/fetch-contracts.sh
 
 # Stubs and real components share network aliases; only one of each pair may run.
-up: openbao-guard certs contracts ## start profile infra (infrastructure + C4/C5 contract stubs) and wait for health checks
+up: bulk-guard openbao-guard certs contracts ## start profile infra (infrastructure + C4/C5 contract stubs) and wait for health checks
 	@$(COMPOSE) --profile full rm -sf $(COMPONENTS) >/dev/null 2>&1
 	$(COMPOSE) --profile infra up -d --wait --force-recreate $(STUBS)
-	$(COMPOSE) --profile infra up -d --wait
+	$(COMPOSE) --profile infra up -d --wait || { ./scripts/init-failed.sh; exit 1; }
 	@./scripts/wait-init.sh
 
-up-core: openbao-guard certs ## start infrastructure only, without the C4/C5 stubs (for running own broker/gateway on the host)
+up-core: bulk-guard openbao-guard certs ## start infrastructure only, without the C4/C5 stubs (for running own broker/gateway on the host)
 	@$(COMPOSE) --profile infra --profile full rm -sf $(STUBS) $(COMPONENTS) >/dev/null 2>&1
-	$(COMPOSE) up -d --wait
+	$(COMPOSE) up -d --wait || { ./scripts/init-failed.sh; exit 1; }
 	@./scripts/wait-init.sh
 
-up-full: openbao-guard certs ## start profile full (needs images of gateway, broker, mcp-jira from .env); stops the stubs
+up-full: bulk-guard openbao-guard certs ## start profile full (needs images of gateway, broker, mcp-jira from .env); stops the stubs
 	@$(COMPOSE) --profile infra rm -sf $(STUBS) >/dev/null 2>&1
-	$(COMPOSE) --profile full up -d --wait
+	$(COMPOSE) --profile full up -d --wait || { ./scripts/init-failed.sh; exit 1; }
 	@./scripts/wait-init.sh
 
 down: ## stop everything, keep volumes, secrets and certificates (OpenBao data included)
@@ -97,8 +97,11 @@ images: ## build the component images of profile full from git refs of the sibli
 m1: ## M1 scenarios (F1 A1 A2 A3 A9 A15) against the running make up-full; needs ../mcp-e2e (read only)
 	@$(PY) -I scripts/m1-compose.py
 
-smoke: ## smoke test of the running stack (contract stubs or real broker and gateway, detected; writes no user data in the real mode)
+smoke: ## READ-ONLY smoke test of the running stack (stubs or real broker and gateway, detected): no writes, no shared test user logs in; ends with "all checks passed", ~90 checks
 	@$(PY) scripts/smoke.py
+
+smoke-write: ## smoke checks that WRITE (Redis keys with TTL, OpenBao test path, Jira mock mapping, wrong password of a throw-away user); needs CONFIRM=1
+	@$(PY) scripts/smoke.py --write
 
 users: ## test users and their generated passwords (NOT FOR PRODUCTION)
 	@grep -E '^KC_USER_[A-Z]+_PASSWORD=' .secrets/dev.env | sed -E 's/^KC_USER_([A-Z]+)_PASSWORD=/\1 /' | tr 'A-Z' 'a-z' | awk '{printf "  %-8s %s\n", $$1, $$2}'
@@ -109,9 +112,9 @@ images-m2: ## build the images of profile m2 (portal BFF and web, MCP servers of
 
 # Compose recreates exactly the services whose configuration or image changed; m2-sync then applies what lives
 # outside the containers' definitions (Keycloak client, Redis ACL, proxy rules).
-up-m2: openbao-guard certs ## start profile m2 (proxy, portal BFF and web, MCP servers) on top of make up-full; recreates changed services only
+up-m2: bulk-guard openbao-guard certs ## start profile m2 (proxy, portal BFF and web, MCP servers) on top of make up-full; recreates changed services only
 	@$(COMPOSE) --profile infra rm -sf $(STUBS) >/dev/null 2>&1
-	$(COMPOSE) --profile full --profile m2 up -d --wait
+	$(COMPOSE) --profile full --profile m2 up -d --wait || { ./scripts/init-failed.sh; exit 1; }
 	@./scripts/wait-init.sh
 	@$(MAKE) --no-print-directory m2-sync
 
@@ -182,6 +185,9 @@ rollback-test: ## database part of the M5 rollback on a throw-away PostgreSQL (i
 
 openbao-guard:
 	@./scripts/openbao-guard.sh
+
+bulk-guard:
+	@./scripts/bulk-guard.sh
 
 openbao-persist-test: ## dev OpenBao on a throw-away instance: data, Transit keys and AppRole survive restart and Stop/Start, unseal sidecar, init.sh overwrites nothing (isolated network and volumes, about 2 min)
 	@./scripts/openbao-persist-test.sh

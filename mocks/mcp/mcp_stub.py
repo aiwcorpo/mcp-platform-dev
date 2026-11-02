@@ -147,9 +147,6 @@ def build_manifest(settings, environment=None):
     version, credential, resource types and the entries of the real tools are taken over unchanged, hashes included, so that a registry
     that approved them keeps its approvals while the stand-in runs and when the real manifest is registered again."""
     credential = {"required": settings.credential_required, "acceptedTypes": list(settings.credential_types)}
-    own = TOOLSETS[settings.toolset](settings)
-    for tool in own:
-        tool["definitionHash"] = definition_hash(tool["definition"], tool, settings.system, credential)
     base = {}
     if settings.base_manifest:
         with open(settings.base_manifest) as handle:
@@ -158,6 +155,10 @@ def build_manifest(settings, environment=None):
             if base.get(field) != wanted:
                 raise ValueError(f"the base manifest has {field} {base.get(field)!r}, the stand-in {wanted!r}")
         credential = base["credential"]
+    own = TOOLSETS[settings.toolset](settings)
+    for tool in own:
+        tool["definitionHash"] = definition_hash(tool["definition"], tool, settings.system, credential)
+    if base:
         clash = {t["name"] for t in base["tools"]} & {t["name"] for t in own}
         if clash:
             raise ValueError(f"tool names of the stand-in clash with the base manifest: {sorted(clash)[:3]}")
@@ -225,6 +226,7 @@ class Stub:
         self.clock = clock
         self.jtis = JtiLog(clock)
         self.manifest = build_manifest(settings)
+        self.own = {tool["name"] for tool in TOOLSETS[settings.toolset](settings)}
         self.tools = {tool["name"]: tool["definition"] for tool in self.manifest["tools"]}
         self.listing = [tool["definition"] for tool in self.manifest["tools"]]
         self.path = urllib.parse.urlparse(settings.internal_url).path or "/mcp"
@@ -292,6 +294,9 @@ class Stub:
             name = params.get("name")
             if name not in self.tools:
                 return self._json(200, {"jsonrpc": "2.0", "id": ident, "error": {"code": -32602, "message": "Unknown tool"}})
+            if name not in self.own:
+                text = json.dumps({"error": "stand_in", "message": "This tool of the real server is not served while the stand-in runs."})
+                return self._json(200, {"jsonrpc": "2.0", "id": ident, "result": {"content": [{"type": "text", "text": text}], "isError": True}})
             kind = headers.get("X-MCP-Credential-Type", "none")
             result = {"content": [{"type": "text", "text": f"{name}: ok, credential type {kind}"}], "isError": False}
         else:
@@ -328,13 +333,21 @@ def make_handler(stub):
             return subject.get("commonName") in stub.settings.client_cns
 
         def _serve(self):
-            length = int(self.headers.get("Content-Length") or 0)
-            if length > MAX_BODY:
+            if not self._client_allowed():
+                try:
+                    self.rfile.read(max(0, min(int(self.headers.get("Content-Length") or 0), 65536)))
+                except ValueError:
+                    pass
+                self.close_connection = True
+                return self._send(403, {"Content-Type": "application/json"}, b'{"error":"client_not_allowed"}')
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if not 0 <= length <= MAX_BODY:
                 self.close_connection = True
                 return self._send(413, {"Content-Type": "application/json"}, b'{"error":"payload_too_large"}')
             body = self.rfile.read(length) if length else b""
-            if not self._client_allowed():
-                return self._send(403, {"Content-Type": "application/json"}, b'{"error":"client_not_allowed"}')
             self._send(*stub.handle(self.command, self.path, self.headers, body))
 
         def _send(self, status, headers, body):

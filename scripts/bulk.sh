@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # Profile bulk on the main stack: for the time of a test (scenario G9 of mcp-e2e, tools/list over 100 tools) the real mcp-confluence is
-# replaced by a stand-in with 250 READ_ONLY tools, then put back. The contracts know five systems and the gateway refuses another, so
+# replaced by a stand-in with 250 READ_ONLY tools (plus the four real ones), then put back. The contracts know five systems and the gateway refuses another, so
 # the stand-in takes the identity of mcp-confluence (docker-compose.bulk.yml). The change is visible to every user of the stack while it
 # lasts: the four real Confluence tools stay in the list (with the manifest of the real build, so their approvals in the registry survive)
-# but answer with a fixed text. The state volume of the real server is kept.
+# but answer with an error. The state volume of the real server is kept.
 #
 #   scripts/bulk.sh status           what runs now (nothing is changed)
-#   scripts/bulk.sh on  [--confirm]  without --confirm only the checks and the plan; with it: remove the real server, start the stand-in,
-#                                    register its manifest (CN mcp-registry-ci-mcp-confluence), wait until the gateway lists 250 tools
+#   scripts/bulk.sh on  [--confirm]  without --confirm only the checks and the plan; with it: register the manifest of the stand-in
+#                                    (CN mcp-registry-ci-mcp-confluence), remove the real server, start the stand-in, wait for 253 tools
 #   scripts/bulk.sh off [--confirm]  remove the stand-in, start the real server, register its manifest again (the build artifact of
 #                                    ../mcp-server-confluence), wait until the gateway lists the real tools
 # Only on the order of the coordinator (it recreates nothing but the two confluence containers, and restarts no gateway). While the
-# stand-in exists, `compose up` is refused by scripts/compose.sh (the real server would start next to it under the same address).
+# stand-in exists, `make up*` (scripts/bulk-guard.sh) and `compose up` (scripts/compose.sh) are refused: the real server would start next to it
+# under the same address. Both `on` and `off` are idempotent; the manifest is registered before anything is removed.
+# Interrupted: run `off --confirm` again. Neither server running: `make up-m2` (or `off --confirm`). Registry left with the 254-tool manifest
+# while the real server runs: `make registry-register SERVERS=mcp-confluence`.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -58,43 +61,47 @@ case "${1:-status}" in
     ;;
   on)
     checks_common
-    if present "$standin"; then echo "bulk: the stand-in is already there; nothing to switch"; exit 0; fi
-    need "the real mcp-confluence exists (it is what gets replaced)" present "$real"
     [ "$failed" -eq 0 ] || exit 1
+    if present "$standin"; then
+      echo "bulk: the stand-in exists; registering its manifest again and checking the list (nothing else changes)"
+    else
+      need "the real mcp-confluence exists (it is what gets replaced)" present "$real"
+      [ "$failed" -eq 0 ] || exit 1
+    fi
     if [ "${2:-}" != --confirm ]; then
-      echo "plan: remove $real (volume mcp-confluence-state stays), start $standin under the address mcp-confluence.internal,"
-      echo "      PUT the manifest of the stand-in as mcp-confluence, wait until $(gateway_url) lists 253 tools to a reader (250 of the stand-in, 3 real)."
-      echo "      Add --confirm to do it."
+      echo "plan: PUT the manifest of the stand-in as mcp-confluence FIRST (the registry check; nothing is removed if it fails), then"
+      echo "      remove $real (volume mcp-confluence-state stays), start $standin under the address mcp-confluence.internal,"
+      echo "      wait until $(gateway_url) lists 253 tools to a reader (250 of the stand-in, 3 real). Add --confirm to do it."
       exit 0
     fi
-    compose --profile m2 rm -sf mcp-confluence
-    overlay up -d --no-deps --wait mcp-bulk
+    trap 'echo "bulk: interrupted. Way back: scripts/bulk.sh off --confirm (idempotent). If nothing of mcp-confluence runs: make up-m2." >&2' ERR INT TERM
     manifest="$(mktemp)"
-    trap 'rm -f "$manifest"' EXIT
-    python3 -I - "$root" > "$manifest" <<'PY'
-import sys
-sys.path.insert(0, f"{sys.argv[1]}/mocks/mcp")
-import os
-os.environ["MCP_STUB_BASE_MANIFEST"] = f"{sys.argv[1]}/../mcp-server-confluence/mcp-app/target/mcp-manifest.json"
-import mcp_stub
-sys.exit(mcp_stub.main(["manifest"]))
-PY
-    python3 -I "$root/scripts/mcpdev.py" registry-put mcp-confluence "$manifest" | cut -c1-160
+    python3 -I "$root/scripts/stub-manifest.py" confluence > "$manifest"
+    registered="$(python3 -I "$root/scripts/mcpdev.py" registry-put mcp-confluence "$manifest")"
+    rm -f "$manifest"
+    echo "$registered" | cut -c1-160
+    grep -q '"httpStatus": 200' <<<"$registered" || { echo "bulk: the registry refused the manifest; nothing was changed" >&2; exit 1; }
+    if ! present "$standin"; then
+      compose --profile m2 rm -sf mcp-confluence
+      overlay up -d --no-deps --wait mcp-bulk
+    fi
     wait_for "$(gateway_url)" bulk
+    trap - ERR INT TERM
     ;;
   off)
-    need "the stand-in exists" present "$standin"
     need "the manifest of the real server exists ($manifest_of_real)" file_exists "$manifest_of_real"
     [ "$failed" -eq 0 ] || exit 1
     if [ "${2:-}" != --confirm ]; then
-      echo "plan: remove $standin, start the real mcp-confluence from the image of .env (state volume kept), register its manifest,"
-      echo "      wait until $(gateway_url) lists the real Confluence tools. Add --confirm to do it."
+      echo "plan: remove $standin if it exists, make sure the real mcp-confluence runs (image of .env, state volume kept), register its manifest,"
+      echo "      wait until $(gateway_url) lists the real Confluence tools. Idempotent. Add --confirm to do it."
       exit 0
     fi
-    overlay rm -sf mcp-bulk
+    trap 'echo "bulk: interrupted. Run scripts/bulk.sh off --confirm again; if the registry is the problem: make registry-register SERVERS=mcp-confluence." >&2' ERR INT TERM
+    if present "$standin"; then overlay rm -sf mcp-bulk; fi
     compose --profile full --profile m2 up -d --no-deps --wait mcp-confluence
     python3 -I "$root/scripts/mcpdev.py" registry-put mcp-confluence "$manifest_of_real" | cut -c1-160
     wait_for "$(gateway_url)" real
+    trap - ERR INT TERM
     ;;
   *)
     sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'

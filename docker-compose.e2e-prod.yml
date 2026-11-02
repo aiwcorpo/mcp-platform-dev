@@ -96,6 +96,8 @@ services:
     user: "101:101"
     read_only: true
     tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     volumes:
       - ./e2e-prod/idp-front.conf:/etc/nginx/nginx.conf:ro
       - ./certs/e2e-prod-idp/tls.crt:/etc/nginx/tls/tls.crt:ro
@@ -207,8 +209,8 @@ services:
     pull_policy: never
     environment:
       # The JDK client that fetches policy bundles and the key set trusts only the CA of the stack (a store without a secret, made by
-      # scripts/e2e-prod.sh from the public certificate of the CA).
-      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError -Djavax.net.ssl.trustStore=/certs/ca-trust.p12 -Djavax.net.ssl.trustStoreType=PKCS12 -Djavax.net.ssl.trustStorePassword=changeit
+      # scripts/e2e-prod.sh from the public certificate of the CA). Heap and exit flags are those of the image's entry point.
+      JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=/certs/ca-trust.p12 -Djavax.net.ssl.trustStoreType=PKCS12 -Djavax.net.ssl.trustStorePassword=changeit
       # No SPRING_PROFILES_ACTIVE and no devstack acknowledgements: this is production mode.
       MCP_PUBLIC_URL: https://localhost:${E2E_PROD_GATEWAY_PORT}
       MCP_OIDC_ISSUER: https://localhost:${KEYCLOAK_TLS_PORT}/realms/corp

@@ -112,20 +112,8 @@ restart_gateway() {
 
 admin_token() { env_value E2E_PROD_ADMIN_TOKEN "$state/secrets.env"; }
 
-stub_manifest() { # jira|confluence dev|production|none -> manifest of that stand-in with that environment field
-  python3 -I - "$root" "$1" "${2:-none}" <<'PY'
-import os, sys
-root, which, environment = sys.argv[1:4]
-sys.path.insert(0, f"{root}/mocks/mcp")
-if which == "jira":
-    os.environ.update({"MCP_STUB_SERVER_ID": "mcp-jira", "MCP_STUB_SYSTEM": "jira", "MCP_STUB_TOOLSET": "xh",
-                       "MCP_STUB_INTERNAL_URL": "https://mcp-jira.internal:8443/mcp"})
-os.environ.update({"MCP_STUB_CREDENTIAL_REQUIRED": "true", "MCP_STUB_CREDENTIAL_TYPES": "user-secret"})
-if which == "confluence":
-    os.environ["MCP_STUB_BASE_MANIFEST"] = f"{root}/../mcp-server-confluence/mcp-app/target/mcp-manifest.json"
-import mcp_stub
-sys.exit(mcp_stub.main(["manifest", "--environment", environment]))
-PY
+stub_manifest() { # jira|confluence dev|production|none -> manifest of that stand-in with that environment field (the path bulk.sh uses too)
+  python3 -I "$root/scripts/stub-manifest.py" "$1" "${2:-none}"
 }
 
 register_stub() { # jira|confluence environment
@@ -180,9 +168,10 @@ case "${1:-}" in
     token="$(admin_token)"
     url="http://localhost:$(port E2E_PROD_BROKER_ADMIN_PORT)/type"
     if [ -n "${2:-}" ]; then
-      printf '{"type": "%s"}' "$2" | curl -sS -X PUT -H "Authorization: Bearer $token" -H 'Content-Type: application/json' --data-binary @- "$url"
+      # The token goes to curl through its config on stdin, not through argv.
+      printf 'header = "Authorization: Bearer %s"\n' "$token" | curl -sS -K - -X PUT -H 'Content-Type: application/json' --data-binary "$(printf '{"type": "%s"}' "$2")" "$url"
     else
-      curl -sS -H "Authorization: Bearer $token" "$url"
+      printf 'header = "Authorization: Bearer %s"\n' "$token" | curl -sS -K - "$url"
     fi
     echo
     ;;
