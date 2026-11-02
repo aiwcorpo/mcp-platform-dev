@@ -3,7 +3,7 @@
 # so the stand-in takes the identity of mcp-confluence (server id, address, system) while the real mcp-confluence is removed;
 # scripts/bulk.sh does the swap and its way back. Group of the test user: mcp-confluence-read (rule confluence-call-read of the
 # bundle), tools appear as confluence__read_item_001 .. confluence__read_item_250. The four real tools stay in the manifest exactly as
-# built (hashes included), so their approvals in the registry survive both ways; while the stand-in runs they answer with a fixed text.
+# built (hashes included), so their approvals in the registry survive both ways; while the stand-in runs they answer with an error (isError).
 services:
   mcp-bulk:
     profiles: [bulk]

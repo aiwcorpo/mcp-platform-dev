@@ -54,8 +54,8 @@ make down | make reset | make clean
 
 `make ps` pokazuje kontenery projektu (także zakończone). `make smoke` jest TYLKO DO ODCZYTU: sprawdza zdrowie kontenerów, claimy i token exchange na jednorazowym koncie Keycloaka (tworzonym i usuwanym,
 konta alice, bob, carol i mallory tylko czytane przez API admina, nie logowane), mock Jiry, mTLS brokera (odmowy certyfikatów na działającym porcie), OpenBao (AppRole, klucz Transit, audyt),
-ACL Redisa, PostgreSQL, sieci, certyfikaty i narzędzie audytu. Oczekiwany wynik to ok. 80 linii `PASS` i na końcu `all checks passed` (kod 0); inaczej lista `FAIL` i kod 1.
-Kontrole, które zapisują (klucze Redisa z TTL, ścieżka KV w OpenBao, mapping mocka Jiry, zły hasło jednorazowego konta), są w `make smoke-write CONFIRM=1`.
+ACL Redisa, PostgreSQL, sieci, certyfikaty i narzędzie audytu. Poza kontem jednorazowym zostaje po przebiegu marker purge w Redisie (TTL 30 min) i dwa zdarzenia `admin_change` w audycie. Oczekiwany wynik to 78 linii `PASS` i na końcu `all checks passed` (kod 0); inaczej lista `FAIL` i kod 1.
+Kontrole, które zapisują (klucze Redisa z TTL, ścieżka KV w OpenBao, mapping mocka Jiry, złe hasło, anonimowa rejestracja klienta, POST-y do admin API mocka), są w `make smoke-write CONFIRM=1`.
 
 ## Profile compose
 

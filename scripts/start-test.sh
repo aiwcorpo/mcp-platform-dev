@@ -43,18 +43,37 @@ c stop >/dev/null 2>&1
 c start >/dev/null 2>&1
 check "second stop and start keeps the service up" "running" "$(state)"
 
-# A job that fails: up --wait fails, and init-failed.sh (called by the up targets of the Makefile) stops the service that depends on it.
-c down -v >/dev/null 2>&1
+# A job that fails. init-failed.sh gets the time taken before the up and acts only on what that up did.
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 sed -i.bak 's/"echo job-ran"/"exit 7"/' "$tmp/compose.yml" && rm -f "$tmp/compose.yml.bak"
 cat > "$tmp/compose-wrapper.sh" <<WRAP
 #!/bin/sh
 exec docker compose -p $project -f $tmp/compose.yml "\$@"
 WRAP
 chmod +x "$tmp/compose-wrapper.sh"
+init_failed() { INIT_FAILED_COMPOSE="$tmp/compose-wrapper.sh" INIT_FAILED_JOBS=init "$root/scripts/init-failed.sh" "$1" >/dev/null 2>&1; }
+app_container="$project-app-1"
+
+c down -v >/dev/null 2>&1
+since="$(now)"
+sleep 1
 if c up -d --wait >/dev/null 2>&1; then up_status=0; else up_status=1; fi
 check "a failed job makes up --wait fail" "1" "$up_status"
-INIT_FAILED_COMPOSE="$tmp/compose-wrapper.sh" INIT_FAILED_JOBS=init INIT_FAILED_PROFILES=0 "$root/scripts/init-failed.sh" >/dev/null 2>&1
-check "init-failed.sh stops the service that depends on the failed job" "exited" "$(state)"
+init_failed "$since"
+check "a failed job of this up: the service that started after it is stopped" "exited" "$(state)"
+
+# An old failed job container and a failure of something else: the job did not fail in this run, nothing is stopped.
+docker start "$app_container" >/dev/null
+sleep 1
+since="$(now)"
+init_failed "$since"
+check "an old exited-7 job container does not stop a running service" "running" "$(state)"
+
+# The job fails again on a healthy stack (a repeated run): the service that ran before the up is left alone.
+docker start "$project-init-1" >/dev/null 2>&1
+docker wait "$project-init-1" >/dev/null 2>&1
+init_failed "$since"
+check "a transient failure of a repeated job leaves the service that ran before untouched" "running" "$(state)"
 
 echo "start-test: $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

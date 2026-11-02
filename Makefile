@@ -37,27 +37,27 @@ contracts: ## extract C4/C5 stubs and audit vectors of MCP_CONTRACTS_REF into ou
 up: bulk-guard openbao-guard certs contracts ## start profile infra (infrastructure + C4/C5 contract stubs) and wait for health checks
 	@$(COMPOSE) --profile full rm -sf $(COMPONENTS) >/dev/null 2>&1
 	$(COMPOSE) --profile infra up -d --wait --force-recreate $(STUBS)
-	$(COMPOSE) --profile infra up -d --wait || { ./scripts/init-failed.sh; exit 1; }
+	@since=$$(date -u +%Y-%m-%dT%H:%M:%SZ); $(COMPOSE) --profile infra up -d --wait || { ./scripts/init-failed.sh "$$since" --profile infra; exit 1; }
 	@./scripts/wait-init.sh
 
 up-core: bulk-guard openbao-guard certs ## start infrastructure only, without the C4/C5 stubs (for running own broker/gateway on the host)
 	@$(COMPOSE) --profile infra --profile full rm -sf $(STUBS) $(COMPONENTS) >/dev/null 2>&1
-	$(COMPOSE) up -d --wait || { ./scripts/init-failed.sh; exit 1; }
+	@since=$$(date -u +%Y-%m-%dT%H:%M:%SZ); $(COMPOSE) up -d --wait || { ./scripts/init-failed.sh "$$since"; exit 1; }
 	@./scripts/wait-init.sh
 
 up-full: bulk-guard openbao-guard certs ## start profile full (needs images of gateway, broker, mcp-jira from .env); stops the stubs
 	@$(COMPOSE) --profile infra rm -sf $(STUBS) >/dev/null 2>&1
-	$(COMPOSE) --profile full up -d --wait || { ./scripts/init-failed.sh; exit 1; }
+	@since=$$(date -u +%Y-%m-%dT%H:%M:%SZ); $(COMPOSE) --profile full up -d --wait || { ./scripts/init-failed.sh "$$since" --profile full; exit 1; }
 	@./scripts/wait-init.sh
 
 down: ## stop everything, keep volumes, secrets and certificates (OpenBao data included)
 	$(COMPOSE) --profile infra --profile full --profile m2 down
 
-reset: ## drop containers and volumes (realm, databases and ALL OPENBAO SECRETS are recreated empty), then start infra again
+reset: bulk-guard ## drop containers and volumes (realm, databases and ALL OPENBAO SECRETS are recreated empty), then start infra again
 	$(COMPOSE) --profile infra --profile full --profile m2 down -v
 	BAO_ALLOW_REINIT=1 $(MAKE) up
 
-clean: ## reset plus removal of generated secrets, certificates and extracted contracts
+clean: bulk-guard ## reset plus removal of generated secrets, certificates and extracted contracts
 	$(COMPOSE) --profile infra --profile full --profile m2 down -v || { echo "make clean: down -v failed; .secrets is kept, because without it the OpenBao volume could no longer be unsealed" >&2; exit 1; }
 	rm -rf .secrets certs out
 
@@ -97,7 +97,7 @@ images: ## build the component images of profile full from git refs of the sibli
 m1: ## M1 scenarios (F1 A1 A2 A3 A9 A15) against the running make up-full; needs ../mcp-e2e (read only)
 	@$(PY) -I scripts/m1-compose.py
 
-smoke: ## READ-ONLY smoke test of the running stack (stubs or real broker and gateway, detected): no writes, no shared test user logs in; ends with "all checks passed", ~90 checks
+smoke: ## READ-ONLY smoke test of the running stack (stubs or real broker and gateway, detected): no writes, no shared test user logs in; ends with "all checks passed" (78 checks on the M5 stack)
 	@$(PY) scripts/smoke.py
 
 smoke-write: ## smoke checks that WRITE (Redis keys with TTL, OpenBao test path, Jira mock mapping, wrong password of a throw-away user); needs CONFIRM=1
@@ -114,7 +114,7 @@ images-m2: ## build the images of profile m2 (portal BFF and web, MCP servers of
 # outside the containers' definitions (Keycloak client, Redis ACL, proxy rules).
 up-m2: bulk-guard openbao-guard certs ## start profile m2 (proxy, portal BFF and web, MCP servers) on top of make up-full; recreates changed services only
 	@$(COMPOSE) --profile infra rm -sf $(STUBS) >/dev/null 2>&1
-	$(COMPOSE) --profile full --profile m2 up -d --wait || { ./scripts/init-failed.sh; exit 1; }
+	@since=$$(date -u +%Y-%m-%dT%H:%M:%SZ); $(COMPOSE) --profile full --profile m2 up -d --wait || { ./scripts/init-failed.sh "$$since" --profile full --profile m2; exit 1; }
 	@./scripts/wait-init.sh
 	@$(MAKE) --no-print-directory m2-sync
 

@@ -108,7 +108,7 @@ def check_m5(base, m5):
     for name in ("mcp-gateway", "mcp-gateway-2"):
         service = services[name]
         record(service.get("mem_limit") and "JAVA_TOOL_OPTIONS" not in service["environment"],
-               f"m5: {name} has a memory limit; its heap (60%) and exit flag come from the entry point of the image, so JAVA_TOOL_OPTIONS stays unset")
+               f"m5: {name} has a memory limit; its heap and exit flag come from the entry point of the image, so JAVA_TOOL_OPTIONS stays unset")
     for name in ("mcp-jira", "mcp-confluence", "mcp-gitlab", "mcp-servicedesk", "mcp-opensearch"):
         service = services[name]
         record(service.get("mem_limit") and "MaxRAMPercentage" in service["environment"].get("JAVA_TOOL_OPTIONS", "")

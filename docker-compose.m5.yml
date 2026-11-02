@@ -15,7 +15,7 @@
 x-jvm-limit-environment: &jvm-limit-environment
   JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError
 
-# The gateway image sets its own heap and exit flags on the command line of the entry point (-XX:MaxRAMPercentage=60,
+# The gateway image sets its own heap and exit flags on the command line of the entry point (-XX:MaxRAMPercentage=75 in the m5-b2e25ae image,
 # -XX:+ExitOnOutOfMemoryError), which win over JAVA_TOOL_OPTIONS, so nothing is set here for it.
 x-gateway-m5-environment: &gateway-m5-environment
   # Keys (user, reason, target) kept by the audit throttle of repeated refusals, per user and reason (contracts 5.1.0, CC-191).

@@ -35,10 +35,12 @@ import json
 import os
 import re
 import secrets
+import signal
 import socket
 import ssl
 import subprocess
 import sys
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -420,6 +422,10 @@ def kc_admin(method, path, body=None):
 SHARED_TEST_USERS = ("alice", "bob", "carol", "mallory")
 
 
+def _terminate(signum, frame):
+    raise SystemExit(128 + signum)
+
+
 class TempUser:
     """A throw-away realm user for scenarios that register an Authenticator or burn confirmation codes: random name, password and an
     OTP credential Keycloak accepts for the step-up. Deleted, and purged at broker and gateway, on exit. Never one of SHARED_TEST_USERS."""
@@ -433,6 +439,16 @@ class TempUser:
         self.sub = None
 
     def __enter__(self):
+        # SIGTERM becomes an exception, so that the account is deleted when the run is cancelled too (SIGKILL cannot be caught).
+        self._previous_handler = signal.signal(signal.SIGTERM, _terminate) if threading.current_thread() is threading.main_thread() else None
+        try:
+            self._create()
+        except BaseException:
+            self._remove()
+            raise
+        return self
+
+    def _create(self):
         credentials = [{"type": "password", "value": self.password, "temporary": False}]
         if self.otp:
             credentials.append({"type": "otp", "secretData": json.dumps({"value": self.raw_otp}),
@@ -441,23 +457,44 @@ class TempUser:
                                                     "firstName": "M4", "lastName": "Check", "credentials": credentials})
         if status != 201:
             raise Fail(f"cannot create the temporary user: HTTP {status} {body}")
-        self.sub = kc_admin("GET", f"/users?username={self.name}&exact=true")[1][0]["id"]
+        # From here the account exists: every way out of this method goes through _remove.
+        found = kc_admin("GET", f"/users?username={self.name}&exact=true")[1]
+        self.sub = found[0]["id"]
         for group in self.groups:
-            found = kc_admin("GET", f"/groups?search={group}&exact=true")[1]
-            kc_admin("PUT", f"/users/{self.sub}/groups/{next(g['id'] for g in found if g['name'] == group)}")
+            candidates = kc_admin("GET", f"/groups?search={group}&exact=true")[1]
+            match = next((g["id"] for g in candidates if g["name"] == group), None)
+            if match is None:
+                raise Fail(f"group {group} does not exist in the realm (python3 scripts/mcpdev.py sync-groups); the temporary user {self.name} is removed")
+            kc_admin("PUT", f"/users/{self.sub}/groups/{match}")
         EXTRA_USERS[self.name] = {"password": self.password, "otp_seed": base64.b32encode(self.raw_otp.encode()).decode()}
-        return self
+
+    def _remove(self):
+        """Purge at broker and gateway when possible, then the DELETE, always; a DELETE that fails is an error that names the account."""
+        EXTRA_USERS.pop(self.name, None)
+        if self.sub is None:
+            found = kc_admin("GET", f"/users?username={self.name}&exact=true")[1]
+            self.sub = found[0]["id"] if isinstance(found, list) and found else None
+        if self.sub is None:
+            return
+        quoted = urllib.parse.quote(self.sub, safe="")
+        try:
+            for call in (lambda: offboarding_request("POST", f"/v1/admin/users/{quoted}/purge"),
+                         lambda: gateway_request("mcp-offboarding", "POST", f"/admin/v1/users/{quoted}/purge")):
+                try:
+                    call()
+                except (Fail, OSError):
+                    pass
+        finally:
+            status, body = kc_admin("DELETE", f"/users/{self.sub}")
+            if status not in (204, 404):
+                raise Fail(f"the temporary user {self.name} ({self.sub}) was NOT deleted: HTTP {status} {body}; delete it in the Keycloak admin console")
 
     def __exit__(self, *exc):
-        EXTRA_USERS.pop(self.name, None)
-        quoted = urllib.parse.quote(self.sub, safe="")
-        for call in (lambda: offboarding_request("POST", f"/v1/admin/users/{quoted}/purge"),
-                     lambda: gateway_request("mcp-offboarding", "POST", f"/admin/v1/users/{quoted}/purge")):
-            try:
-                call()
-            except Fail:
-                pass
-        kc_admin("DELETE", f"/users/{self.sub}")
+        try:
+            self._remove()
+        finally:
+            if getattr(self, "_previous_handler", None) is not None:
+                signal.signal(signal.SIGTERM, self._previous_handler)
 
     def token(self, client="claude-code"):
         return login(self.name, client, password=self.password)

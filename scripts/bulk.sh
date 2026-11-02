@@ -74,13 +74,14 @@ case "${1:-status}" in
       echo "      wait until $(gateway_url) lists 253 tools to a reader (250 of the stand-in, 3 real). Add --confirm to do it."
       exit 0
     fi
-    trap 'echo "bulk: interrupted. Way back: scripts/bulk.sh off --confirm (idempotent). If nothing of mcp-confluence runs: make up-m2." >&2' ERR INT TERM
+    trap 'echo "bulk: interrupted. Way back: scripts/bulk.sh off --confirm (idempotent). If nothing of mcp-confluence runs: make up-m2." >&2' ERR
+    trap 'echo "bulk: stopped by a signal. Way back: scripts/bulk.sh off --confirm (idempotent). If nothing of mcp-confluence runs: make up-m2." >&2; exit 130' INT TERM
     manifest="$(mktemp)"
     python3 -I "$root/scripts/stub-manifest.py" confluence > "$manifest"
-    registered="$(python3 -I "$root/scripts/mcpdev.py" registry-put mcp-confluence "$manifest")"
+    registered="$(python3 -I "$root/scripts/mcpdev.py" registry-put mcp-confluence "$manifest")" || true
     rm -f "$manifest"
-    echo "$registered" | cut -c1-160
-    grep -q '"httpStatus": 200' <<<"$registered" || { echo "bulk: the registry refused the manifest; nothing was changed" >&2; exit 1; }
+    echo "$registered" | cut -c1-300
+    grep -q '"httpStatus": 200' <<<"$registered" || { echo "bulk: the registry refused the manifest (reason above); nothing was changed" >&2; trap - ERR INT TERM; exit 1; }
     if ! present "$standin"; then
       compose --profile m2 rm -sf mcp-confluence
       overlay up -d --no-deps --wait mcp-bulk
@@ -96,10 +97,11 @@ case "${1:-status}" in
       echo "      wait until $(gateway_url) lists the real Confluence tools. Idempotent. Add --confirm to do it."
       exit 0
     fi
-    trap 'echo "bulk: interrupted. Run scripts/bulk.sh off --confirm again; if the registry is the problem: make registry-register SERVERS=mcp-confluence." >&2' ERR INT TERM
+    trap 'echo "bulk: interrupted. Run scripts/bulk.sh off --confirm again; if the registry is the problem: make registry-register SERVERS=mcp-confluence." >&2' ERR
+    trap 'echo "bulk: stopped by a signal. Run scripts/bulk.sh off --confirm again." >&2; exit 130' INT TERM
     if present "$standin"; then overlay rm -sf mcp-bulk; fi
     compose --profile full --profile m2 up -d --no-deps --wait mcp-confluence
-    python3 -I "$root/scripts/mcpdev.py" registry-put mcp-confluence "$manifest_of_real" | cut -c1-160
+    python3 -I "$root/scripts/mcpdev.py" registry-put mcp-confluence "$manifest_of_real" | cut -c1-300
     wait_for "$(gateway_url)" real
     trap - ERR INT TERM
     ;;

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Smoke test of the running environment. Exit code 1 if any check fails.
 
-  smoke.py            READ ONLY: nothing is written to OpenBao, Redis, the mocks or the broker, no shared test user (alice, bob, carol,
-                      mallory) logs in and no wrong password is tried; token checks use one throw-away Keycloak user that is deleted
-                      afterwards (Keycloak itself gets that user, and the broker and gateway get a purge for its id).
+  smoke.py            READ ONLY as far as the stack's data goes: no write to OpenBao, the mocks or the connections of any user, no shared test
+                      user (alice, bob, carol, mallory) logs in and no wrong password is tried. Token checks use one throw-away Keycloak user,
+                      deleted afterwards. Side effects of that: the user exists in Keycloak for the run, and the purge of its id leaves a marker
+                      in Redis (TTL 30 min) and two admin_change events in the audit of the broker and gateway.
   smoke.py --write    adds the checks that write (Redis keys with a TTL, an OpenBao KV path and Transit call, a mapping of the Jira mock,
                       a wrong password of the throw-away user). Needs CONFIRM=1 in the environment (make smoke-write CONFIRM=1).
                       Never publishes on the live channel credential.invalidated.
@@ -157,15 +158,16 @@ with mcpdev.TempUser(["mcp-client-claude-code", "mcp-jira-read", "mcp-jira-write
     check("claude-code cannot ask for the broker audience scope",
           expect_fail(lambda: mcpdev.login(probe.name, scope="openid mcp-credential-broker-audience")))
 
-    try:
-        urllib.request.urlopen(urllib.request.Request(
-            f"{issuer}/clients-registrations/openid-connect", method="POST",
-            data=json.dumps({"redirect_uris": ["http://localhost:1/cb"], "token_endpoint_auth_method": "none"}).encode(),
-            headers={"Content-Type": "application/json"}))
-        dcr_status = 201
-    except urllib.error.HTTPError as e:
-        dcr_status = e.code
-    check("anonymous dynamic client registration rejected (explicit Trusted Hosts policy)", dcr_status == 403, str(dcr_status))
+    if WRITE:
+        try:
+            urllib.request.urlopen(urllib.request.Request(
+                f"{issuer}/clients-registrations/openid-connect", method="POST",
+                data=json.dumps({"redirect_uris": ["http://localhost:1/cb"], "token_endpoint_auth_method": "none"}).encode(),
+                headers={"Content-Type": "application/json"}))
+            dcr_status = 201
+        except urllib.error.HTTPError as e:
+            dcr_status = e.code
+        check("anonymous dynamic client registration rejected (explicit Trusted Hosts policy)", dcr_status == 403, str(dcr_status))
 
     print("== token exchange (C4)")
     gw_token = mcpdev.exchange(user_token, "mcp-gateway", "mcp-credential-broker")
@@ -288,7 +290,7 @@ for target, reachable in (("http://jira.internal:8080/__admin/health", True), ("
     check(f"servers network: {target.split('/')[2]} {'reachable' if reachable else 'not visible'}",
           resolved == reachable, f"curl exit {res.returncode}")
 
-for method, path in (("GET", "/__admin/mappings"), ("POST", "/__admin/mappings"), ("POST", "/__admin/reset")):
+for method, path in ((("GET", "/__admin/mappings"),) + ((("POST", "/__admin/mappings"), ("POST", "/__admin/reset")) if WRITE else ())):
     res = run("docker", "run", "--rm", "--network", f"{PROJECT}-servers", "--entrypoint", "curl", CURL_IMAGE,
               "-s", "-o", "/dev/null", "-w", "%{http_code}", "-m", "5", "-X", method,
               "-H", "Content-Type: application/json", "-d", "{}" if method == "POST" else "",
@@ -310,17 +312,22 @@ if WRITE:
         pw = mcpdev.cfg(f"REDIS_{user.upper().replace('-', '_')}_PASSWORD")
         return [line for line in compose_exec("redis", script, stdin=pw + "\n").stdout.splitlines() if line.strip()]
 
-    out = redis_as("gateway", "set gw:smoke 1 EX 60", "set broker:smoke 1 EX 60", "flushall")
+    out = redis_as("gateway", "set gw:smoke 1 EX 60", "set broker:smoke 1 EX 60")
     check("gateway: own prefix gw:*", out[0] == "OK", str(out))
-    check("gateway: no broker keys, no flushall", all("NOPERM" in o for o in out[1:]), str(out))
+    check("gateway: no broker keys", all("NOPERM" in o for o in out[1:]), str(out))
+    # ACL DRYRUN asks Redis whether the user may run a command without running it (a broken ACL must not make this test flush the stack's Redis).
+    dry = [line for line in compose_exec("redis", "read -r REDISCLI_AUTH; export REDISCLI_AUTH; redis-cli --no-auth-warning --user admin ACL DRYRUN gateway flushall; "
+                                         "redis-cli --no-auth-warning --user admin ACL DRYRUN mcp-jira script flush",
+                                         stdin=mcpdev.cfg("REDIS_ADMIN_PASSWORD") + "\n").stdout.splitlines() if line.strip()]
+    check("gateway and mcp-jira may not run FLUSHALL and SCRIPT FLUSH (ACL DRYRUN)", len(dry) == 2 and all(line != "OK" for line in dry), str(dry))
     out = redis_as("broker", "set broker:smoke 1 EX 60", "set jti:mcp-credential-broker:smoke 1 EX 60", "set gw:smoke 1 EX 60",
                    "publish other.channel x")
     check("broker: broker:*, jti:mcp-credential-broker:*", out[:2] == ["OK", "OK"], str(out))
     check("broker: no gateway keys, no other channels", all("NOPERM" in o for o in out[2:]), str(out))
     out = redis_as("mcp-jira", "set jti:mcp-jira:smoke 1 EX 60", "set jti:mcp-confluence:smoke 1 EX 60", "publish other.channel x")
     check("mcp-jira: only jti:mcp-jira:*", out[0] == "OK" and all("NOPERM" in o for o in out[1:]), str(out))
-    out = redis_as("mcp-jira", "scan 0", "keys '*'", "randomkey", "eval 'return 1' 0", "script flush", "get gw:smoke")
-    check("mcp-jira: no SCAN, KEYS, RANDOMKEY, EVAL, SCRIPT, no gw:* keys", len(out) == 6 and all("NOPERM" in o for o in out), str(out))
+    out = redis_as("mcp-jira", "scan 0", "keys '*'", "randomkey", "eval 'return 1' 0", "get gw:smoke")
+    check("mcp-jira: no SCAN, KEYS, RANDOMKEY, EVAL, no gw:* keys", len(out) == 5 and all("NOPERM" in o for o in out), str(out))
     out = redis_as("gateway", "scan 0", "keys '*'")
     check("gateway: no SCAN, KEYS", len(out) == 2 and all("NOPERM" in o for o in out), str(out))
 
@@ -330,17 +337,23 @@ if WRITE:
     broker_token = login_out.stdout.strip()
     check("approle mcp-credential-broker login", login_out.returncode == 0 and broker_token, login_out.stderr[-200:])
     as_broker = "read -r BAO_TOKEN; export BAO_TOKEN; "
-    enc = compose_exec("openbao", as_broker + "bao write -field=ciphertext transit/encrypt/mcp-credential-broker plaintext=dGVzdA==",
-                       stdin=broker_token + "\n")
-    check("broker token can use transit key", enc.stdout.startswith("vault:v1:"), enc.stderr[-200:])
-    # The path expires by itself (delete-version-after) and its metadata is removed at the end, so no version stays in the raft.
     smoke_path = "mcp/connections/smoke/jira"
-    compose_exec("openbao", as_root + f"bao kv metadata put -mount=secret -delete-version-after=60s {smoke_path} >/dev/null", stdin=root_in)
-    kv = compose_exec("openbao", as_broker + f"bao kv put -mount=secret {smoke_path} probe=1 >/dev/null", stdin=broker_token + "\n")
-    check("broker token can write KV v2 connections path", kv.returncode == 0, kv.stderr[-200:])
-    compose_exec("openbao", as_root + f"bao kv metadata delete -mount=secret {smoke_path} >/dev/null", stdin=root_in)
-    deny = compose_exec("openbao", as_broker + "bao kv get -mount=secret other/path", stdin=broker_token + "\n")
-    check("broker token denied outside its path", deny.returncode != 0 and "permission denied" in deny.stderr)
+    try:
+        enc = compose_exec("openbao", as_broker + "bao write -field=ciphertext transit/encrypt/mcp-credential-broker plaintext=dGVzdA==",
+                           stdin=broker_token + "\n")
+        check("broker token can use transit key", enc.stdout.startswith("vault:v1:"), enc.stderr[-200:])
+        # The path expires by itself (delete-version-after) and its metadata is removed at the end, so no version stays in the raft.
+        meta = compose_exec("openbao", as_root + f"bao kv metadata put -mount=secret -delete-version-after=60s {smoke_path} >/dev/null", stdin=root_in)
+        check("test path of OpenBao prepared with an expiry", meta.returncode == 0, meta.stderr[-200:])
+        kv = compose_exec("openbao", as_broker + f"bao kv put -mount=secret {smoke_path} probe=1 >/dev/null", stdin=broker_token + "\n")
+        check("broker token can write KV v2 connections path", kv.returncode == 0, kv.stderr[-200:])
+        deny = compose_exec("openbao", as_broker + "bao kv get -mount=secret other/path", stdin=broker_token + "\n")
+        check("broker token denied outside its path", deny.returncode != 0 and "permission denied" in deny.stderr)
+    finally:
+        cleaned = compose_exec("openbao", as_root + f"bao kv metadata delete -mount=secret {smoke_path} >/dev/null", stdin=root_in)
+        check("test path of OpenBao removed with all its versions", cleaned.returncode == 0, cleaned.stderr[-200:])
+        revoked = compose_exec("openbao", as_broker + "bao token revoke -self >/dev/null", stdin=broker_token + "\n")
+        check("AppRole token of the test revoked", revoked.returncode == 0, revoked.stderr[-200:])
 
     admin = {"Authorization": "Basic " + base64.b64encode(
         f"admin:{mcpdev.cfg('JIRA_MOCK_ADMIN_PASSWORD')}".encode()).decode(), "Content-Type": "application/json"}
