@@ -136,6 +136,16 @@ def render_file(args, extra_env, label):
     return json.loads(out.stdout)
 
 
+def check_m6(m5):
+    config = render_file([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2", "--profile", "ci", "config", "--format", "json"],
+                         {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "1"}, "m6 layer")
+    if not config or not m5:
+        return
+    changed = sorted(n for n in config["services"] if config["services"][n] != m5["services"].get(n))
+    record(changed == ["mcp-credential-broker", "mcp-credential-broker-2", "mcp-gateway", "mcp-gateway-2"], "m6: the layer changes the two gateway and the two broker instances and nothing else", str(changed))
+    record(all(config["services"][n]["image"].split(":")[1].startswith("m6-") for n in changed), "m6: the changed services run images tagged m6-")
+
+
 def check_e2e_prod():
     names = ("E2E_PROD_DB_PASSWORD", "E2E_PROD_REDIS_PASSWORD", "E2E_PROD_ADMIN_TOKEN", "E2E_PROD_ACTIVITY_CURSOR_KEY", "E2E_PROD_LIST_CURSOR_KEY")
     config = render_file(["docker", "compose", "--project-directory", str(ROOT), "-p", "mcp-e2e-prod", "-f", "docker-compose.e2e-prod.yml",
@@ -185,6 +195,7 @@ def main():
             check_one_shot_jobs(config, label)
     if m4 and m5:
         check_m5(m4, m5)
+    check_m6(m5)
     check_e2e_prod()
     check_bulk(m5)
     for ok, name, detail in RESULTS:
