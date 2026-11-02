@@ -225,6 +225,7 @@ class Stub:
         self.tls = tls
         self.clock = clock
         self.jtis = JtiLog(clock)
+        self.verified = internal_jwt.VerifiedTokens()
         self.manifest = build_manifest(settings)
         self.own = {tool["name"] for tool in TOOLSETS[settings.toolset](settings)}
         self.tools = {tool["name"]: tool["definition"] for tool in self.manifest["tools"]}
@@ -242,7 +243,7 @@ class Stub:
                 kid = None
         claims = internal_jwt.verify(
             token, jwks=self.jwks.current(kid), issuer=self.settings.issuer, audience=self.settings.server_id, now=int(self.clock()),
-            request=request, seen_jtis=self.jtis, allow_test_keys=self.settings.allow_test_keys, devstack=self.settings.devstack)
+            request=request, seen_jtis=self.jtis, allow_test_keys=self.settings.allow_test_keys, devstack=self.settings.devstack, verified=self.verified)
         self.jtis.record(claims["jti"], claims["exp"])
         return claims
 
@@ -305,7 +306,7 @@ class Stub:
 
     @staticmethod
     def _json(status, value, headers=None):
-        return status, {"Content-Type": "application/json", **(headers or {})}, json.dumps(value).encode()
+        return status, {"Content-Type": "application/json", **(headers or {})}, json.dumps(value, separators=(",", ":")).encode()
 
 
 def make_handler(stub):
@@ -348,7 +349,10 @@ def make_handler(stub):
                 self.close_connection = True
                 return self._send(413, {"Content-Type": "application/json"}, b'{"error":"payload_too_large"}')
             body = self.rfile.read(length) if length else b""
-            self._send(*stub.handle(self.command, self.path, self.headers, body))
+            started = time.monotonic()
+            status, headers, out = stub.handle(self.command, self.path, self.headers, body)
+            sys.stderr.write("handled %s %s -> %s in %.0f ms\n" % (self.command, self.path, status, (time.monotonic() - started) * 1000))
+            self._send(status, headers, out)
 
         def _send(self, status, headers, body):
             self.send_response(status)
@@ -365,6 +369,9 @@ def make_handler(stub):
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True
+    # The default backlog is 5: a burst of lists opens dozens of connections at once, the excess is dropped and retried by the client's
+    # TCP after 1 s and 3 s, which is where the multi-second answers came from.
+    request_queue_size = 512
 
     def handle_error(self, request, client_address):
         error = sys.exc_info()[1]

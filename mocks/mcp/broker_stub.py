@@ -38,6 +38,7 @@ class BrokerStub:
         self.credential_type = credential_type
         self.calls = 0
         self.jtis = mcp_stub.JtiLog(clock)
+        self.verified = internal_jwt.VerifiedTokens()
         self.lock = threading.Lock()
 
     def _authenticate(self, headers, request):
@@ -51,7 +52,7 @@ class BrokerStub:
                 kid = None
         claims = internal_jwt.verify(
             bearer, jwks=self.jwks.current(kid), issuer=self.settings.issuer, audience=AUDIENCE, now=int(self.clock()), request=request,
-            seen_jtis=self.jtis, allow_test_keys=self.settings.allow_test_keys, devstack=self.settings.devstack)
+            seen_jtis=self.jtis, allow_test_keys=self.settings.allow_test_keys, devstack=self.settings.devstack, verified=self.verified)
         self.jtis.record(claims["jti"], claims["exp"])
 
     def handle(self, method, path, headers, body):

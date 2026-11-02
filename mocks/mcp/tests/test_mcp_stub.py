@@ -126,6 +126,45 @@ class ManifestTest(unittest.TestCase):
                 self.assertIn("maxLength", prop)
 
 
+class VerifiedTokensTest(unittest.TestCase):
+    request = {"kind": "jsonrpc", "method": "tools/list", "xRequestId": "rid-1"}
+
+    def verify(self, bearer, cache, seen=(), now=NOW + 1, jwks=None):
+        return internal_jwt.verify(bearer, jwks=jwks or FixedKeys().current(), issuer="https://mcp-gateway.internal", audience="mcp-confluence",
+                                   now=now, request=self.request, seen_jtis=seen, verified=cache)
+
+    def test_a_cached_signature_does_not_skip_replay_expiry_or_the_key(self):
+        cache = internal_jwt.VerifiedTokens()
+        bearer = token(service_claims("mcp-confluence", "j1"))
+        self.verify(bearer, cache)
+        self.assertEqual(1, len(cache.entries))
+        with self.assertRaises(internal_jwt.Rejected) as replay:
+            self.verify(bearer, cache, seen={"j1"})
+        self.assertEqual("replayed_jti", replay.exception.reason)
+        with self.assertRaises(internal_jwt.Rejected) as expired:
+            self.verify(bearer, cache, now=NOW + 500)
+        self.assertEqual("expired", expired.exception.reason)
+        other_key = {"keys": [dict(public_jwk("stack-c2-1"), x=public_jwk("stack-c2-1")["y"])]}
+        with self.assertRaises(internal_jwt.Rejected):
+            self.verify(bearer, cache, jwks=other_key)
+
+    def test_a_token_with_a_bad_signature_is_never_cached(self):
+        cache = internal_jwt.VerifiedTokens()
+        bearer = token(service_claims("mcp-confluence", "j2"))
+        broken = bearer[:-4] + ("AAAA" if not bearer.endswith("AAAA") else "BBBB")
+        for _ in range(2):
+            with self.assertRaises(internal_jwt.Rejected) as bad:
+                self.verify(broken, cache)
+            self.assertEqual("bad_signature", bad.exception.reason)
+        self.assertEqual({}, cache.entries)
+
+    def test_the_cache_is_bounded(self):
+        cache = internal_jwt.VerifiedTokens(limit=2)
+        for n in range(4):
+            cache.add(f"t{n}", (1, 1), NOW + 1000, NOW)
+        self.assertEqual(2, len(cache.entries))
+
+
 class BaseManifestTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
