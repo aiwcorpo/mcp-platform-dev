@@ -21,6 +21,8 @@ mkdir -p "$certs"
 # mcp-portal-bff, mcp-offboarding; C5: mcp-registry-ci-<serverId>, one certificate per MCP server, CC-161).
 # <tls name> is the server name clients verify:
 # <serverId>.internal for MCP servers (C5), configuration for the broker and gateway (CC-035).
+# mcp-bulk is the stand-in of profile bulk (it answers to the name of mcp-confluence, whose identity it takes); mcp-e2e-stub, mcp-e2e-broker and e2e-prod-idp belong to profile e2e-prod and carry the
+# names of the components they stand in for (mcp-jira.internal, the broker name), in a network of their own.
 # Roles: server = serverAuth, client = clientAuth, both. Only server certificates get localhost in SAN,
 # for components run on the host during development.
 identities=(
@@ -39,6 +41,10 @@ identities=(
   "mcp-servicedesk:server:mcp-servicedesk.internal"
   "mcp-opensearch:server:mcp-opensearch.internal"
   "policies:server:policies.internal"
+  "mcp-bulk:server:mcp-confluence.internal"
+  "mcp-e2e-stub:server:mcp-jira.internal"
+  "mcp-e2e-broker:server:mcp-credential-broker.internal"
+  "e2e-prod-idp:server:idp.e2e-prod.internal"
 )
 
 docker run --rm -i --user "$(id -u):$(id -g)" \

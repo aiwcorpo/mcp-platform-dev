@@ -1,6 +1,10 @@
 """MCP server stand-in of the dev stack (DEV ONLY, not a product): mTLS listener, internal JWT check (C2), tools/list and tools/call
 of a generated tool set, GET /mcp-manifest (C6). It exists to give the gateway something to list and call that the five real servers
-cannot be: a server with more than 100 tools (toolset bulk) and a server whose manifest the test controls (toolset xh).
+cannot be: a server with more than 100 tools (toolset bulk, scenario G9) and a server whose manifest the test controls (toolset xh).
+
+The contracts know five systems and the gateway refuses any other (SystemId and ServerId of mcp-contracts, ServerRegistry), so a
+stand-in takes the identity of one of them: by default mcp-confluence, whose group mcp-confluence-read and policy rules already exist.
+The real server of that identity must not run at the same time (same server id, same address).
 
   python3 mcp_stub.py serve              settings from the environment, see Settings.from_environment
   python3 mcp_stub.py manifest [--environment dev|production|none]   the manifest of the configured server on stdout
@@ -80,15 +84,15 @@ TOOLSETS = {"bulk": lambda settings: bulk_tools(settings.tool_count), "xh": lamb
 
 @dataclass
 class Settings:
-    server_id: str = "mcp-bulk"
-    system: str = "bulk"
+    server_id: str = "mcp-confluence"
+    system: str = "confluence"
     toolset: str = "bulk"
     tool_count: int = 250
     version: str = "1.0.0"
     environment: str = ""
-    internal_url: str = "https://mcp-bulk.internal:8443/mcp"
-    credential_required: bool = False
-    credential_types: tuple = ()
+    internal_url: str = "https://mcp-confluence.internal:8443/mcp"
+    credential_required: bool = True
+    credential_types: tuple = ("user-secret",)
     port: int = 8443
     cert: str = "/certs/tls.crt"
     key: str = "/certs/tls.key"

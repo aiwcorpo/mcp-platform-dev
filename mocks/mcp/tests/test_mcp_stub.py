@@ -42,7 +42,7 @@ def token(claims, kid="stack-c2-1", alg="ES256"):
 
 
 def user_claims(audience, jti, tool=None, rid="rid-1"):
-    claims = {"iss": "https://mcp-gateway.internal", "aud": audience, "sub": "user-1", "usr": "alice", "grp": ["mcp-bulk-read"],
+    claims = {"iss": "https://mcp-gateway.internal", "aud": audience, "sub": "user-1", "usr": "alice", "grp": ["mcp-confluence-read"],
               "azp": "claude-code", "rid": rid, "prv": "20261026120000-a1b2c3d", "iat": NOW, "exp": NOW + 30, "jti": jti}
     if tool:
         claims["tool"] = tool
@@ -90,19 +90,19 @@ class DefinitionHashTest(unittest.TestCase):
     def test_changing_the_risk_changes_the_hash(self):
         manifest = mcp_stub.build_manifest(mcp_stub.Settings())
         tool = manifest["tools"][0]
-        changed = mcp_stub.definition_hash(tool["definition"], {**tool, "risk": "UPDATE"}, "bulk", manifest["credential"])
+        changed = mcp_stub.definition_hash(tool["definition"], {**tool, "risk": "UPDATE"}, "confluence", manifest["credential"])
         self.assertNotEqual(tool["definitionHash"], changed)
 
 
 class ManifestTest(unittest.TestCase):
     def test_bulk_manifest_has_250_read_only_tools_in_the_shape_of_c6(self):
         manifest = mcp_stub.build_manifest(mcp_stub.Settings())
-        self.assertEqual("mcp-bulk", manifest["serverId"])
+        self.assertEqual("mcp-confluence", manifest["serverId"])
         self.assertEqual(250, len(manifest["tools"]))
         self.assertEqual(250, len({t["name"] for t in manifest["tools"]}))
         self.assertEqual({"READ_ONLY"}, {t["risk"] for t in manifest["tools"]})
         self.assertEqual({"name", "risk", "action", "resourceRefs", "definition", "definitionHash"}, set(manifest["tools"][0]))
-        self.assertEqual({"required": False, "acceptedTypes": []}, manifest["credential"])
+        self.assertEqual({"required": True, "acceptedTypes": ["user-secret"]}, manifest["credential"])
         self.assertNotIn("environment", manifest)
 
     def test_environment_is_set_from_settings_or_per_call(self):
@@ -113,7 +113,7 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual("production", mcp_stub.build_manifest(settings, "production")["environment"])
 
     def test_settings_refuse_nonsense(self):
-        for changes in ({"toolset": "nope"}, {"tool_count": 0}, {"environment": "staging"}, {"credential_required": True},
+        for changes in ({"toolset": "nope"}, {"tool_count": 0}, {"environment": "staging"}, {"credential_types": ()},
                         {"credential_types": ("password",)}, {"internal_url": "http://x/mcp"}):
             with self.assertRaises(ValueError, msg=str(changes)):
                 mcp_stub.Settings(**changes).validate()
@@ -129,42 +129,42 @@ class ManifestTest(unittest.TestCase):
 class ProtocolTest(unittest.TestCase):
     def test_gateway_sequence_initialize_list_call(self):
         stub = make_stub()
-        status, body = rpc(stub, token(user_claims("mcp-bulk", "j1")), "initialize", {"protocolVersion": "2025-11-25"})
+        status, body = rpc(stub, token(user_claims("mcp-confluence", "j1")), "initialize", {"protocolVersion": "2025-11-25"})
         self.assertEqual((200, "2025-11-25"), (status, body["result"]["protocolVersion"]))
-        status, _ = call(stub, "POST", "/mcp", {"Authorization": "Bearer " + token(user_claims("mcp-bulk", "j2")), "X-Request-Id": "rid-1"},
+        status, _ = call(stub, "POST", "/mcp", {"Authorization": "Bearer " + token(user_claims("mcp-confluence", "j2")), "X-Request-Id": "rid-1"},
                          json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}).encode())
         self.assertEqual(202, status)
-        status, body = rpc(stub, token(service_claims("mcp-bulk", "j3")), "tools/list")
+        status, body = rpc(stub, token(service_claims("mcp-confluence", "j3")), "tools/list")
         self.assertEqual(250, len(body["result"]["tools"]))
         self.assertNotIn("nextCursor", body["result"])
-        status, body = rpc(stub, token(user_claims("mcp-bulk", "j4", tool="read_item_007")), "tools/call", {"name": "read_item_007", "arguments": {}})
+        status, body = rpc(stub, token(user_claims("mcp-confluence", "j4", tool="read_item_007")), "tools/call", {"name": "read_item_007", "arguments": {}})
         self.assertIn("read_item_007: ok", body["result"]["content"][0]["text"])
 
     def test_listed_definitions_are_the_ones_of_the_manifest(self):
         stub = make_stub()
-        _, body = rpc(stub, token(service_claims("mcp-bulk", "j1")), "tools/list")
+        _, body = rpc(stub, token(service_claims("mcp-confluence", "j1")), "tools/list")
         self.assertEqual([t["definition"] for t in stub.manifest["tools"]], body["result"]["tools"])
 
     def test_manifest_needs_a_token_and_serves_the_same_document(self):
         stub = make_stub()
         status, body = call(stub, "GET", "/mcp-manifest", {"X-Request-Id": "rid-1"})
         self.assertEqual((401, "missing_token"), (status, body["reason"]))
-        status, body = call(stub, "GET", "/mcp-manifest", {"Authorization": "Bearer " + token(service_claims("mcp-bulk", "j9")), "X-Request-Id": "rid-1"})
+        status, body = call(stub, "GET", "/mcp-manifest", {"Authorization": "Bearer " + token(service_claims("mcp-confluence", "j9")), "X-Request-Id": "rid-1"})
         self.assertEqual((200, stub.manifest), (status, body))
 
     def test_service_token_cannot_call_a_tool(self):
         stub = make_stub()
-        status, body = rpc(stub, token(service_claims("mcp-bulk", "j1")), "tools/call", {"name": "read_item_001"})
+        status, body = rpc(stub, token(service_claims("mcp-confluence", "j1")), "tools/call", {"name": "read_item_001"})
         self.assertEqual((401, "service_token_not_allowed"), (status, body["reason"]))
 
     def test_tool_claim_must_match_the_called_tool(self):
         stub = make_stub()
-        status, body = rpc(stub, token(user_claims("mcp-bulk", "j1", tool="read_item_001")), "tools/call", {"name": "read_item_002"})
+        status, body = rpc(stub, token(user_claims("mcp-confluence", "j1", tool="read_item_001")), "tools/call", {"name": "read_item_002"})
         self.assertEqual((401, "tool_mismatch"), (status, body["reason"]))
 
     def test_replayed_token_is_refused(self):
         stub = make_stub()
-        bearer = token(service_claims("mcp-bulk", "j1"))
+        bearer = token(service_claims("mcp-confluence", "j1"))
         self.assertEqual(200, rpc(stub, bearer, "ping")[0])
         status, body = rpc(stub, bearer, "ping")
         self.assertEqual((401, "replayed_jti"), (status, body["reason"]))
@@ -172,16 +172,16 @@ class ProtocolTest(unittest.TestCase):
     def test_token_for_another_server_and_unknown_key_are_refused(self):
         stub = make_stub()
         self.assertEqual("wrong_audience", rpc(stub, token(service_claims("mcp-jira", "j1")), "ping")[1]["reason"])
-        self.assertEqual("unknown_kid", rpc(stub, token(service_claims("mcp-bulk", "j2"), kid="other"), "ping")[1]["reason"])
+        self.assertEqual("unknown_kid", rpc(stub, token(service_claims("mcp-confluence", "j2"), kid="other"), "ping")[1]["reason"])
 
     def test_dev_and_test_keys_are_refused_unless_configured(self):
-        self.assertEqual("test_key_not_allowed", rpc(make_stub(), token(service_claims("mcp-bulk", "j1"), kid="test-gw"), "ping")[1]["reason"])
+        self.assertEqual("test_key_not_allowed", rpc(make_stub(), token(service_claims("mcp-confluence", "j1"), kid="test-gw"), "ping")[1]["reason"])
 
     def test_unknown_tool_and_method_are_json_rpc_errors(self):
         stub = make_stub()
-        _, body = rpc(stub, token(user_claims("mcp-bulk", "j1", tool="read_item_999")), "tools/call", {"name": "read_item_999"})
+        _, body = rpc(stub, token(user_claims("mcp-confluence", "j1", tool="read_item_999")), "tools/call", {"name": "read_item_999"})
         self.assertEqual(-32602, body["error"]["code"])
-        _, body = rpc(stub, token(user_claims("mcp-bulk", "j2")), "resources/list")
+        _, body = rpc(stub, token(user_claims("mcp-confluence", "j2")), "resources/list")
         self.assertEqual(-32601, body["error"]["code"])
 
     def test_garbage_body_is_a_parse_error_and_other_paths_are_404(self):
@@ -228,7 +228,7 @@ class TlsTest(unittest.TestCase):
                 "-addext", "keyUsage=critical,keyCertSign")
         for name in ("server", "gateway", "other"):
             openssl("req", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-keyout", f"{name}.key", "-out", f"{name}.csr",
-                    "-subj", "/CN=" + {"server": "mcp-bulk", "gateway": "mcp-gateway", "other": "somebody"}[name])
+                    "-subj", "/CN=" + {"server": "mcp-confluence", "gateway": "mcp-gateway", "other": "somebody"}[name])
             with open(os.path.join(cls.dir, f"{name}.ext"), "w") as ext:
                 ext.write("basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\n"
                           "extendedKeyUsage=serverAuth,clientAuth\nsubjectAltName=DNS:localhost\n")
@@ -256,7 +256,7 @@ class TlsTest(unittest.TestCase):
         conn = self.connection(client)
         try:
             conn.request("POST", "/mcp", json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}),
-                         {"Authorization": "Bearer " + token(service_claims("mcp-bulk", jti)), "X-Request-Id": "rid-1", "Content-Type": "application/json"})
+                         {"Authorization": "Bearer " + token(service_claims("mcp-confluence", jti)), "X-Request-Id": "rid-1", "Content-Type": "application/json"})
             response = conn.getresponse()
             return response.status, response.read()
         finally:

@@ -1,0 +1,233 @@
+# Profile e2e-prod (optional, own compose project mcp-e2e-prod; scripts/e2e-prod.sh starts and stops it). NOT FOR PRODUCTION.
+# A gateway WITHOUT the devstack profile, with a broker stand-in whose credential type is set from outside and an MCP server stand-in,
+# for the cases of mcp-e2e scenario XH that the shared stack cannot show: CC-166 (a credential type outside the system's set),
+# environment_mismatch, a stored manifest that fails the start checks, refusal of dev- keys in production mode.
+#   - nothing of the main stack is touched; the only link is the network mcp-dev-core, which the key-set front joins to reach Keycloak;
+#   - own PostgreSQL, own Redis with a replica (WAIT is required outside devstack), own policy bundle signed with a key that is
+#     not dev- or test- (scripts/e2e-prod.sh signs a copy of the stack's main bundle), own C2 keys;
+#   - the gateway has the TLS names of the real one (mcp-gateway.internal), the stand-ins those of the components they replace
+#     (mcp-credential-broker.internal, mcp-jira.internal); the network is private, so no alias clashes with the main stack.
+name: mcp-e2e-prod
+
+x-python: &python
+  image: python:3.12-alpine@sha256:0687a6bc9716edc2a6ee0fbfb0f87e7ee358b262b67c9215de91bc9b2d38ba71
+  profiles: [e2e-prod]
+  user: "65534:65534"
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+
+networks:
+  e2e:
+    name: mcp-e2e-prod-net
+  core:
+    name: mcp-dev-core
+    external: true
+
+volumes:
+  postgres-data:
+  gateway-state:
+
+services:
+  postgres:
+    profiles: [e2e-prod]
+    image: postgres:18.6-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+    environment:
+      POSTGRES_USER: gateway
+      POSTGRES_DB: gateway
+      POSTGRES_PASSWORD: ${E2E_PROD_DB_PASSWORD:?run scripts/e2e-prod.sh up}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    networks: [e2e]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    profiles: [e2e-prod]
+    image: redis:8.8.4-alpine@sha256:be8dfdf58574d626e0abe03073ce9178509e0e9564a316e34e71d2289b8370e1
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --save '' --appendonly no"]
+    environment:
+      REDIS_PASSWORD: ${E2E_PROD_REDIS_PASSWORD:?run scripts/e2e-prod.sh up}
+    networks: [e2e]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli info replication | grep -q connected_slaves:1"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis-replica:
+    profiles: [e2e-prod]
+    image: redis:8.8.4-alpine@sha256:be8dfdf58574d626e0abe03073ce9178509e0e9564a316e34e71d2289b8370e1
+    command: ["sh", "-c", "exec redis-server --replicaof redis 6379 --masterauth \"$$REDIS_PASSWORD\" --requirepass \"$$REDIS_PASSWORD\" --save '' --appendonly no"]
+    environment:
+      REDIS_PASSWORD: ${E2E_PROD_REDIS_PASSWORD:?run scripts/e2e-prod.sh up}
+    networks: [e2e]
+    depends_on:
+      redis: {condition: service_started}
+
+  policies:
+    profiles: [e2e-prod]
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    user: "101:101"
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ./policies/nginx.m5.conf:/etc/nginx/nginx.conf:ro
+      - ./policies/locations.conf:/etc/nginx/policies-locations.conf:ro
+      - ./certs/policies/tls.crt:/etc/nginx/tls/tls.crt:ro
+      - ./certs/policies/tls.key:/etc/nginx/tls/tls.key:ro
+      - ./out/e2e-prod/policies:/srv/policies:ro
+    networks:
+      e2e:
+        aliases: [policies.internal]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/__health"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  idp-front:
+    profiles: [e2e-prod]
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    user: "101:101"
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ./e2e-prod/idp-front.conf:/etc/nginx/nginx.conf:ro
+      - ./certs/e2e-prod-idp/tls.crt:/etc/nginx/tls/tls.crt:ro
+      - ./certs/e2e-prod-idp/tls.key:/etc/nginx/tls/tls.key:ro
+    networks:
+      e2e:
+        aliases: [idp.e2e-prod.internal]
+      core: {}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "--no-check-certificate", "https://127.0.0.1:8443/__health"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  broker:
+    <<: *python
+    command: ["python3", "/app/broker_stub.py"]
+    environment:
+      BROKER_STUB_ADMIN_TOKEN: ${E2E_PROD_ADMIN_TOKEN:?run scripts/e2e-prod.sh up}
+      BROKER_STUB_SYSTEM: jira
+      BROKER_STUB_SUPPORTED_TYPES: user-secret
+      BROKER_STUB_TYPE: user-secret
+      MCP_STUB_CERT: /certs/tls.crt
+      MCP_STUB_KEY: /certs/tls.key
+      MCP_STUB_CA: /certs/ca.crt
+      MCP_GATEWAY_JWKS_URI: https://mcp-gateway.internal:8443/.well-known/jwks.json
+    volumes:
+      - ./mocks/mcp:/app:ro
+      - ./certs/mcp-e2e-broker/tls.crt:/certs/tls.crt:ro
+      - ./certs/mcp-e2e-broker/tls.key:/certs/tls.key:ro
+      - ./certs/ca/ca.crt:/certs/ca.crt:ro
+    ports:
+      - 127.0.0.1:${E2E_PROD_BROKER_ADMIN_PORT}:8080
+    networks:
+      e2e:
+        aliases: [mcp-credential-broker.internal]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 8443), 2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  mcp-jira:
+    <<: *python
+    command: ["python3", "/app/mcp_stub.py", "serve"]
+    environment:
+      MCP_STUB_SERVER_ID: mcp-jira
+      MCP_STUB_SYSTEM: jira
+      MCP_STUB_TOOLSET: xh
+      MCP_STUB_INTERNAL_URL: https://mcp-jira.internal:8443/mcp
+      MCP_STUB_CREDENTIAL_REQUIRED: "true"
+      MCP_STUB_CREDENTIAL_TYPES: user-secret
+      MCP_STUB_CERT: /certs/tls.crt
+      MCP_STUB_KEY: /certs/tls.key
+      MCP_STUB_CA: /certs/ca.crt
+      MCP_GATEWAY_JWKS_URI: https://mcp-gateway.internal:8443/.well-known/jwks.json
+      MCP_GATEWAY_ISSUER: https://mcp-gateway.internal
+    volumes:
+      - ./mocks/mcp:/app:ro
+      - ./certs/mcp-e2e-stub/tls.crt:/certs/tls.crt:ro
+      - ./certs/mcp-e2e-stub/tls.key:/certs/tls.key:ro
+      - ./certs/ca/ca.crt:/certs/ca.crt:ro
+    networks:
+      e2e:
+        aliases: [mcp-jira.internal]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 8443), 2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  gateway:
+    profiles: [e2e-prod]
+    image: ${MCP_GATEWAY_IMAGE:?image of the gateway}
+    pull_policy: never
+    environment:
+      # The JDK client that fetches policy bundles and the key set trusts only the CA of the stack (a store without a secret, made by
+      # scripts/e2e-prod.sh from the public certificate of the CA).
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError -Djavax.net.ssl.trustStore=/certs/ca-trust.p12 -Djavax.net.ssl.trustStoreType=PKCS12 -Djavax.net.ssl.trustStorePassword=changeit
+      # No SPRING_PROFILES_ACTIVE and no devstack acknowledgements: this is production mode.
+      MCP_PUBLIC_URL: https://localhost:${E2E_PROD_GATEWAY_PORT}
+      MCP_OIDC_ISSUER: https://localhost:${KEYCLOAK_TLS_PORT}/realms/corp
+      MCP_OIDC_JWKS_URI: https://idp.e2e-prod.internal:8443/realms/corp/protocol/openid-connect/certs
+      MCP_DB_URL: jdbc:postgresql://postgres:5432/gateway
+      MCP_DB_USER: gateway
+      MCP_DB_PASSWORD: ${E2E_PROD_DB_PASSWORD:?run scripts/e2e-prod.sh up}
+      MCP_REDIS_HOST: redis
+      MCP_REDIS_USER: default
+      MCP_REDIS_PASSWORD: ${E2E_PROD_REDIS_PASSWORD:?run scripts/e2e-prod.sh up}
+      MCP_REDIS_WAIT_REPLICAS: "1"
+      MCP_BROKER_URL: https://mcp-credential-broker.internal:8443
+      MCP_BROKER_TLS_NAME: mcp-credential-broker.internal
+      MCP_TLS_KEYSTORE: /certs/mcp-gateway/keystore.p12
+      MCP_TLS_TRUSTSTORE: /certs/ca/truststore.p12
+      MCP_TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
+      MCP_INTERNAL_JWT_KEYS_FILE: /run/c2/jwks.json
+      MCP_INTERNAL_JWT_ACTIVE_KID: stack-c2-1
+      MCP_ACTIVITY_CURSOR_KEY: ${E2E_PROD_ACTIVITY_CURSOR_KEY:?run scripts/e2e-prod.sh up}
+      MCP_LIST_CURSOR_KEY: ${E2E_PROD_LIST_CURSOR_KEY:?run scripts/e2e-prod.sh up}
+      MCP_POLICY_MAIN_URL: https://policies.internal:8443/policies/main/
+      MCP_POLICY_MAIN_KEY_ID: e2e-prod-main
+      MCP_POLICY_MAIN_KEY_FILE: /keys/e2e-prod-main.public.pem
+      MCP_POLICY_STATE_DIR: /app/state
+      MCP_SERVER_JIRA_MCP_URL: https://mcp-jira.internal:8443/mcp
+      MCP_SERVER_CONFLUENCE_ENABLED: "false"
+      MCP_SERVER_GITLAB_ENABLED: "false"
+      MCP_SERVER_SERVICEDESK_ENABLED: "false"
+      MCP_SERVER_OPENSEARCH_ENABLED: "false"
+    volumes:
+      - gateway-state:/app/state
+      - ./out/e2e-prod/keys/e2e-prod-main.public.pem:/keys/e2e-prod-main.public.pem:ro
+      - ./out/e2e-prod/c2-jwks.json:/run/c2/jwks.json:ro
+      - ./certs/mcp-gateway/keystore.p12:/certs/mcp-gateway/keystore.p12:ro
+      - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
+      - ./out/e2e-prod/ca-trust.p12:/certs/ca-trust.p12:ro
+    ports:
+      - 127.0.0.1:${E2E_PROD_GATEWAY_PORT}:8080
+      - 127.0.0.1:${E2E_PROD_GATEWAY_INTERNAL_PORT}:8443
+    networks:
+      e2e:
+        aliases: [mcp-gateway.internal]
+    mem_limit: 1g
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      policies: {condition: service_healthy}
+      idp-front: {condition: service_healthy}
+      broker: {condition: service_healthy}
+      mcp-jira: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /.well-known/oauth-protected-resource HTTP/1.0\\r\\n\\r\\n' >&3 && head -c 5 <&3 | grep -q HTTP"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 15s
