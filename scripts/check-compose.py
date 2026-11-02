@@ -19,7 +19,7 @@ def record(ok, name, detail=""):
 
 
 def render(m4, m5):
-    env = {**os.environ, "M4_ACTIVE": "1" if m4 else "0", "M5_ACTIVE": "1" if m5 else "0"}
+    env = {**os.environ, "M4_ACTIVE": "1" if m4 else "0", "M5_ACTIVE": "1" if m5 else "0", "M6_ACTIVE": "0"}
     out = subprocess.run([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2",
                           "--profile", "ci", "config", "--format", "json"], capture_output=True, text=True, env=env)
     if out.returncode != 0:
