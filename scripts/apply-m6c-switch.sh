@@ -96,7 +96,7 @@ roll() {
   fi
   switch mcp-gateway
   [ "$(flyway_max)" -ge 10 ] || fail "migration V10 is not in the schema history after mcp-gateway started"
-  echo "apply-m6c-switch: V10 applied (flyway max $(flyway_max)); starting mcp-gateway-2 on the new image"
+  echo "apply-m6c-switch: schema at $(flyway_max); starting mcp-gateway-2 on the new image"
   [ "$(psql_in gateway "select count(*) from flyway_schema_history where version = '10' and success")" = 1 ] || fail "V10 is missing or failed"
   mkdir -p "$root/out"
   printf 'V10 applied by apply-m6c-switch.sh at %s, gateway %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(expected_image mcp-gateway)" > "$(m6c_marker)"
