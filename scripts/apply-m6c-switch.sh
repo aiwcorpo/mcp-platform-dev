@@ -13,7 +13,7 @@
 #   scripts/apply-m6c-switch.sh apply --confirm    M6C_ACTIVE=1 in .env, then the services in turn
 #   scripts/apply-m6c-switch.sh pending            the tools waiting for approval (SELECT only)
 # After V10 the script writes out/m6c.applied (outside git); scripts/compose.sh then refuses to create containers without the M6C layer.
-# A second apply skips the stop of instance 2 when both gateways already run the image of m6c.env on schema 10.
+# When the schema is already at 10 (a later image without a migration) the gateways are replaced one by one without the stop. SKIP_MOCKS=1 leaves the mocks alone.
 # There is no rollback: V10 stays in the database and the m6b gateway would serve adapter rows that V10 voided. Going back is a decision of a human.
 set -euo pipefail
 
@@ -85,12 +85,11 @@ switch() {
 
 roll() {
   local service want
-  for service in "${mocks[@]}"; do restart_mock "$service"; done
+  if [ "${SKIP_MOCKS:-0}" != 1 ]; then for service in "${mocks[@]}"; do restart_mock "$service"; done; fi
   for service in "${first[@]}"; do switch "$service"; done
   want="$(expected_image mcp-gateway)"
-  if [ "$(flyway_max)" -ge 10 ] && [ "$(docker inspect -f '{{.Config.Image}}' "$(container mcp-gateway)" 2>/dev/null)" = "$want" ] \
-      && [ "$(docker inspect -f '{{.Config.Image}}' "$(container mcp-gateway-2)" 2>/dev/null)" = "$want" ]; then
-    echo "apply-m6c-switch: both gateways already run $want on schema $(flyway_max), instance 2 is not stopped"
+  if [ "$(flyway_max)" -ge 10 ]; then
+    echo "apply-m6c-switch: schema is already at $(flyway_max), no migration is pending: the gateways are replaced one by one without stopping instance 2 first"
   else
     echo "apply-m6c-switch: stopping mcp-gateway-2 (old image) before V10"
     compose stop mcp-gateway-2
