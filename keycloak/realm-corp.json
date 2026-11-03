@@ -861,6 +861,10 @@
       "path": "/mcp-opensearch-read"
     },
     {
+      "name": "mcp-opensearch-ops",
+      "path": "/mcp-opensearch-ops"
+    },
+    {
       "name": "mcp-opensearch-idx-logs-team-a",
       "path": "/mcp-opensearch-idx-logs-team-a"
     },
