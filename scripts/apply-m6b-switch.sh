@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Moves the stack to the images of m6b.env (M6 stage 3, contracts 6.2.0), one instance at a time, each followed by a health check:
-#   broker-1, broker-2, gateway-1, gateway-2, (balancer config reloaded), mcp-jira, mcp-confluence, mcp-gitlab, mcp-opensearch, portal-bff, portal-web.
+#   broker-1, broker-2, gateway-1, gateway-2, (the gateway balancer recreated), mcp-jira, mcp-confluence, mcp-gitlab, mcp-opensearch, portal-bff, portal-web.
 # Nothing else is recreated (OpenBao, PostgreSQL, Keycloak, Redis, mocks, mcp-servicedesk, balancers, proxy stay as they are); `up --no-deps` names
 # the service. The init jobs are never run. New tool definitions of the servers arrive in the registry as pending and are listed at the end;
 # approving UPDATE and DESTRUCTIVE tools is a decision of an administrator, not of this script.
@@ -44,10 +44,12 @@ wait_healthy() {
 }
 unhealthy() { docker ps --format '{{.Names}} {{.Status}}' | grep -E "^$project-" | grep -v '(healthy)' || true; }
 
-reload_balancer() {
-  docker exec "$project-gateway-lb-1" nginx -t >/dev/null 2>&1 || fail "the new configuration of the gateway balancer does not pass nginx -t; not reloaded"
-  docker exec "$project-gateway-lb-1" nginx -s reload
-  echo "apply-m6b-switch: gateway-lb reloaded (502 and 504 pages of BalancerError, read timeout 120 s)"
+# The balancer reads lb/gateway.conf through a bind mount; an in-place edit of the file on the host is not seen whole by the running container
+# (nginx -t found it cut off), so the balancer is recreated: it is stateless and starts in seconds, with the 502 and 504 pages of BalancerError.
+recreate_balancer() {
+  compose up -d --force-recreate --no-deps --wait gateway-lb
+  wait_healthy "$(container gateway-lb)" || fail "gateway-lb is not healthy after the recreate"
+  echo "apply-m6b-switch: gateway-lb recreated (502 and 504 pages of BalancerError, read timeout 120 s)"
 }
 
 roll() {
@@ -60,7 +62,7 @@ roll() {
     wait_healthy "$(container "$service")" || fail "$service is not healthy after the switch; the rest stays as it is (see rollback --confirm)"
     [ -z "$(unhealthy)" ] || fail "something is not healthy after $service: $(unhealthy)"
     echo "apply-m6b-switch: $service healthy, $(counts)"
-    if [ "$service" = mcp-gateway-2 ]; then reload_balancer; fi
+    if [ "$service" = mcp-gateway-2 ]; then recreate_balancer; fi
   done
   echo "apply-m6b-switch: all services done"
 }

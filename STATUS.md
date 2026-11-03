@@ -535,3 +535,9 @@ Opis i dowody: [docs/m6.md](docs/m6.md).
   keystore `mcp-gateway` stosu, osobne CA profilu byłoby czystsze; L8 paczka polityk i `ca-trust.p12` odświeża `reset-keys`; L9 `ubuntu-latest` nie ma `mcp-ci:local` i obraz CI to tag, nie digest; L11 tryby plików
   kluczy działają na Docker Desktop, nie na Linuksie; L12 `bulk.sh` nie porównuje artefaktu z hashami rejestru; zadania po `apply-*` nie są usuwane (idempotentne).
 - Pytania: ustawienie Environment `ci-main` i runnera chronionego w platformie CI.
+
+## M6, etap 3: wdrożenie (2026-11-03)
+
+Opis i dowody: docs/m6.md, punkt 9. Obrazy kontraktów 6.2.0 wdrożone warstwą `m6b.env` (`scripts/apply-m6b-switch.sh`): gateway m6-ced1e1f, broker m6-7a48486, jira m6-a3dde33, confluence m6-a92cc8a, gitlab m6-150af6c,
+opensearch m6-508cab7, portal m6-434655d; servicedesk bez zmian. Paczka polityk 20261103121030-a03943b opublikowana. `make smoke` 78 PASS, 0 niezdrowych, `start-test` 8 PASS, połączenia 2 i Authenticatory 3 bez zmian.
+Oczekujące na zatwierdzenie (UPDATE i DESTRUCTIVE): Jira 9, Confluence 5, GitLab 10. Profil `adapter` przygotowany i wyłączony.
