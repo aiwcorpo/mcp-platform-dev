@@ -19,7 +19,7 @@ def record(ok, name, detail=""):
 
 
 def render(m4, m5):
-    env = {**os.environ, "M4_ACTIVE": "1" if m4 else "0", "M5_ACTIVE": "1" if m5 else "0", "M6_ACTIVE": "0"}
+    env = {**os.environ, "M4_ACTIVE": "1" if m4 else "0", "M5_ACTIVE": "1" if m5 else "0", "M6_ACTIVE": "0", "M6B_ACTIVE": "0"}
     out = subprocess.run([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2",
                           "--profile", "ci", "config", "--format", "json"], capture_output=True, text=True, env=env)
     if out.returncode != 0:
@@ -138,7 +138,7 @@ def render_file(args, extra_env, label):
 
 def check_m6(m5):
     config = render_file([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2", "--profile", "ci", "config", "--format", "json"],
-                         {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "1"}, "m6 layer")
+                         {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "1", "M6B_ACTIVE": "0"}, "m6 layer")
     if not config or not m5:
         return
     changed = sorted(n for n in config["services"] if config["services"][n] != m5["services"].get(n))
@@ -160,7 +160,7 @@ def check_m6b(m5):
 
 def check_adapter(m5):
     config = render_file([str(ROOT / "scripts" / "compose.sh"), "-f", "docker-compose.adapter.yml", "--profile", "full", "--profile", "m2", "--profile", "ci",
-                          "--profile", "adapter", "config", "--format", "json"], {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "0"}, "adapter overlay")
+                          "--profile", "adapter", "config", "--format", "json"], {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "0", "M6B_ACTIVE": "0"}, "adapter overlay")
     if not config:
         return
     foreign = config["services"]["mcp-atlassian"]
@@ -199,7 +199,7 @@ def check_e2e_prod():
 
 def check_bulk(m5):
     config = render_file([str(ROOT / "scripts" / "compose.sh"), "-f", "docker-compose.bulk.yml", "--profile", "full", "--profile", "m2", "--profile", "ci", "--profile", "bulk", "config", "--format", "json"],
-                         {"M4_ACTIVE": "1", "M5_ACTIVE": "1"}, "bulk overlay")
+                         {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "0", "M6B_ACTIVE": "0"}, "bulk overlay")
     if not config:
         return
     stand_in = config["services"]["mcp-bulk"]

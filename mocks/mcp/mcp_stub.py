@@ -42,8 +42,11 @@ def definition_hash(definition, entry, system, credential):
     """definitionHash of C6 (mcp-contracts, DefinitionHash.java and test-vectors/definition-hash)."""
     flat = {"name": definition["name"], "description": definition["description"],
             "inputSchema": json.loads(json.dumps(definition["inputSchema"])),
-            "risk": entry["risk"], "action": entry["action"], "resourceRefs": entry.get("resourceRefs", []),
-            "system": system, "credential": credential}
+            "resourceRefs": entry.get("resourceRefs", []), "system": system, "credential": credential}
+    # The entry of an adapter tool has no risk and no action (CC-193): the flat object has no such keys.
+    for key in ("risk", "action"):
+        if key in entry:
+            flat[key] = entry[key]
     if "title" in definition:
         flat["title"] = definition["title"]
     for optional in ("outputSchema", "annotations"):
