@@ -32,6 +32,11 @@ base=(docker compose --project-directory "$root" -f "$root/docker-compose.yml" $
 # scripts/bulk.sh sets BULK_SWITCH=1 for its own calls.
 project_name="$(grep -s '^COMPOSE_PROJECT_NAME=' "$root/.env" | cut -d= -f2- || true)"
 for arg in "$@"; do
+  if [ "$arg" = up ] && [ "${ADAPTER_SWITCH:-0}" != 1 ] && docker inspect "${project_name:-mcp-dev}-mcp-jira-adapter-1" >/dev/null 2>&1; then
+    echo "compose.sh: REFUSED. The adapter of profile adapter replaces mcp-jira; an up would start the native one next to it." >&2
+    echo "compose.sh: finish the demo first: scripts/adapter.sh off --confirm." >&2
+    exit 4
+  fi
   if [ "$arg" = up ] && [ "${BULK_SWITCH:-0}" != 1 ] && docker inspect "${project_name:-mcp-dev}-mcp-bulk-1" >/dev/null 2>&1; then
     echo "compose.sh: REFUSED. The stand-in of profile bulk replaces mcp-confluence; an up would start the real one next to it." >&2
     echo "compose.sh: finish the test first: scripts/bulk.sh off --confirm (make bulk-off CONFIRM=1)." >&2

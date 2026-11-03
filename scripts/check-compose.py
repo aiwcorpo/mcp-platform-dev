@@ -170,6 +170,19 @@ def check_adapter(m5):
            and "@sha256:" in foreign["image"], "adapter: the foreign server is read-only, without capabilities and ports, pinned by digest, never pulled")
     record(all(config["services"][n].get("profiles") == ["adapter"] for n in ("mcp-atlassian", "mcp-jira-adapter", "adapter-state-init")),
            "adapter: its services belong to profile adapter only")
+    adapter = config["services"]["mcp-jira-adapter"]
+    tools = foreign["environment"]["ENABLED_TOOLS"].split(",") + adapter["environment"]["MCP_ADAPTER_TOOLS_INCLUDE"].split(",")
+    record(set(tools) <= {"jira_get_issue", "jira_search", "jira_get_all_projects", "jira_get_transitions"},
+           "adapter: only read tools are named (adapter serves reads, contracts 6.3.0)", str(tools))
+    users = sorted(str(p.relative_to(ROOT)) for p in list((ROOT / "scripts").glob("*")) + [ROOT / "Makefile"]
+                   if p.is_file() and p.name not in ("adapter.sh", "check-compose.py") and "docker-compose.adapter.yml" in p.read_text(errors="ignore"))
+    record(users == [], "adapter: no script or make target loads the overlay except scripts/adapter.sh (it puts the gateways in adapter mode)", str(users))
+    record(any(v.get("source") == "mcp-jira-adapter-state" for v in adapter["volumes"])
+           and not any(v.get("source") == "mcp-jira-state" for sv in config["services"].values() for v in sv.get("volumes", []) if sv is adapter),
+           "adapter: its state has a volume of its own, not the one of the native mcp-jira")
+    record(adapter["healthcheck"]["test"][:2] == ["CMD", "bash"], "adapter: the healthcheck runs under bash (dash has no /dev/tcp)")
+    record(config["services"]["adapter-state-init"].get("network_mode") == "none" and foreign.get("user") == "1000:1000",
+           "adapter: the state job has no network, the foreign server names its user")
     if m5:
         added = sorted(set(config["services"]) - set(m5["services"]))
         record(added == ["adapter-state-init", "mcp-atlassian", "mcp-jira-adapter"], "adapter: the overlay adds three services and nothing else", str(added))

@@ -70,7 +70,7 @@ Dwa profile opcjonalne (M6, [docs/m6.md](docs/m6.md)), poza domyślnym stosem i 
 | Profil | Polecenie | Co daje |
 | --- | --- | --- |
 | `bulk` | `make bulk-on CONFIRM=1` / `make bulk-off CONFIRM=1` (bez `CONFIRM=1` kontrole i plan) | na czas testu G9 stand-in ze 250 narzędziami w miejsce `mcp-confluence` (na polecenie koordynatora, zmienia stos) |
-| `adapter` | `docker-compose.adapter.yml` (nie przez `make`) | demo Jiry przez adapter ws-13 w miejsce natywnego `mcp-jira`; wyłączony, opis w docs/m6.md punkt 9 |
+| `adapter` | `scripts/adapter.sh on|off --confirm` (nie przez `make`) | demo Jiry (tylko odczyt) przez adapter ws-13 w miejsce natywnego `mcp-jira`; wyłączony, opis w docs/m6.md punkt 9 |
 | `e2e-prod` | `make e2e-prod-up`, `make e2e-prod-test`, `make e2e-prod-down` | osobny projekt: gateway bez `devstack`, broker i serwer MCP stand-in, dla XH; głównego stosu nie rusza |
 
 `up-core` jest dla strumienia, który uruchamia własny komponent na hoście i nie chce stuba pod tym samym adresem.

@@ -59,7 +59,14 @@ case "$mode" in
   check)
     echo "now: $(counts)"
     echo "plan of the whole project with M6_ACTIVE=1 (the init jobs are shown too; this script names its services and never runs them):"
-    M6_ACTIVE=1 timeout 60 "$root/scripts/compose.sh" --profile full --profile m2 up -d --dry-run 2>&1 | grep -E 'Recreate$|Recreate ' | sort -u || true
+    # The dry run ends by waiting for the health of simulated containers, so it is cut after 60 s (python, as macOS has no timeout(1)).
+    M6_ACTIVE=1 python3 -I -c '
+import subprocess, sys
+try:
+    out = subprocess.run(sys.argv[1:], capture_output=True, text=True, timeout=60)
+    print(out.stdout + out.stderr)
+except subprocess.TimeoutExpired as e:
+    print((e.stdout or b"").decode() + (e.stderr or b"").decode())' "$root/scripts/compose.sh" --profile full --profile m2 up -d --dry-run 2>&1 | grep -E 'Recreate$|Recreate ' | sort -u || true
     for service in "${order[@]}"; do echo "image of $service now: $(docker inspect -f '{{.Config.Image}}' "$(container "$service")")"; done
     ;;
   apply)

@@ -541,3 +541,6 @@ Opis i dowody: [docs/m6.md](docs/m6.md).
 Opis i dowody: docs/m6.md, punkt 9. Obrazy kontraktów 6.2.0 wdrożone warstwą `m6b.env` (`scripts/apply-m6b-switch.sh`): gateway m6-ced1e1f, broker m6-7a48486, jira m6-a3dde33, confluence m6-a92cc8a, gitlab m6-150af6c,
 opensearch m6-508cab7, portal m6-434655d; servicedesk bez zmian. Paczka polityk 20261103121030-a03943b opublikowana. `make smoke` 78 PASS, 0 niezdrowych, `start-test` 8 PASS, połączenia 2 i Authenticatory 3 bez zmian.
 Oczekujące na zatwierdzenie (UPDATE i DESTRUCTIVE): Jira 9, Confluence 5, GitLab 10. Profil `adapter` przygotowany i wyłączony.
+- Poprawki po przeglądzie etapu 3: profil `adapter` ma `scripts/adapter.sh status|on|off` (CONFIRM, natywny `mcp-jira` zatrzymany przed adapterem, gatewaye po kolei, blokada `up` i `make up*`, droga powrotu),
+  healthcheck przez `bash`, osobny wolumen stanu, tylko odczyty, `user: 1000:1000`, stan bez sieci; `rollback-check` i `rollback` sprawdzają wyłączniki, adapter, zgodność schematu Cedar paczki z obrazami do których wracamy
+  i po cofnięciu przejmują manifesty m5 przez bootstrap; skrypty bez `timeout(1)`, `unset` zmiennych warstw, opisy poprawione. Profil nadal nie włączony, cofnięcie nie uruchamiane.
