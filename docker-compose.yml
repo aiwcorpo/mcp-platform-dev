@@ -51,7 +51,6 @@ x-bash-8443-health: &bash-8443-health
 
 x-mcp-server-env: &mcp-server-env
   MCP_GATEWAY_JWKS_URI: https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json
-  MCP_GATEWAY_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
   MCP_GATEWAY_ISSUER: https://mcp-gateway.internal
   MCP_CONNECT_URL: https://localhost:${PROXY_TLS_PORT}/connections?system={system}
   MCP_REDIS_HOST: redis
@@ -479,7 +478,6 @@ services:
       MCP_ALLOW_PLAIN_HTTP: "true"
       MCP_OIDC_CLIENT_ID: mcp-gateway
       MCP_OIDC_CLIENT_SECRET: ${KC_CLIENT_MCP_GATEWAY_SECRET:?run make secrets}
-      MCP_INTERNAL_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
       MCP_BROKER_URL: https://${MCP_BROKER_TLS_NAME}:8443
       MCP_BROKER_TLS_NAME: ${MCP_BROKER_TLS_NAME}
       MCP_SERVER_JIRA_URL: https://mcp-jira.internal:8443
@@ -557,10 +555,7 @@ services:
     environment:
       MCP_OIDC_ISSUER: https://localhost:${KEYCLOAK_TLS_PORT}/realms/corp
       MCP_OIDC_JWKS_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/certs
-      MCP_OIDC_TOKEN_URI: http://keycloak:8080/realms/corp/protocol/openid-connect/token
       MCP_OIDC_AUDIENCE: mcp-credential-broker
-      MCP_OIDC_CLIENT_ID: mcp-credential-broker
-      MCP_OIDC_CLIENT_SECRET: ${KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET:?run make secrets}
       MCP_GATEWAY_JWKS_URI: https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json
       MCP_GATEWAY_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
       MCP_BAO_ADDR: http://openbao:8200
@@ -588,7 +583,6 @@ services:
       MCP_REDIS_PORT: "6379"
       MCP_REDIS_USER: broker
       MCP_REDIS_PASSWORD: ${REDIS_BROKER_PASSWORD:?run make secrets}
-      MCP_REDIS_KEY_PREFIX: "broker:"
       MCP_DB_URL: jdbc:postgresql://postgres:5432/broker
       MCP_DB_USER: broker
       MCP_DB_PASSWORD: ${BROKER_DB_PASSWORD:?run make secrets}
@@ -618,7 +612,6 @@ services:
     pull_policy: never
     environment:
       MCP_GATEWAY_JWKS_URI: https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json
-      MCP_GATEWAY_TLS_NAME: ${MCP_GATEWAY_INTERNAL_TLS_NAME}
       MCP_GATEWAY_ISSUER: https://mcp-gateway.internal
       # Portal page for credential_required (C10); same shape as the broker's connectUrl (C4 example).
       MCP_CONNECT_URL: https://localhost:${PROXY_TLS_PORT}/connections?system={system}
@@ -632,7 +625,6 @@ services:
       MCP_REDIS_PORT: "6379"
       MCP_REDIS_USER: mcp-jira
       MCP_REDIS_PASSWORD: ${REDIS_MCP_JIRA_PASSWORD:?run make secrets}
-      MCP_REDIS_KEY_PREFIX: "jti:mcp-jira:"
       MCP_TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
       MCP_TLS_KEYSTORE: /certs/mcp-jira/keystore.p12
       MCP_TLS_TRUSTSTORE: /certs/ca/truststore.p12
@@ -791,7 +783,6 @@ services:
       <<: *mcp-server-env
       MCP_REDIS_USER: mcp-confluence
       MCP_REDIS_PASSWORD: ${REDIS_MCP_CONFLUENCE_PASSWORD:?run make secrets}
-      MCP_REDIS_KEY_PREFIX: "jti:mcp-confluence:"
       MCP_TLS_KEYSTORE: /certs/mcp-confluence/keystore.p12
       # The Confluence mock speaks plain http; dev only (the PAT would travel in clear text).
       MCP_CONFLUENCE_URL: http://confluence.internal:8080
@@ -834,7 +825,6 @@ services:
       <<: *mcp-server-env
       MCP_REDIS_USER: mcp-gitlab
       MCP_REDIS_PASSWORD: ${REDIS_MCP_GITLAB_PASSWORD:?run make secrets}
-      MCP_REDIS_KEY_PREFIX: "jti:mcp-gitlab:"
       MCP_TLS_KEYSTORE: /certs/mcp-gitlab/keystore.p12
       MCP_GITLAB_URL: http://gitlab.internal:8080
       MCP_GITLAB_ALLOW_PLAIN_HTTP: "true"
@@ -877,7 +867,6 @@ services:
       <<: *mcp-server-env
       MCP_REDIS_USER: mcp-servicedesk
       MCP_REDIS_PASSWORD: ${REDIS_MCP_SERVICEDESK_PASSWORD:?run make secrets}
-      MCP_REDIS_KEY_PREFIX: "jti:mcp-servicedesk:"
       MCP_TLS_KEYSTORE: /certs/mcp-servicedesk/keystore.p12
       MCP_SERVICEDESK_URL: http://servicedesk.internal:8080
       MCP_SERVICEDESK_ALLOW_PLAIN_HTTP: "true"
@@ -896,7 +885,6 @@ services:
       AIWCORPO_MCP_PLATFORM_DEVSTACK_ACKNOWLEDGED: "true"
       AIWCORPO_MCP_PLATFORM_POLICY_ALLOW_TEST_KEYS: "true"
       MCP_INTERNAL_URL: https://mcp-servicedesk.internal:8443/mcp
-      MCP_ACCEPTED_CREDENTIAL_TYPES: service-account
     volumes:
       - mcp-servicedesk-state:/app/state
       - ${POLICY_KEYS_DIR}/${POLICY_KEY_MAIN_ID}.public.pem:/keys/${POLICY_KEY_MAIN_ID}.public.pem:ro
@@ -919,7 +907,6 @@ services:
       <<: *mcp-server-env
       MCP_REDIS_USER: mcp-opensearch
       MCP_REDIS_PASSWORD: ${REDIS_MCP_OPENSEARCH_PASSWORD:?run make secrets}
-      MCP_REDIS_KEY_PREFIX: "jti:mcp-opensearch:"
       MCP_TLS_KEYSTORE: /certs/mcp-opensearch/keystore.p12
       MCP_OPENSEARCH_URL: http://opensearch.internal:8080
       MCP_OPENSEARCH_ALLOW_PLAIN_HTTP: "true"
@@ -939,7 +926,6 @@ services:
       AIWCORPO_MCP_PLATFORM_DEVSTACK_ACKNOWLEDGED: "true"
       AIWCORPO_MCP_PLATFORM_POLICY_ALLOW_TEST_KEYS: "true"
       MCP_INTERNAL_URL: https://mcp-opensearch.internal:8443/mcp
-      MCP_ACCEPTED_CREDENTIAL_TYPES: user-secret
     volumes:
       - mcp-opensearch-state:/app/state
       - ${POLICY_KEYS_DIR}/${POLICY_KEY_MAIN_ID}.public.pem:/keys/${POLICY_KEY_MAIN_ID}.public.pem:ro

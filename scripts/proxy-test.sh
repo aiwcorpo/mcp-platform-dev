@@ -195,8 +195,9 @@ check "negative: no gateway CSP on /" 0 "$(header content-security-policy)"
 docker stop "$net-gateway" >/dev/null
 req "$base/s/mcp-jira/mcp"
 check "gateway down: status" 502 "$status"
-check "gateway down: JSON content type" "application/json" "$(hvalue content-type)"
-check "gateway down: JSON body" upstream_unavailable "$(field .error)"
+check "gateway down: BalancerError bad_gateway" bad_gateway "$(field .error)"
+check "gateway down: BalancerError fixed text" "The request may or may not have been processed. Check the result before repeating a write." "$(field .message)"
+check "gateway down: JSON utf-8 content type" "application/json; charset=utf-8" "$(hvalue content-type)"
 check "gateway down: CSP" "$csp" "$(hvalue content-security-policy)"
 docker start "$net-gateway" >/dev/null
 for _ in $(seq 1 30); do
