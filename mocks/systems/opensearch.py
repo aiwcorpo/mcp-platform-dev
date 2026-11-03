@@ -166,6 +166,11 @@ def expand(expression, prefixes, req):
 
 def handle(req):
     seg = req.segments
+    if req.method == "GET" and not seg:
+        # Anonymous version probe of mcp-opensearch (GET /); 2.19.1 lies inside the tested range 2.0 to 3.x.
+        return common.json_response(200, {"name": "mock-node", "cluster_name": "mcp-dev",
+                                          "version": {"distribution": "opensearch", "number": "2.19.1"},
+                                          "tagline": "The OpenSearch Project: https://opensearch.org/"})
     route = None
     if req.method == "GET" and len(seg) == 3 and seg[0] == "_resolve" and seg[1] == "index":
         route = "resolve"

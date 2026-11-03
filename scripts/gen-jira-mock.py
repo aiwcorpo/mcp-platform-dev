@@ -240,4 +240,12 @@ for method in ("GET", "POST"):
                  "request": {"method": method, "urlPath": "/rest/api/2/search", "headers": auth_required},
                  "response": {"status": 200, "headers": JSON, "jsonBody": search_result([])}})
 
+# Anonymous version probe of mcp-jira (JiraCapabilityProbe): without it the server stays in "unavailable" and the version gate is never exercised.
+# 10.3.1 lies inside the tested range 9.12 to 11.x.
+data.append({"name": "serverInfo without credentials", "priority": 1,
+             "request": {"method": "GET", "urlPath": "/rest/api/2/serverInfo"},
+             "response": {"status": 200, "headers": JSON,
+                          "jsonBody": {"baseUrl": BASE, "version": "10.3.1", "versionNumbers": [10, 3, 1],
+                                       "deploymentType": "Server", "buildNumber": 10030001, "serverTitle": "Jira"}}})
+
 dump(os.path.join(maps, "data.json"), {"mappings": data})

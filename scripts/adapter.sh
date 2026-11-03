@@ -16,7 +16,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-unset M6_ACTIVE M6B_ACTIVE
+unset M6_ACTIVE M6B_ACTIVE M6C_ACTIVE
 project="$(grep -s '^COMPOSE_PROJECT_NAME=' "$root/.env" | cut -d= -f2- || true)"
 project="${project:-mcp-dev}"
 compose() { ADAPTER_SWITCH=1 "$root/scripts/compose.sh" --profile full --profile m2 "$@"; }
@@ -31,6 +31,9 @@ need() { local description="$1"; shift; if "$@"; then echo "ok   $description"; 
 file_exists() { [ -f "$1" ]; }
 image_present() { docker image inspect "$1" >/dev/null 2>&1; }
 env_true() { grep -qs '^M6B_ACTIVE=1' "$root/.env"; }
+# The newest active layer decides which gateway and adapter images are expected (m6c.env over m6b.env).
+layer_file() { if grep -qs '^M6C_ACTIVE=1' "$root/.env"; then echo "$root/m6c.env"; else echo "$root/m6b.env"; fi; }
+layer_value() { grep -h "^$1=" "$(layer_file)" | cut -d= -f2-; }
 
 native="$project-mcp-jira-1"
 adapter="$project-mcp-jira-adapter-1"
@@ -62,9 +65,9 @@ case "${1:-status}" in
     ;;
   on)
     need "M6B_ACTIVE=1 (the gateways of 6.2.0 know adapter servers)" env_true
-    need "the gateway runs an image of stage 3" test "$(docker inspect -f '{{.Config.Image}}' "$project-mcp-gateway-1")" = "mcp-gateway:m6-ced1e1f"
+    need "the gateway runs an image of stage 3" test "$(docker inspect -f '{{.Config.Image}}' "$project-mcp-gateway-1")" = "$(layer_value MCP_GATEWAY_IMAGE)"
     need "both gateways healthy" bash -c "docker inspect -f '{{.State.Health.Status}}' $project-mcp-gateway-1 $project-mcp-gateway-2-1 | grep -vc '^healthy\$' | grep -q '^0\$'"
-    need "the adapter image is present" image_present "$(grep -h '^ADAPTER_IMAGE=' "$root/m6b.env" | cut -d= -f2-)"
+    need "the adapter image is present" image_present "$(layer_value ADAPTER_IMAGE)"
     need "the foreign server image is present (pinned by digest)" image_present "$(sed -n 's/^    image: \(ghcr.io[^ ]*\)$/\1/p' "$root/docker-compose.adapter.yml")"
     need "client certificate CN=mcp-adapter-mcp-jira exists" file_exists "$root/certs/mcp-adapter-mcp-jira/keystore.p12"
     need "the native mcp-jira exists (it is what gets replaced) or the adapter is already there" bash -c "docker inspect $native >/dev/null 2>&1 || docker inspect $adapter >/dev/null 2>&1"

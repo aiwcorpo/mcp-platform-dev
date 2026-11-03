@@ -245,6 +245,10 @@ def handle(req):
     path = req.path
     if not path.startswith("/rest/api/"):
         return None
+    if path == "/rest/api/server-information" and req.method == "GET":
+        # Anonymous, like the version probe of mcp-confluence; 9.2.1 lies inside the supported range 8.5 to 10.x.
+        return common.json_response(200, {"baseUrl": "http://confluence.internal:8080", "version": "9.2.1",
+                                          "majorVersion": 9, "minorVersion": 2, "patchLevel": 1})
     if path == "/rest/api/user/current":
         return _whoami(req) if req.method == "GET" else _error(405, "Method Not Allowed", "Method Not Allowed")
     if common.pat_user(req) is None:

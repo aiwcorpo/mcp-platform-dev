@@ -19,7 +19,7 @@ def record(ok, name, detail=""):
 
 
 def render(m4, m5):
-    env = {**os.environ, "M4_ACTIVE": "1" if m4 else "0", "M5_ACTIVE": "1" if m5 else "0", "M6_ACTIVE": "0", "M6B_ACTIVE": "0"}
+    env = {**os.environ, "M4_ACTIVE": "1" if m4 else "0", "M5_ACTIVE": "1" if m5 else "0", "M6_ACTIVE": "0", "M6B_ACTIVE": "0", "M6C_ACTIVE": "0"}
     out = subprocess.run([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2",
                           "--profile", "ci", "config", "--format", "json"], capture_output=True, text=True, env=env)
     if out.returncode != 0:
@@ -138,7 +138,7 @@ def render_file(args, extra_env, label):
 
 def check_m6(m5):
     config = render_file([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2", "--profile", "ci", "config", "--format", "json"],
-                         {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "1", "M6B_ACTIVE": "0"}, "m6 layer")
+                         {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "1", "M6B_ACTIVE": "0", "M6C_ACTIVE": "0"}, "m6 layer")
     if not config or not m5:
         return
     changed = sorted(n for n in config["services"] if config["services"][n] != m5["services"].get(n))
@@ -148,7 +148,7 @@ def check_m6(m5):
 
 def check_m6b(m5):
     config = render_file([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2", "--profile", "ci", "config", "--format", "json"],
-                         {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "1", "M6B_ACTIVE": "1"}, "m6b layer")
+                         {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "1", "M6B_ACTIVE": "1", "M6C_ACTIVE": "0"}, "m6b layer")
     if not config or not m5:
         return
     changed = sorted(n for n in config["services"] if config["services"][n] != m5["services"].get(n))
@@ -158,9 +158,24 @@ def check_m6b(m5):
     record(config["services"]["mcp-servicedesk"] == m5["services"]["mcp-servicedesk"], "m6b: mcp-servicedesk is unchanged")
 
 
+def check_m6c(m5):
+    config = render_file([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2", "--profile", "ci", "config", "--format", "json"],
+                         {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "1", "M6B_ACTIVE": "1", "M6C_ACTIVE": "1"}, "m6c layer")
+    if not config or not m5:
+        return
+    changed = sorted(n for n in config["services"] if config["services"][n] != m5["services"].get(n))
+    expected = sorted(["mcp-credential-broker", "mcp-credential-broker-2", "mcp-gateway", "mcp-gateway-2", "mcp-jira", "mcp-confluence", "mcp-gitlab",
+                       "mcp-opensearch", "mcp-servicedesk", "portal-bff", "portal-web"])
+    record(changed == expected, "m6c: the layer changes the gateway and broker instances, the five servers and the portal, and nothing else", str(changed))
+    record(config["services"]["mcp-servicedesk"]["image"].startswith("mcp-server-servicedesk:m6-"), "m6c: mcp-servicedesk runs an m6- image")
+    for name in ("mcp-jira", "mcp-confluence"):
+        env = config["services"][name]["environment"]
+        record(not any(key.endswith("_WRITES_ON_UNKNOWN_VERSION") for key in env), f"m6c: {name} has no WRITES_ON_UNKNOWN_VERSION (the mock answers the version probe)")
+
+
 def check_adapter(m5):
     config = render_file([str(ROOT / "scripts" / "compose.sh"), "-f", "docker-compose.adapter.yml", "--profile", "full", "--profile", "m2", "--profile", "ci",
-                          "--profile", "adapter", "config", "--format", "json"], {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "0", "M6B_ACTIVE": "0"}, "adapter overlay")
+                          "--profile", "adapter", "config", "--format", "json"], {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "0", "M6B_ACTIVE": "0", "M6C_ACTIVE": "0"}, "adapter overlay")
     if not config:
         return
     foreign = config["services"]["mcp-atlassian"]
@@ -212,7 +227,7 @@ def check_e2e_prod():
 
 def check_bulk(m5):
     config = render_file([str(ROOT / "scripts" / "compose.sh"), "-f", "docker-compose.bulk.yml", "--profile", "full", "--profile", "m2", "--profile", "ci", "--profile", "bulk", "config", "--format", "json"],
-                         {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "0", "M6B_ACTIVE": "0"}, "bulk overlay")
+                         {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "0", "M6B_ACTIVE": "0", "M6C_ACTIVE": "0"}, "bulk overlay")
     if not config:
         return
     stand_in = config["services"]["mcp-bulk"]
@@ -239,6 +254,7 @@ def main():
         check_m5(m4, m5)
     check_m6(m5)
     check_m6b(m5)
+    check_m6c(m5)
     check_adapter(m5)
     check_e2e_prod()
     check_bulk(m5)

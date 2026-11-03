@@ -309,5 +309,13 @@ class ServerQueryShapeTest(unittest.TestCase):
         self.assertEqual(payload(resp)["hits"]["hits"], [])
 
 
+class VersionProbeTest(unittest.TestCase):
+    def test_root_is_anonymous_and_reports_a_tested_opensearch(self):
+        resp = call("GET", "/")
+        self.assertEqual(200, resp.status)
+        version = payload(resp)["version"]
+        self.assertEqual(("opensearch", "2.19.1"), (version["distribution"], version["number"]))
+
+
 if __name__ == "__main__":
     unittest.main()

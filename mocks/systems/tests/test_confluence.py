@@ -230,5 +230,12 @@ class SpaceLabels(unittest.TestCase):
         self.assertEqual(call("GET", "/rest/api/space/ENG", token="unknown")[0], 401)
 
 
+class VersionProbeTest(unittest.TestCase):
+    def test_server_information_is_anonymous_and_in_the_supported_range(self):
+        status, body = call("GET", "/rest/api/server-information", token=None)
+        self.assertEqual(200, status)
+        self.assertEqual("9.2.1", body["version"])
+
+
 if __name__ == "__main__":
     unittest.main()

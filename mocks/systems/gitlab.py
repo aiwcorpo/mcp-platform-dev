@@ -293,6 +293,9 @@ def handle(req):
         user, error = _authenticate(req)
         if error is not None:
             return error
+        if req.segments == ["api", "v4", "version"] and req.method == "GET":
+            # The authenticated version call of mcp-gitlab; 18.4.1 lies inside the tested range 17.0 to 19.x.
+            return json_response(200, {"version": "18.4.1", "revision": "0000000"})
         if req.segments == ["api", "v4", "user"] and req.method == "GET":
             return json_response(200, gitlab_user(user))
         return gitlab_rest.handle_rest(req, user)

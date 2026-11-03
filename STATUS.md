@@ -544,3 +544,9 @@ Oczekujące na zatwierdzenie (UPDATE i DESTRUCTIVE): Jira 9, Confluence 5, GitLa
 - Poprawki po przeglądzie etapu 3: profil `adapter` ma `scripts/adapter.sh status|on|off` (CONFIRM, natywny `mcp-jira` zatrzymany przed adapterem, gatewaye po kolei, blokada `up` i `make up*`, droga powrotu),
   healthcheck przez `bash`, osobny wolumen stanu, tylko odczyty, `user: 1000:1000`, stan bez sieci; `rollback-check` i `rollback` sprawdzają wyłączniki, adapter, zgodność schematu Cedar paczki z obrazami do których wracamy
   i po cofnięciu przejmują manifesty m5 przez bootstrap; skrypty bez `timeout(1)`, `unset` zmiennych warstw, opisy poprawione. Profil nadal nie włączony, cofnięcie nie uruchamiane.
+
+## M6: obrazy kontraktów 6.3.2 (2026-11-03)
+
+Opis: docs/m6.md, punkt 10. Warstwa `m6c.env` (`scripts/apply-m6c-switch.sh`) wdrożona: gateway m6-dd9769b (V10 przeszła, instancja 2 zatrzymana na czas wymiany instancji 1), broker m6-0fdf699, portal m6-9c72041,
+jira m6-c9bd8d8, confluence m6-4a87b0e, gitlab m6-fb73f61, opensearch m6-338564b, servicedesk m6-b827e88; adapter m6-98b9f36 tylko w warstwie, profil wyłączony. Mocki Jiry, Confluence i OpenSearch odpowiadają na sondy wersji
+(restart tych trzech), flagi `*_WRITES_ON_UNKNOWN_VERSION` usunięte z compose; mock GitLaba dostał `/api/v4/version` w kodzie, bez restartu. Połączenia (connected 1, revoked 1) i Authenticatory (3) bez zmian; `make smoke` 78 PASS.

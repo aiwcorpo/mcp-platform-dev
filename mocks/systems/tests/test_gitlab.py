@@ -310,5 +310,13 @@ class WhoamiTest(unittest.TestCase):
         self.assertIsNone(get("/nothing"))
 
 
+class VersionTest(unittest.TestCase):
+    def test_version_needs_a_credential_and_is_in_the_tested_range(self):
+        self.assertEqual(401, get("/api/v4/version").status)
+        resp = get("/api/v4/version", headers={"PRIVATE-TOKEN": "alice-pat"})
+        self.assertEqual(200, resp.status)
+        self.assertEqual("18.4.1", body(resp)["version"])
+
+
 if __name__ == "__main__":
     unittest.main()

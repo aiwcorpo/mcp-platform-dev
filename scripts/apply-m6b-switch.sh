@@ -24,6 +24,10 @@ project="$(grep -s '^COMPOSE_PROJECT_NAME=' "$root/.env" | cut -d= -f2- || true)
 project="${project:-mcp-dev}"
 unset M6_ACTIVE M6B_ACTIVE   # a value exported in the shell would win over .env in scripts/compose.sh
 mode="${1:-check}"
+if grep -qs '^M6C_ACTIVE=1' "$root/.env" && [ "$mode" != pending ]; then
+  echo "apply-m6b-switch: M6C_ACTIVE=1 (m6c.env, migration V10 of the gateway): this script's apply and rollback no longer describe the stack; only 'pending' works" >&2
+  exit 1
+fi
 order=(mcp-credential-broker mcp-credential-broker-2 mcp-gateway mcp-gateway-2 mcp-jira mcp-confluence mcp-gitlab mcp-opensearch portal-bff portal-web)
 compose() { "$root/scripts/compose.sh" --profile full --profile m2 "$@"; }
 psql_in() { docker exec "$project-postgres-1" psql -U postgres -d "$1" -tAc "$2"; }

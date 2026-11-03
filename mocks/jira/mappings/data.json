@@ -1727,6 +1727,32 @@
           "issues": []
         }
       }
+    },
+    {
+      "name": "serverInfo without credentials",
+      "priority": 1,
+      "request": {
+        "method": "GET",
+        "urlPath": "/rest/api/2/serverInfo"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json;charset=UTF-8"
+        },
+        "jsonBody": {
+          "baseUrl": "http://jira.internal:8080",
+          "version": "10.3.1",
+          "versionNumbers": [
+            10,
+            3,
+            1
+          ],
+          "deploymentType": "Server",
+          "buildNumber": 10030001,
+          "serverTitle": "Jira"
+        }
+      }
     }
   ]
 }
