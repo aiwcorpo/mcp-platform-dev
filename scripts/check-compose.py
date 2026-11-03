@@ -146,6 +146,35 @@ def check_m6(m5):
     record(all(config["services"][n]["image"].split(":")[1].startswith("m6-") for n in changed), "m6: the changed services run images tagged m6-")
 
 
+def check_m6b(m5):
+    config = render_file([str(ROOT / "scripts" / "compose.sh"), "--profile", "full", "--profile", "m2", "--profile", "ci", "config", "--format", "json"],
+                         {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "1", "M6B_ACTIVE": "1"}, "m6b layer")
+    if not config or not m5:
+        return
+    changed = sorted(n for n in config["services"] if config["services"][n] != m5["services"].get(n))
+    expected = sorted(["mcp-credential-broker", "mcp-credential-broker-2", "mcp-gateway", "mcp-gateway-2", "mcp-jira", "mcp-confluence", "mcp-gitlab",
+                       "mcp-opensearch", "portal-bff", "portal-web"])
+    record(changed == expected, "m6b: the layer changes the gateway and broker instances, four servers and the portal, and nothing else", str(changed))
+    record(config["services"]["mcp-servicedesk"] == m5["services"]["mcp-servicedesk"], "m6b: mcp-servicedesk is unchanged")
+
+
+def check_adapter(m5):
+    config = render_file([str(ROOT / "scripts" / "compose.sh"), "-f", "docker-compose.adapter.yml", "--profile", "full", "--profile", "m2", "--profile", "ci",
+                          "--profile", "adapter", "config", "--format", "json"], {"M4_ACTIVE": "1", "M5_ACTIVE": "1", "M6_ACTIVE": "0"}, "adapter overlay")
+    if not config:
+        return
+    foreign = config["services"]["mcp-atlassian"]
+    record(set(foreign["networks"]) == {"adapter-foreign", "jira-foreign"} and config["networks"]["adapter-foreign"].get("internal")
+           and config["networks"]["jira-foreign"].get("internal"), "adapter: the foreign server is only in the two internal networks")
+    record(foreign.get("read_only") and foreign.get("cap_drop") == ["ALL"] and not foreign.get("ports") and foreign.get("pull_policy") == "never"
+           and "@sha256:" in foreign["image"], "adapter: the foreign server is read-only, without capabilities and ports, pinned by digest, never pulled")
+    record(all(config["services"][n].get("profiles") == ["adapter"] for n in ("mcp-atlassian", "mcp-jira-adapter", "adapter-state-init")),
+           "adapter: its services belong to profile adapter only")
+    if m5:
+        added = sorted(set(config["services"]) - set(m5["services"]))
+        record(added == ["adapter-state-init", "mcp-atlassian", "mcp-jira-adapter"], "adapter: the overlay adds three services and nothing else", str(added))
+
+
 def check_e2e_prod():
     names = ("E2E_PROD_DB_PASSWORD", "E2E_PROD_REDIS_PASSWORD", "E2E_PROD_ADMIN_TOKEN", "E2E_PROD_ACTIVITY_CURSOR_KEY", "E2E_PROD_LIST_CURSOR_KEY")
     config = render_file(["docker", "compose", "--project-directory", str(ROOT), "-p", "mcp-e2e-prod", "-f", "docker-compose.e2e-prod.yml",
@@ -196,6 +225,8 @@ def main():
     if m4 and m5:
         check_m5(m4, m5)
     check_m6(m5)
+    check_m6b(m5)
+    check_adapter(m5)
     check_e2e_prod()
     check_bulk(m5)
     for ok, name, detail in RESULTS:

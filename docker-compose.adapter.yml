@@ -1,0 +1,132 @@
+# Profile adapter (optional, OFF by default, NOT started by any make target and not part of the default stack): the Jira demo through the adapter
+# of ws-13 (mcp-server-adapter) in front of the foreign server sooperset/mcp-atlassian (digest pinned, already local, pull_policy never).
+# It takes the place of the native mcp-jira (same server id and alias mcp-jira.internal), so the two never run together, and the gateways must
+# have MCP_SERVER_JIRA_ADAPTER=true (set below for both). Taken from mcp-server-adapter/deploy/docker-compose.demo.yml with the file names of this
+# stack: client certificate CN=mcp-adapter-mcp-jira is certs/mcp-adapter-mcp-jira (scripts/gen-certs.sh), the state volume of the adapter is
+# prepared for uid 10001 by adapter-state-init (the native servers use 999). Use: scripts/adapter.sh (plan) and docs/m6.md.
+#   docker compose -f ... -f docker-compose.adapter.yml --profile adapter up -d  is done only by scripts/adapter.sh on the order of the coordinator.
+services:
+  mcp-atlassian:
+    profiles: [adapter]
+    image: ghcr.io/sooperset/mcp-atlassian@sha256:5b7c9b64d4eb3210cab74be8bf3e6aeea9ed14f3042dc59ba5c5287bd4dbe466
+    pull_policy: never
+    command: ["--transport", "streamable-http", "--port", "8000", "--host", "0.0.0.0"]
+    environment:
+      JIRA_URL: http://jira.internal:8080
+      JIRA_PERSONAL_TOKEN: placeholder-never-used
+      ALLOW_GLOBAL_CRED_FALLBACK: "false"
+      TOOLSETS: all
+      ENABLED_TOOLS: jira_get_issue,jira_search,jira_get_all_projects,jira_get_transitions,jira_add_comment,jira_transition_issue
+    # Foreign code, the least trusted container of the stack. Checked on the pinned image: it runs as uid 1000 (user "app") and works with
+    # a read-only root file system, no capabilities and these limits.
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    pids_limit: 200
+    # No published port. Two networks and no others: "adapter-foreign" (with the adapter) and "jira-foreign" (with the Jira mock). Not
+    # "servers" and not "core": from there it would see Redis, the policy server, the other servers and the admin API of the mock.
+    networks:
+      adapter-foreign: {}
+      jira-foreign: {}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8000), 2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Extends the existing service of mcp-platform-dev: the mock answers to jira.internal on the private network of the foreign server
+  # too. The alias there is the same name as on "servers" and "core", which are left as they are.
+  jira-mock:
+    networks:
+      jira-foreign:
+        aliases: [jira.internal]
+
+  mcp-jira-adapter:
+    profiles: [adapter]
+    image: ${ADAPTER_IMAGE:-mcp-server-adapter:m6-6e070ad}
+    pull_policy: never
+    environment:
+      MCP_SERVER_ID: mcp-jira
+      MCP_GATEWAY_JWKS_URI: https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json
+      MCP_GATEWAY_ISSUER: https://mcp-gateway.internal
+      MCP_CONNECT_URL: https://localhost:${PROXY_TLS_PORT}/connections?system={system}
+      MCP_INTERNAL_URL: https://mcp-jira.internal:8443/mcp
+      MCP_ACCEPTED_CREDENTIAL_TYPES: user-secret
+      # The foreign server, on the private network shared only with this container.
+      MCP_FOREIGN_URL: http://mcp-atlassian:8000
+      MCP_FOREIGN_ALLOW_PLAIN_HTTP: "true"
+      MCP_FOREIGN_AUTHORIZATION_FORMAT: "Token {credential}"
+      MCP_FOREIGN_DISCOVERY_AUTHORIZATION: "Token discovery-only"
+      MCP_ADAPTER_STRIP_PREFIX: jira_
+      MCP_ADAPTER_TOOLS_INCLUDE: jira_get_issue,jira_search,jira_get_all_projects,jira_get_transitions,jira_add_comment,jira_transition_issue
+      # Registry channel (C5): the mTLS listener of the gateway and the client certificate CN=mcp-adapter-mcp-jira.
+      MCP_REGISTRY_URL: https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443
+      MCP_REGISTRY_TLS_KEYSTORE: /certs/mcp-adapter-mcp-jira/keystore.p12
+      MCP_REGISTRY_SSL_BUNDLE: adapter-registry
+      MCP_TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
+      MCP_TLS_KEYSTORE: /certs/mcp-jira/keystore.p12
+      MCP_TLS_TRUSTSTORE: /certs/ca/truststore.p12
+      MCP_REDIS_HOST: redis
+      MCP_REDIS_PORT: "6379"
+      MCP_REDIS_USER: mcp-jira
+      MCP_REDIS_PASSWORD: ${REDIS_MCP_JIRA_PASSWORD:?run make secrets}
+      MCP_POLICY_URL: https://policies.internal:8443/policies/main/latest.json
+      MCP_POLICY_KEY_ID: ${POLICY_KEY_MAIN_ID}
+      MCP_POLICY_PUBLIC_KEY_FILE: /keys/${POLICY_KEY_MAIN_ID}.public.pem
+      MCP_POLICY_STATE_DIR: /app/state
+      AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
+      # Only for the dev stack, as for the native servers (see mcp-platform-dev): never outside it.
+      SPRING_PROFILES_ACTIVE: devstack
+      MCP_DEVSTACK_ACKNOWLEDGED: "true"
+      AIWCORPO_MCP_PLATFORM_DEVSTACK_ACKNOWLEDGED: "true"
+      AIWCORPO_MCP_PLATFORM_POLICY_ALLOW_TEST_KEYS: "true"
+    # The image runs as uid 10001; the state volume must be writable by it (the native servers use another uid, so the init step of the
+    # stack needs its own line for this volume).
+    volumes:
+      - mcp-jira-state:/app/state
+      - ${POLICY_KEYS_DIR}/${POLICY_KEY_MAIN_ID}.public.pem:/keys/${POLICY_KEY_MAIN_ID}.public.pem:ro
+      - ./certs/mcp-jira/keystore.p12:/certs/mcp-jira/keystore.p12:ro
+      - ./certs/mcp-adapter-mcp-jira/keystore.p12:/certs/mcp-adapter-mcp-jira/keystore.p12:ro
+      - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
+    networks:
+      servers:
+        aliases: [mcp-jira.internal]
+      adapter-foreign: {}
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8443"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    depends_on:
+      mcp-atlassian: {condition: service_healthy}
+      adapter-state-init: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+
+  adapter-state-init:
+    profiles: [adapter]
+    image: python:3.12-alpine@sha256:0687a6bc9716edc2a6ee0fbfb0f87e7ee358b262b67c9215de91bc9b2d38ba71
+    pull_policy: never
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c", "chown -R 10001:10001 /state && chmod 700 /state"]
+    volumes:
+      - mcp-jira-state:/state
+    restart: "no"
+
+  mcp-gateway:
+    environment:
+      MCP_SERVER_JIRA_ADAPTER: "true"
+
+  mcp-gateway-2:
+    environment:
+      MCP_SERVER_JIRA_ADAPTER: "true"
+
+networks:
+  # Internal (no route out of the stack): the adapter and the foreign server, nothing else.
+  adapter-foreign:
+    internal: true
+  # Internal: the foreign server and the Jira mock, nothing else.
+  jira-foreign:
+    internal: true

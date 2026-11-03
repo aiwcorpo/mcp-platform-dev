@@ -628,6 +628,9 @@ services:
       # template (c1258c4+) refuse an http backend outside the 'dev' profile without this switch. Never set
       # it against a real Jira (the PAT would travel in clear text).
       MCP_JIRA_ALLOW_PLAIN_HTTP: "true"
+      # Since the M6 image writes stay closed while the capability probe cannot read the backend version (fail closed). The Jira mock has no
+      # serverInfo, so the dev stack opens them explicitly; a real Jira answers the probe and needs no such line.
+      MCP_JIRA_WRITES_ON_UNKNOWN_VERSION: "true"
       MCP_REDIS_HOST: redis
       MCP_REDIS_PORT: "6379"
       MCP_REDIS_USER: mcp-jira
@@ -796,6 +799,8 @@ services:
       # The Confluence mock speaks plain http; dev only (the PAT would travel in clear text).
       MCP_CONFLUENCE_URL: http://confluence.internal:8080
       MCP_CONFLUENCE_ALLOW_PLAIN_HTTP: "true"
+      # Same as for Jira: the mock answers no version probe, writes would stay closed from the M6 image on.
+      MCP_CONFLUENCE_WRITES_ON_UNKNOWN_VERSION: "true"
       # Signed policy bundle (C7), the same the gateway evaluates, and the manifest the registry takes (C6).
       MCP_POLICY_URL: https://policies.internal:8443/policies/main/latest.json
       MCP_POLICY_KEY_ID: ${POLICY_KEY_MAIN_ID}

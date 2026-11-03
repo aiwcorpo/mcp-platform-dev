@@ -41,6 +41,7 @@ identities=(
   "mcp-servicedesk:server:mcp-servicedesk.internal"
   "mcp-opensearch:server:mcp-opensearch.internal"
   "policies:server:policies.internal"
+  "mcp-adapter-mcp-jira:client:"
   "mcp-bulk:server:mcp-confluence.internal"
   "mcp-e2e-stub:server:mcp-jira.internal"
   "mcp-e2e-broker:server:mcp-credential-broker.internal"

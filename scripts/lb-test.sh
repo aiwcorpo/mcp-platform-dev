@@ -147,8 +147,11 @@ check "instances back in rotation without restarting the balancers" 1 "$back"
 docker kill "$net-gw-a" "$net-gw-b" "$net-br-a" "$net-br-b" >/dev/null
 sleep 1.5
 curl -s -m 5 -D "$tmp/h" -o "$tmp/b" "$gw/mcp"
-check "gateway http: no instance -> 502 with JSON" "502 upstream_unavailable application/json" \
-  "$(sed -n '1s/[^ ]* \([0-9]*\).*/\1/p' "$tmp/h") $(jq -r .error "$tmp/b") $(tr -d '\r' < "$tmp/h" | tr 'A-Z' 'a-z' | sed -n 's/^content-type: \([^;]*\).*/\1/p')"
+check "gateway http: no instance -> 502 BalancerError (bad_gateway, fixed text, JSON utf-8, nosniff)" \
+  "502 bad_gateway application/json; charset=utf-8 nosniff The request may or may not have been processed. Check the result before repeating a write." \
+  "$(sed -n '1s/[^ ]* \([0-9]*\).*/\1/p' "$tmp/h") $(jq -r .error "$tmp/b") $(tr -d '\r' < "$tmp/h" | tr 'A-Z' 'a-z' | sed -n 's/^content-type: //p') $(tr -d '\r' < "$tmp/h" | tr 'A-Z' 'a-z' | sed -n 's/^x-content-type-options: //p') $(jq -r .message "$tmp/b")"
+check "gateway balancer: 504 page is gateway_timeout, no non_idempotent retry, buffering off, read timeout >= 60 s" "1 0 1 1" \
+  "$(grep -c 'gateway_timeout' "$root/lb/gateway.conf") $(grep -c 'non_idempotent' "$root/lb/gateway.conf") $(grep -c 'proxy_buffering off' "$root/lb/gateway.conf") $(grep -Ec 'proxy_read_timeout (6[0-9]|[7-9][0-9]|[0-9]{3,})s' "$root/lb/gateway.conf")"
 curl -s -m 5 -o /dev/null "http://127.0.0.1:$gw_tcp/"; rc=$?
 # 52 (empty reply) on the host, 56 (receive failure) through the in-network route of the runner: both mean the connection was closed.
 check "gateway tcp: no instance -> connection closed" 1 "$(( rc == 52 || rc == 56 ))"
