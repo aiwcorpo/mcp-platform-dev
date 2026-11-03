@@ -61,6 +61,9 @@ clean: bulk-guard ## reset plus removal of generated secrets, certificates and e
 	$(COMPOSE) --profile infra --profile full --profile m2 down -v || { echo "make clean: down -v failed; .secrets is kept, because without it the OpenBao volume could no longer be unsealed" >&2; exit 1; }
 	rm -rf .secrets certs out
 
+layers: ## read-only: active image layer, V10 marker, running vs expected images
+	@scripts/layers.sh
+
 ps: ## container status
 	$(COMPOSE) --profile infra --profile full --profile m2 ps -a
 

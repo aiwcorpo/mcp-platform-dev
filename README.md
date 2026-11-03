@@ -63,9 +63,9 @@ Kontrole, które zapisują (klucze Redisa z TTL, ścieżka KV w OpenBao, mapping
 | --- | --- | --- |
 | (bez profilu) | `make up-core` | Keycloak, OpenBao (trwały, wolumen `openbao-data`; `openbao-unseal`; jednorazowy `openbao-init`), Redis, PostgreSQL, mock Jiry |
 | `infra` | `make up` | powyższe + stuby WireMock brokera (C4) i API admina gateway'a (C5) z `mcp-contracts` `MCP_CONTRACTS_REF` |
-| `full` | `make up-full` | infrastruktura + `mcp-gateway`, `mcp-credential-broker`, `mcp-jira` z obrazów z `.env` (`make images` buduje je z commitów repozytoriów obok); stuby są usuwane |
+| `full` | `make up-full` | infrastruktura + `mcp-gateway`, `mcp-credential-broker`, `mcp-jira` z obrazów z `.env`, a gdy włączone są warstwy (niżej), z nadpisujących je plików `m4.env` ... `m6c.env` (`make images` buduje obrazy z commitów repozytoriów obok); stuby są usuwane |
 
-Dwa profile opcjonalne (M6, [docs/m6.md](docs/m6.md)), poza domyślnym stosem i niewłączane przez `make up*`:
+Trzy profile opcjonalne (M6, [docs/m6.md](docs/m6.md)) to osobne pliki compose, poza domyślnym stosem, niewłączane przez `make up*` i niezwiązane z warstwami obrazów niżej:
 
 | Profil | Polecenie | Co daje |
 | --- | --- | --- |
@@ -77,9 +77,17 @@ Dwa profile opcjonalne (M6, [docs/m6.md](docs/m6.md)), poza domyślnym stosem i 
 Compose zawsze przez `make` albo `scripts/compose.sh`: skrypt podaje `.env` i `.secrets/dev.env` jako
 `--env-file`, dzięki czemu każda usługa dostaje tylko swoje sekrety.
 
+## Warstwy obrazów (m4, m5, m6, m6b, m6c)
+
+Obrazy w `.env` to stan z M3. Kolejne kamienie nakładają się na niego plikami `m4.env`, `m5.env`, `m6.env`, `m6b.env`, `m6c.env` (m4 i m5 także plikami `docker-compose.m4.yml` i `docker-compose.m5.yml`).
+Flagi `M4_ACTIVE`, `M5_ACTIVE`, `M6_ACTIVE`, `M6B_ACTIVE`, `M6C_ACTIVE` (wartość 1) są w `.env` i ustawiają je skrypty `make m4-switch`, `make m5-switch` i `scripts/apply-m6*-switch.sh`;
+zmienna środowiska o tej samej nazwie ma pierwszeństwo. `scripts/compose.sh` dokłada pliki po kolei i wygrywa ostatni, więc obowiązują obrazy najwyższej włączonej warstwy (dziś m6c: kontrakty 6.3.2).
+Po migracji V10 gatewaya `apply-m6c-switch.sh` zapisuje znacznik `out/m6c.applied` (poza gitem), a `compose.sh` odmawia wtedy `up`, `create` i `run` bez `M6C_ACTIVE=1` (kod 5), także gdy zmienna środowiska mówi 0.
+`make layers` (tylko odczyt) wypisuje flagi, najwyższą aktywną warstwę, znacznik, wersję schematu gatewaya i dla każdego serwisu `mcp-*` obraz oczekiwany i działający (`ok` albo `DIFFERENT`). Szczegóły wdrożeń: docs/m6.md.
+
 ## Demo M1 z Claude Code
 
-Stan: `make up-full` uruchamia prawdziwy gateway, broker i `mcp-jira`; `make m1` przechodzi F1, A1, A2, A3, A9 i A15
+Stan z M1 (dziś stos działa na obrazach z warstw wyżej, patrz `make layers`): `make up-full` uruchamia prawdziwy gateway, broker i `mcp-jira`; `make m1` przechodzi F1, A1, A2, A3, A9 i A15
 (patrz [STATUS.md](STATUS.md)). Logowania w przeglądarce nie da się zautomatyzować, więc ta część jest dla człowieka.
 Sprawdzone bez przeglądarki: nagłówek 401 z `resource_metadata`, metadane RFC 9728 gateway'a
 (`authorization_servers = https://localhost:18746/realms/corp`), metadane RFC 8414 Keycloaka, żądanie autoryzacji
