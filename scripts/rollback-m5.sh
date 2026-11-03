@@ -14,6 +14,9 @@
 # state volume gateway-state-2 (unused after the rollback, removed with `docker volume rm` when wanted), the restarted mocks.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=m6-layers.sh
+. "$root/scripts/m6-layers.sh"
+refuse_when_newer_layers rollback-m5 M6_ACTIVE M6B_ACTIVE M6C_ACTIVE
 mode="${1:-}"
 case "$mode" in --dry-run|--confirm) shift ;; *) echo "usage: scripts/rollback-m5.sh --dry-run|--confirm [backup dir]" >&2; exit 2 ;; esac
 state="$root/out/m5-switch.state"

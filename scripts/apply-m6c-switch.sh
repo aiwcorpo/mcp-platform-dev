@@ -2,18 +2,24 @@
 # Moves the stack to the images of m6c.env (contracts 6.3.2, starter 3.0.0-beta-14), each step followed by a health check:
 #   mocks that changed (jira-mock, confluence-mock, opensearch-mock; the GitLab mock holds OAuth state and is never restarted),
 #   broker-1, broker-2, gateway-2 stopped, gateway-1, gateway-2, mcp-jira, mcp-confluence, mcp-gitlab, mcp-opensearch, mcp-servicedesk, portal-bff, portal-web.
-# Why the gateways go in that order: image m6-dd9769b runs migration V10 (adapter classifications become void and the registry counter moves);
-# an old instance that runs on the schema after V10 does not reload the registry until it restarts. So the old instance 2 is stopped first, instance 1
-# is replaced (V10 runs on its start), and only then instance 2 starts, on the new image. Between the stop and the second start one instance serves.
+# Why the gateways go in that order: image m6-dd9769b runs migration V10 (adapter classifications become void and the registry counter moves). An old
+# instance that keeps running on the schema after V10 does not reload the registry until it restarts or approves something that moves the counter
+# (README of mcp-gateway), and V10 runs only once, so what that instance writes meanwhile is not voided. Hence the old instance 2 is stopped first, instance 1
+# is replaced (V10 runs on its start), and only then instance 2 starts, on the new image. The price is a gap: from the stop of instance 2 until instance 1 is
+# healthy no gateway instance serves (the gateway balancer answers 502 for roughly the start time of one gateway, about 10 to 20 s, open streams are cut).
 # The mocks go first so that the servers' first version probe already finds a version. Nothing else is recreated (OpenBao, PostgreSQL, Keycloak, Redis,
 # the balancers and the proxy stay as they are); `up --no-deps` names the service. The init jobs are never run.
 #   scripts/apply-m6c-switch.sh check              the counts and the images now, changes nothing
 #   scripts/apply-m6c-switch.sh apply --confirm    M6C_ACTIVE=1 in .env, then the services in turn
 #   scripts/apply-m6c-switch.sh pending            the tools waiting for approval (SELECT only)
+# After V10 the script writes out/m6c.applied (outside git); scripts/compose.sh then refuses to create containers without the M6C layer.
+# A second apply skips the stop of instance 2 when both gateways already run the image of m6c.env on schema 10.
 # There is no rollback: V10 stays in the database and the m6b gateway would serve adapter rows that V10 voided. Going back is a decision of a human.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=m6-layers.sh
+. "$root/scripts/m6-layers.sh"
 project="$(grep -s '^COMPOSE_PROJECT_NAME=' "$root/.env" | cut -d= -f2- || true)"
 project="${project:-mcp-dev}"
 unset M6_ACTIVE M6B_ACTIVE M6C_ACTIVE   # a value exported in the shell would win over .env in scripts/compose.sh
@@ -23,7 +29,17 @@ first=(mcp-credential-broker mcp-credential-broker-2)
 last=(mcp-jira mcp-confluence mcp-gitlab mcp-opensearch mcp-servicedesk portal-bff portal-web)
 compose() { "$root/scripts/compose.sh" --profile full --profile m2 "$@"; }
 psql_in() { docker exec "$project-postgres-1" psql -U postgres -d "$1" -tAc "$2"; }
-fail() { echo "apply-m6c-switch: $*" >&2; exit 1; }
+fail() {
+  echo "apply-m6c-switch: $*" >&2
+  if [ "${flag_set:-0}" = 1 ]; then
+    if v10_applied --check-db; then
+      echo "apply-m6c-switch: AFTER V10: the flag M6C_ACTIVE=1 stays, older images must not run on this schema; fix the failed service and run apply --confirm again" >&2
+    else
+      echo "apply-m6c-switch: BEFORE V10: the schema is still below 10; the flag can be taken back (M6C_ACTIVE=0 in .env) and the stack stays on m6b images" >&2
+    fi
+  fi
+  exit 1
+}
 container() { echo "$project-$1-1"; }
 
 counts() {
@@ -68,15 +84,23 @@ switch() {
 }
 
 roll() {
-  local service
+  local service want
   for service in "${mocks[@]}"; do restart_mock "$service"; done
   for service in "${first[@]}"; do switch "$service"; done
-  echo "apply-m6c-switch: stopping mcp-gateway-2 (old image) before V10"
-  compose stop mcp-gateway-2
+  want="$(expected_image mcp-gateway)"
+  if [ "$(flyway_max)" -ge 10 ] && [ "$(docker inspect -f '{{.Config.Image}}' "$(container mcp-gateway)" 2>/dev/null)" = "$want" ] \
+      && [ "$(docker inspect -f '{{.Config.Image}}' "$(container mcp-gateway-2)" 2>/dev/null)" = "$want" ]; then
+    echo "apply-m6c-switch: both gateways already run $want on schema $(flyway_max), instance 2 is not stopped"
+  else
+    echo "apply-m6c-switch: stopping mcp-gateway-2 (old image) before V10"
+    compose stop mcp-gateway-2
+  fi
   switch mcp-gateway
   [ "$(flyway_max)" -ge 10 ] || fail "migration V10 is not in the schema history after mcp-gateway started"
   echo "apply-m6c-switch: V10 applied (flyway max $(flyway_max)); starting mcp-gateway-2 on the new image"
   [ "$(psql_in gateway "select count(*) from flyway_schema_history where version = '10' and success")" = 1 ] || fail "V10 is missing or failed"
+  mkdir -p "$root/out"
+  printf 'V10 applied by apply-m6c-switch.sh at %s, gateway %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(expected_image mcp-gateway)" > "$(m6c_marker)"
   switch mcp-gateway-2
   for service in "${last[@]}"; do switch "$service"; done
   echo "apply-m6c-switch: all services done"
@@ -94,8 +118,12 @@ case "$mode" in
     [ "${2:-}" = --confirm ] || fail "add --confirm"
     grep -q '^M6B_ACTIVE=1' "$root/.env" || fail "M6B_ACTIVE=1 is not set in .env; .env is left as it is"
     [ -z "$(unhealthy)" ] || fail "not everything is healthy before the switch: $(unhealthy)"
+    while IFS= read -r image; do
+      docker image inspect "$image" >/dev/null 2>&1 || fail "image $image of m6c.env is not present locally; nothing was changed"
+    done < <(sed -n 's/^[A-Z_]*IMAGE=//p' "$root/m6c.env")
     echo "before: $(counts)"
     set_flag 1
+    flag_set=1
     roll
     echo "after:  $(counts)"
     ;;

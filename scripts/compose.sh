@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # docker compose with ports (.env) and generated secrets (.secrets/dev.env) available for interpolation.
-# While M4_ACTIVE=1 (environment, or .env after make m4-switch) the M4 layer is added: docker-compose.m4.yml and m4.env.
-# While M5_ACTIVE=1 (same way, after make m5-switch) the M5 layer comes on top of it: docker-compose.m5.yml and m5.env.
-# While M6B_ACTIVE=1 m6b.env follows it: the images of stage 3 (contracts 6.2.0).
-# While M6_ACTIVE=1 (scripts/apply-m6-switch.sh) m6.env comes next: only the image tags of the gateway and the broker.
-# While M6C_ACTIVE=1 m6c.env comes last: the images on contracts 6.3.2 (scripts/apply-m6c-switch.sh).
+# Layers, in the order the env files are given (the later one wins): M4_ACTIVE=1 (docker-compose.m4.yml, m4.env), M5_ACTIVE=1 (docker-compose.m5.yml, m5.env),
+# M6_ACTIVE=1 (m6.env: gateway and broker), M6B_ACTIVE=1 (m6b.env: contracts 6.2.0), M6C_ACTIVE=1 (m6c.env: contracts 6.3.2, scripts/apply-m6c-switch.sh).
+# Each flag comes from the environment or, failing that, from .env. Once out/m6c.applied exists, a create without the M6C layer is refused (see below).
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 files=()
@@ -48,6 +46,21 @@ for arg in "$@"; do
     exit 4
   fi
 done
+
+# Refuses to create containers (up, create, run) without the M6C layer once migration V10 of the gateway is in the database: an older gateway image would
+# run on a schema it does not know. The marker out/m6c.applied is outside git and a variable M6C_ACTIVE=0 does not override it; without the marker the schema is
+# read, but only when PostgreSQL already runs, so that a `make up` from scratch is never blocked. --dry-run only plans and is let through.
+# shellcheck source=m6-layers.sh
+. "$root/scripts/m6-layers.sh"
+creates=0
+for arg in "$@"; do
+  case "$arg" in up|create|run) creates=1 ;; --dry-run) creates=0; break ;; esac
+done
+if [ "$creates" = 1 ] && [ "$(layer_flag M6C_ACTIVE)" != 1 ] && v10_applied --check-db; then
+  echo "compose.sh: REFUSED. Migration V10 of the gateway is in the database ($(m6c_marker) or schema version >= 10) and M6C_ACTIVE is not 1:" >&2
+  echo "compose.sh: an older gateway image would run on it. Set M6C_ACTIVE=1 in .env (m6c.env) and drop the variable from the environment." >&2
+  exit 5
+fi
 
 # Refuses an `up` that would replace a running in-memory (-dev) OpenBao and so delete its secrets (scripts/openbao-guard.sh).
 for arg in "$@"; do

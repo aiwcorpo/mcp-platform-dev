@@ -13,6 +13,9 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 project="$(grep -s '^COMPOSE_PROJECT_NAME=' "$root/.env" | cut -d= -f2- || true)"
 project="${project:-mcp-dev}"
+# shellcheck source=m6-layers.sh
+. "$root/scripts/m6-layers.sh"
+unset M6_ACTIVE M6B_ACTIVE M6C_ACTIVE   # a value exported in the shell would win over .env in scripts/compose.sh
 mode="${1:-check}"
 order=(mcp-credential-broker mcp-credential-broker-2 mcp-gateway mcp-gateway-2)
 compose() { "$root/scripts/compose.sh" --profile full --profile m2 "$@"; }
@@ -78,6 +81,7 @@ except subprocess.TimeoutExpired as e:
     ;;
   rollback)
     [ "${2:-}" = --confirm ] || fail "add --confirm"
+    refuse_when_newer_layers apply-m6-switch M6B_ACTIVE M6C_ACTIVE   # before anything is changed, set_flag included
     echo "before: $(counts)"
     set_flag 0
     roll 0
