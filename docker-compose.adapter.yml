@@ -1,5 +1,5 @@
 # Profile adapter (optional, OFF by default, NOT started by any make target and not part of the default stack): the Jira demo through the adapter
-# of ws-13 (mcp-server-adapter) in front of the foreign server sooperset/mcp-atlassian (digest pinned, already local, pull_policy never).
+# (mcp-server-adapter) in front of the foreign server sooperset/mcp-atlassian (digest pinned, already local, pull_policy never).
 # Read only (decision of 2026-11-03, contracts 6.3.0: the adapter serves reads): the foreign server and the adapter name only read tools.
 # It takes the place of the native mcp-jira (same server id and alias mcp-jira.internal) and puts the gateways in adapter mode for mcp-jira
 # (MCP_SERVER_JIRA_ADAPTER=true below). The file is meant to be loaded ONLY by scripts/adapter.sh (on|off, CONFIRM=1), which stops the native

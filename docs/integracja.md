@@ -1,211 +1,211 @@
-# Podpięcie komponentów
+# Attaching components
 
-Dwa tryby pracy:
+There are two working modes:
 
-1. **Komponent na hoście** (IDE, `./mvnw spring-boot:run`) przeciw `make up` (ze stubami C4/C5) albo
-   `make up-core` (bez stubów, gdy na hoście działa własny broker/gateway). Adresy z kolumny "z hosta" w
+1. **Component on the host** (IDE, `./mvnw spring-boot:run`) against `make up` (with the broker and gateway-admin stubs) or
+   `make up-core` (without stubs, when your own broker or gateway runs on the host). Addresses are in the "from the host" column of
    [porty.md](porty.md).
-2. **Komponent w compose** (`make up-full`): obraz z `.env` (`MCP_GATEWAY_IMAGE`, `MCP_CREDENTIAL_BROKER_IMAGE`,
-   `MCP_JIRA_IMAGE`), adresy z sieci compose. `make up-full` usuwa stuby C4/C5 (mają te same aliasy DNS co
-   prawdziwy broker i gateway), a `make up` usuwa komponenty profilu `full`. Usługi dostają zmienne `MCP_*`
-   opisane niżej; komponent mapuje je na własną konfigurację (np. `application-dev.yml` z `${MCP_OIDC_ISSUER}`).
-   Nazwy zmiennych są propozycją ws-01; zmiana jest w `docker-compose.yml` tego repo.
+2. **Component in compose** (`make up-full`): the image comes from `.env` (`MCP_GATEWAY_IMAGE`, `MCP_CREDENTIAL_BROKER_IMAGE`,
+   `MCP_JIRA_IMAGE`), addresses from the compose network. `make up-full` removes the stubs (they have the same DNS aliases as the
+   real broker and gateway), and `make up` removes the components of the `full` profile. Services get the `MCP_*` variables
+   described below; a component maps them to its own configuration (for example `application-dev.yml` with `${MCP_OIDC_ISSUER}`).
+   The variable names are a proposal of the environment owners; to change them, edit `docker-compose.yml` in this repo.
 
-## Nazwy TLS brokera i gateway'a (CC-035)
+## TLS names of the broker and gateway
 
-Decyzja: nazwa w certyfikacie brokera i wewnętrznego endpointu gateway'a (JWKS C2, `/admin/v1`) nie jest
-konwencją kontraktu, tylko parametrem konfiguracji każdego komponentu. Środowisko ustawia je w `.env`:
+Decision: the name in the certificate of the broker and of the internal gateway endpoint (JWKS, `/admin/v1`) is not
+a contract convention but a configuration parameter of each component. The environment sets them in `.env`:
 
-| Zmienna | Domyślnie | Gdzie użyta |
+| Variable | Default | Where used |
 | --- | --- | --- |
-| `MCP_BROKER_TLS_NAME` | `mcp-credential-broker.internal` | SAN certyfikatu `certs/mcp-credential-broker`, alias DNS brokera i stuba C4, `MCP_BROKER_TLS_NAME` gateway'a, weryfikacja w `make pat` |
-| `MCP_GATEWAY_INTERNAL_TLS_NAME` | `mcp-gateway.internal` | SAN certyfikatu `certs/mcp-gateway`, alias DNS gateway'a i stuba C5, `MCP_GATEWAY_TLS_NAME` brokera i `mcp-jira` |
+| `MCP_BROKER_TLS_NAME` | `mcp-credential-broker.internal` | SAN of the `certs/mcp-credential-broker` certificate, DNS alias of the broker and of the broker stub, `MCP_BROKER_TLS_NAME` of the gateway, verification in `make pat` |
+| `MCP_GATEWAY_INTERNAL_TLS_NAME` | `mcp-gateway.internal` | SAN of the `certs/mcp-gateway` certificate, DNS alias of the gateway and of the gateway-admin stub, `MCP_GATEWAY_TLS_NAME` of the broker and of `mcp-jira` |
 
-Klient ma sprawdzać tę nazwę niezależnie od adresu, pod który się łączy (np. `https://localhost:18100` z
-hosta). Tak robi `make pat`: łączy się z `BROKER_URL`, a certyfikat weryfikuje względem `MCP_BROKER_TLS_NAME`;
-certyfikat z inną nazwą jest odrzucany (sprawdza `make smoke`). Zmiana nazwy: `.env`, potem
-`make clean && make up` (nowe certyfikaty).
+A client must check this name regardless of the address it connects to (for example `https://localhost:18100` from the
+host). `make pat` does so: it connects to `BROKER_URL` and verifies the certificate against `MCP_BROKER_TLS_NAME`;
+a certificate with a different name is rejected (checked by `make smoke`). To change a name: edit `.env`, then
+`make clean && make up` (new certificates).
 
-## Wersja kontraktów
+## Contracts version
 
-Stuby C4/C5 i wektory audytu pochodzą z `mcp-contracts` w wersji `MCP_CONTRACTS_REF` (`.env`, teraz `v1.1.0`).
-`make up` (cel `contracts`) robi `git archive <ref>` z `../mcp-contracts` do `out/contracts/` (ignorowane
-przez git) i odtwarza stuby. Kopia robocza `mcp-contracts` nie jest montowana, więc zmiany w toku w tamtym
-repo nie wpływają na środowisko.
+The broker and gateway-admin stubs and the audit vectors come from `mcp-contracts` at the version `MCP_CONTRACTS_REF` (`.env`, currently `v1.1.0`).
+`make up` (target `contracts`) runs `git archive <ref>` from `../mcp-contracts` into `out/contracts/` (ignored
+by git) and recreates the stubs. The `mcp-contracts` working copy is not mounted, so work in progress in that
+repo does not affect the environment.
 
-## Gateway (ws-05)
+## Gateway
 
-| Potrzeba | Skąd |
+| Need | Source |
 | --- | --- |
-| walidacja tokenu C1 | JWKS `http://keycloak:8080/realms/corp/protocol/openid-connect/certs` (z hosta `http://localhost:18080/...`), `iss` `https://localhost:18746/realms/corp`, `aud` `mcp-gateway` |
-| RFC 9728 `authorization_servers` | `https://localhost:18746/realms/corp` (adres widziany przez Claude Code na hoście) |
-| `subjectToken` dla `resolve` (C4) | klient `mcp-gateway`, sekret `KC_CLIENT_MCP_GATEWAY_SECRET`, `audience=mcp-credential-broker` + `scope=mcp-credential-broker-audience`; innych audience gateway nie dostanie |
-| klient mTLS do brokera i serwerów MCP | `certs/mcp-gateway/keystore.p12` (CN `mcp-gateway`, EKU serverAuth+clientAuth), zaufanie `certs/ca/truststore.p12` |
-| nazwa brokera do weryfikacji | `MCP_BROKER_TLS_NAME` |
-| sprawdzenie SAN serwera MCP (C5) | serwery mają SAN `<serverId>.internal`, np. `mcp-jira.internal` |
-| własny endpoint wewnętrzny (JWKS C2) | `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json` z certyfikatem `certs/mcp-gateway`; klucze podpisu gateway generuje sam |
-| broker | `make up`: stub `https://localhost:18443` / `https://mcp-credential-broker.internal:8443`; `make up-full`: prawdziwy broker pod tym samym aliasem |
-| Redis | użytkownik `gateway`, hasło `REDIS_GATEWAY_PASSWORD`, klucze `gw:*`, subskrypcja `credential.invalidated` |
-| PostgreSQL | baza `gateway`, użytkownik `gateway`, hasło `GATEWAY_DB_PASSWORD` |
-| audyt C8 | jedna linia JSON na zdarzenie na stdout kontenera (wtedy działa `make audit`) |
+| identity token validation | JWKS `http://keycloak:8080/realms/corp/protocol/openid-connect/certs` (from the host `http://localhost:18080/...`), `iss` `https://localhost:18746/realms/corp`, `aud` `mcp-gateway` |
+| RFC 9728 `authorization_servers` | `https://localhost:18746/realms/corp` (the address Claude Code sees on the host) |
+| `subjectToken` for `resolve` (broker contract) | client `mcp-gateway`, secret `KC_CLIENT_MCP_GATEWAY_SECRET`, `audience=mcp-credential-broker` + `scope=mcp-credential-broker-audience`; the gateway gets no other audience |
+| mTLS client to the broker and MCP servers | `certs/mcp-gateway/keystore.p12` (CN `mcp-gateway`, EKU serverAuth+clientAuth), trust `certs/ca/truststore.p12` |
+| broker name for verification | `MCP_BROKER_TLS_NAME` |
+| MCP server SAN check | servers have the SAN `<serverId>.internal`, for example `mcp-jira.internal` |
+| own internal endpoint (JWKS of the internal JWT) | `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json` with the `certs/mcp-gateway` certificate; the gateway generates its signing keys itself |
+| broker | `make up`: stub `https://localhost:18443` / `https://mcp-credential-broker.internal:8443`; `make up-full`: the real broker under the same alias |
+| Redis | user `gateway`, password `REDIS_GATEWAY_PASSWORD`, keys `gw:*`, subscription `credential.invalidated` |
+| PostgreSQL | database `gateway`, user `gateway`, password `GATEWAY_DB_PASSWORD` |
+| audit | one JSON line per event on the container stdout (this is what `make audit` reads) |
 
-Stub brokera nie zna użytkowników: `resolve` zawsze zwraca `test-only-jira-pat-0000000000000000`, a mock
-Jiry przedstawia ten PAT jako `jkowalski`. Dopiero prawdziwy broker zwróci `alice-pat` zapisany przez `make pat`.
+The broker stub does not know users: `resolve` always returns `test-only-jira-pat-0000000000000000`, and the Jira
+mock presents that PAT as `jkowalski`. Only the real broker returns `alice-pat` stored by `make pat`.
 
-## Credential broker (ws-06)
+## Credential broker
 
-| Potrzeba | Skąd |
+| Need | Source |
 | --- | --- |
-| serwer mTLS | `certs/mcp-credential-broker/keystore.p12` (SAN `${MCP_BROKER_TLS_NAME}`, `localhost`; EKU tylko serverAuth), `clientAuth` wymagany, zaufanie `certs/ca/truststore.p12` |
-| rozpoznanie wywołującego (C4) | CN certyfikatu klienta: `mcp-gateway`, `mcp-portal-bff`, `mcp-offboarding` (dwa ostatnie mają EKU tylko clientAuth); obcy CA: `certs/untrusted/mcp-gateway` |
-| token BFF | `aud=mcp-credential-broker`, `azp=mcp-portal-bff`, `iss` i JWKS Keycloaka jak wyżej |
-| token gateway'a | wewnętrzny JWT C2 (JWKS gateway'a, nazwa TLS `MCP_GATEWAY_INTERNAL_TLS_NAME`), `aud=mcp-credential-broker` |
-| wymiana `subjectToken` na system `token-exchange` | klient `mcp-credential-broker`, sekret `KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET`, `audience=opensearch` + `scope=opensearch-audience` |
-| OpenBao | `http://openbao:8200` / `http://localhost:18200`; AppRole `role_id=BAO_BROKER_ROLE_ID`, `secret_id=BAO_BROKER_SECRET_ID` (ważny 30 dni; `openbao-init`, czyli `make up` i `make openbao-init`, odnawia go, gdy zostało mniej niż pół TTL, `make openbao-renew` na żądanie; OpenBao jest trwały, patrz docs/m5.md); polityka: KV v2 `secret/data/mcp/connections/*`, Transit `transit/{encrypt,decrypt}/mcp-credential-broker`; audyt OpenBao na stdout kontenera `openbao` |
-| whoami Jiry (C4.1) | `MCP_JIRA_URL=http://jira.internal:8080` (sieć `core`) / `http://localhost:18081` z hosta |
-| `connectUrl` w `409 credential_required` | `MCP_PORTAL_URL=http://localhost:18090` |
-| http do OpenBao i mocka Jiry | `MCP_ALLOW_PLAIN_HTTP=true` tylko w compose dev; broker poza dev wymaga https |
-| PostgreSQL | baza `broker`, użytkownik `broker`, hasło `BROKER_DB_PASSWORD` (nie ma dostępu do bazy `gateway`) |
-| Redis | użytkownik `broker`, hasło `REDIS_BROKER_PASSWORD`, klucze `broker:*` i `jti:mcp-credential-broker:*`, publikacja na `credential.invalidated` (C4.3) |
+| mTLS server | `certs/mcp-credential-broker/keystore.p12` (SAN `${MCP_BROKER_TLS_NAME}`, `localhost`; EKU serverAuth only), `clientAuth` required, trust `certs/ca/truststore.p12` |
+| caller identification | CN of the client certificate: `mcp-gateway`, `mcp-portal-bff`, `mcp-offboarding` (the last two have EKU clientAuth only); foreign CA: `certs/untrusted/mcp-gateway` |
+| BFF token | `aud=mcp-credential-broker`, `azp=mcp-portal-bff`, Keycloak `iss` and JWKS as above |
+| gateway token | internal JWT (gateway JWKS, TLS name `MCP_GATEWAY_INTERNAL_TLS_NAME`), `aud=mcp-credential-broker` |
+| exchange of `subjectToken` for a `token-exchange` system | client `mcp-credential-broker`, secret `KC_CLIENT_MCP_CREDENTIAL_BROKER_SECRET`, `audience=opensearch` + `scope=opensearch-audience` |
+| OpenBao | `http://openbao:8200` / `http://localhost:18200`; AppRole `role_id=BAO_BROKER_ROLE_ID`, `secret_id=BAO_BROKER_SECRET_ID` (valid 30 days; `openbao-init`, that is `make up` and `make openbao-init`, renews it when less than half of the TTL is left, `make openbao-renew` on demand; OpenBao is persistent, see docs/m5.md); policy: KV v2 `secret/data/mcp/connections/*`, Transit `transit/{encrypt,decrypt}/mcp-credential-broker`; the OpenBao audit goes to the stdout of the `openbao` container |
+| Jira whoami | `MCP_JIRA_URL=http://jira.internal:8080` (network `core`) / `http://localhost:18081` from the host |
+| `connectUrl` in `409 credential_required` | `MCP_PORTAL_URL=http://localhost:18090` |
+| http to OpenBao and the Jira mock | `MCP_ALLOW_PLAIN_HTTP=true` only in compose dev; outside dev the broker requires https |
+| PostgreSQL | database `broker`, user `broker`, password `BROKER_DB_PASSWORD` (no access to the `gateway` database) |
+| Redis | user `broker`, password `REDIS_BROKER_PASSWORD`, keys `broker:*` and `jti:mcp-credential-broker:*`, publishing on `credential.invalidated` |
 
-Test akceptacyjny zapisu PAT na prawdziwym brokerze (port 18100; sam broker z obrazu
+Acceptance test for storing a PAT on the real broker (port 18100; the broker alone from the image
 `mcp-credential-broker:dev`: `./scripts/compose.sh --profile full up -d --no-deps mcp-credential-broker`,
-po teście `./scripts/compose.sh --profile full rm -sf mcp-credential-broker`, bo ma ten sam alias co stub C4).
-Sprawdzone 2026-10-27 z commitem brokera c59dc82:
+after the test `./scripts/compose.sh --profile full rm -sf mcp-credential-broker`, because it has the same alias as the broker stub).
+Checked on 2026-10-27 with broker commit c59dc82:
 
 ```bash
 make pat USER=alice SYSTEM=jira BROKER_URL=https://localhost:18100              # 200, backendUser alice
 make pat USER=alice SYSTEM=jira SECRET=bob-pat BROKER_URL=https://localhost:18100   # 422 identity_mismatch
 ```
 
-Skrypt robi to samo co BFF: logowanie `alice` w kliencie `mcp-portal-bff` (authorization code + PKCE),
-token exchange na `aud=mcp-credential-broker`, `PUT /v1/connections/{system}/secret` po mTLS z certyfikatem
-`mcp-portal-bff`, z weryfikacją nazwy `MCP_BROKER_TLS_NAME`. PAT trafia do skryptu przez zmienną środowiska
-(`MCP_PAT`, ustawianą przez `make` z `SECRET`), nie przez argumenty procesu, i nie jest wypisywany.
+The script does the same as the BFF: logs in `alice` in the `mcp-portal-bff` client (authorization code + PKCE),
+runs a token exchange for `aud=mcp-credential-broker`, sends `PUT /v1/connections/{system}/secret` over mTLS with the
+`mcp-portal-bff` certificate, and verifies the name `MCP_BROKER_TLS_NAME`. The PAT reaches the script through an environment variable
+(`MCP_PAT`, set by `make` from `SECRET`), not through process arguments, and it is never printed.
 
-## Serwer MCP, np. `mcp-jira` (ws-02, ws-03, ws-04)
+## MCP server, for example `mcp-jira`
 
-| Potrzeba | Skąd |
+| Need | Source |
 | --- | --- |
-| serwer mTLS | `certs/mcp-jira/keystore.p12` (CN `mcp-jira`, SAN `mcp-jira.internal`, EKU tylko serverAuth); klientem jest tylko `mcp-gateway` |
-| walidacja C2 | JWKS gateway'a `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json` (nazwa TLS w `MCP_GATEWAY_TLS_NAME`), `iss` `https://mcp-gateway.internal`; do testów bez gateway'a: klucze i wektory z `mcp-contracts/test-vectors` |
-| replay `jti` (C2) | Redis, użytkownik `mcp-jira`, hasło `REDIS_MCP_JIRA_PASSWORD`, klucze tylko `jti:mcp-jira:*` |
-| Jira | `MCP_JIRA_URL=http://jira.internal:8080` (w template'cie `MCP_<SYSTEM>_URL`, w przykładzie `MCP_EXAMPLE_URL`), poświadczenie z `X-MCP-Credential` (`Bearer <PAT>`) |
-| `connectUrl` w `credential_required` (C10) | `MCP_CONNECT_URL=http://localhost:18090/connections?system={system}`, ten sam kształt co `connectUrl` brokera (C4); starter 3.0.0-alpha-3 bez niego nie wstaje |
-| sieć | tylko `servers`: widzi gateway, Redis i mock Jiry; nie widzi Keycloaka, OpenBao, PostgreSQL ani brokera |
+| mTLS server | `certs/mcp-jira/keystore.p12` (CN `mcp-jira`, SAN `mcp-jira.internal`, EKU serverAuth only); the only client is `mcp-gateway` |
+| internal JWT validation | gateway JWKS `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443/.well-known/jwks.json` (TLS name in `MCP_GATEWAY_TLS_NAME`), `iss` `https://mcp-gateway.internal`; for tests without a gateway: keys and vectors from `mcp-contracts/test-vectors` |
+| `jti` replay protection | Redis, user `mcp-jira`, password `REDIS_MCP_JIRA_PASSWORD`, keys `jti:mcp-jira:*` only |
+| Jira | `MCP_JIRA_URL=http://jira.internal:8080` (in the template `MCP_<SYSTEM>_URL`, in the example `MCP_EXAMPLE_URL`), credential from `X-MCP-Credential` (`Bearer <PAT>`) |
+| `connectUrl` in `credential_required` | `MCP_CONNECT_URL=http://localhost:18090/connections?system={system}`, the same shape as the broker `connectUrl`; starter 3.0.0-alpha-3 does not start without it |
+| network | `servers` only: it sees the gateway, Redis and the Jira mock; it does not see Keycloak, OpenBao, PostgreSQL or the broker |
 
-Zmienne usługi `mcp-jira` w `docker-compose.yml` odpowiadają tabeli konfiguracji w README
-`mcp-server-template` (stan 7f65f8f): `MCP_TLS_KEYSTORE`, `MCP_TLS_TRUSTSTORE`, `MCP_TLS_STORE_PASSWORD`,
+The variables of the `mcp-jira` service in `docker-compose.yml` match the configuration table in the `mcp-server-template`
+README (state 7f65f8f): `MCP_TLS_KEYSTORE`, `MCP_TLS_TRUSTSTORE`, `MCP_TLS_STORE_PASSWORD`,
 `MCP_GATEWAY_JWKS_URI`, `MCP_GATEWAY_ISSUER`, `MCP_CONNECT_URL`, `MCP_REDIS_HOST`, `MCP_REDIS_PORT`,
-`MCP_REDIS_USER`, `MCP_REDIS_PASSWORD`; `MCP_PORT` i `MCP_BIND` zostają domyślne (`8443`, `0.0.0.0`).
-`MCP_GATEWAY_TLS_NAME` i `MCP_REDIS_KEY_PREFIX` template nie czyta (nazwa TLS wynika z hosta w
-`MCP_GATEWAY_JWKS_URI`, prefiks `jti:<serverId>:` jest w starterze); zostają jako informacja.
+`MCP_REDIS_USER`, `MCP_REDIS_PASSWORD`; `MCP_PORT` and `MCP_BIND` keep their defaults (`8443`, `0.0.0.0`).
+The template does not read `MCP_GATEWAY_TLS_NAME` and `MCP_REDIS_KEY_PREFIX` (the TLS name comes from the host in
+`MCP_GATEWAY_JWKS_URI`, the prefix `jti:<serverId>:` is built into the starter); they stay as information.
 
-### Backend po http i obraz `mcp-jira`
+### Plain http backend and the `mcp-jira` image
 
-Mock Jiry słucha po http (`http://jira.internal:8080`), a serwery ze szkieletu `mcp-server-template` od c1258c4
-poza profilem `dev` odmawiają startu z backendem po http bez jawnej zgody. Wybrane rozwiązanie: usługa `mcp-jira`
-ma w `docker-compose.yml` `MCP_JIRA_ALLOW_PLAIN_HTTP: "true"` (z komentarzem, że to tylko dla mocka). Mock po TLS
-z certyfikatem wewnętrznego CA i `MCP_JIRA_SSL_BUNDLE` odrzucone: zmusiłoby do trzeciego certyfikatu serwerowego,
-SAN `jira.internal` i zmian w `make certs` bez zysku dla testów serwera, który i tak mówi z Jirą zwykłym klientem
-HTTP. Zmienna działa tylko jako zgoda: poświadczenie idzie wtedy otwartym tekstem i serwer loguje ostrzeżenie.
-Nie ustawia się jej wobec prawdziwej Jiry. Serwer `mcp-server-jira` od startera alpha-6 czyta tę zmienną (sprawdzone na a64287c w `make up-full`).
+The Jira mock listens on http (`http://jira.internal:8080`), and servers built from the `mcp-server-template` skeleton since c1258c4
+refuse to start outside the `dev` profile with an http backend unless explicitly allowed. The chosen solution: the `mcp-jira` service
+has `MCP_JIRA_ALLOW_PLAIN_HTTP: "true"` in `docker-compose.yml` (with a comment that it is for the mock only). Rejected: the mock over TLS
+with a certificate from the internal CA and `MCP_JIRA_SSL_BUNDLE`; it would need a third server certificate,
+the SAN `jira.internal` and changes in `make certs`, with no gain for testing a server that talks to Jira through a plain
+HTTP client anyway. The variable works only as consent: the credential then travels in clear text and the server logs a warning.
+Never set it against a real Jira. The `mcp-server-jira` server reads this variable since starter alpha-6 (checked on a64287c in `make up-full`).
 
-Mock obsługuje zapisy używane przez narzędzia `add_comment` i `transition_issue` (kształt jak w Jira DC REST API
-v2 i w `StubBackend` serwera `mcp-jira`): `POST /rest/api/2/issue/{key|id}/comment` (201; 400 bez pola `body`),
-`GET .../transitions` (11 To Do, 21 In Progress, 31 Done) i `POST .../transitions` (204 dla 11 i 21; 400 dla 31,
-bo wymaga `resolution`, i dla nieznanego id). Te same zasady co przy odczycie: 401 bez PAT albo z PAT spoza listy,
-404 dla nieznanego zgłoszenia. Zapisy niczego nie zmieniają (mock jest bez stanu, odczyt zgłoszenia po przejściu
-pokazuje stary status); uprawnień do projektów (403) mock nie modeluje. Mapowania są montowane z `mocks/jira` i
-WireMock czyta je przy starcie, a admin API jest zablokowane hasłem, więc po `python3 scripts/gen-jira-mock.py
-mocks/jira` kontener `jira-mock` trzeba zrestartować (`docker compose restart jira-mock`).
+The mock handles the writes used by the tools `add_comment` and `transition_issue` (shape as in the Jira DC REST API
+v2 and in the `StubBackend` of the `mcp-jira` server): `POST /rest/api/2/issue/{key|id}/comment` (201; 400 without the `body` field),
+`GET .../transitions` (11 To Do, 21 In Progress, 31 Done) and `POST .../transitions` (204 for 11 and 21; 400 for 31,
+because it requires `resolution`, and for an unknown id). The same rules as for reads: 401 without a PAT or with a PAT outside the list,
+404 for an unknown issue. Writes change nothing (the mock is stateless, reading the issue after a transition
+shows the old status); the mock does not model project permissions (403). The mappings are mounted from `mocks/jira` and
+WireMock reads them at startup, and the admin API is locked with a password, so after `python3 scripts/gen-jira-mock.py
+mocks/jira` the `jira-mock` container must be restarted (`docker compose restart jira-mock`).
 
-Obrazy profilu `full` buduje `make images` (`scripts/build-images.sh`, commity w repozytoriach obok, bez zmian w ich
-kopiach roboczych); tagi `m1-<commit>` trafiają do `.env`. Podmiana serwera testowego na prawdziwy `mcp-jira`: usługa używa obrazu `${MCP_JIRA_IMAGE}`
-z `.env` (`mcp-server-jira:m1-<commit>`, `pull_policy: never`, więc obraz musi istnieć lokalnie). Budowa wg
-README `mcp-server-jira`:
+The images of the `full` profile are built by `make images` (`scripts/build-images.sh`, commits in the neighbouring repositories, without changes to their
+working copies); the tags `m1-<commit>` go to `.env`. To replace the test server with the real `mcp-jira`: the service uses the image `${MCP_JIRA_IMAGE}`
+from `.env` (`mcp-server-jira:m1-<commit>`, `pull_policy: never`, so the image must exist locally). Build according to the
+`mcp-server-jira` README:
 
 ```bash
 cd ../mcp-server-jira
 export JAVA_HOME=<JDK 25>
-./mvnw -B verify                       # tworzy mcp-app/target/mcp-jira.jar
-docker build -t mcp-server-jira:dev .  # tag zgodny z MCP_JIRA_IMAGE (README serwera podaje mcp-jira:dev)
+./mvnw -B verify                       # creates mcp-app/target/mcp-jira.jar
+docker build -t mcp-server-jira:dev .  # tag matching MCP_JIRA_IMAGE (the server README uses mcp-jira:dev)
 cd ../mcp-platform-dev && make up-full
 ```
 
-Zamiast przebudowywać tag można ustawić w `.env` `MCP_JIRA_IMAGE=mcp-jira:dev`. Alias DNS `mcp-jira.internal`,
-certyfikat `certs/mcp-jira`, Redis `mcp-jira` i adres Jiry są te same co przy serwerze testowym, więc gateway
-(`MCP_SERVER_JIRA_URL`) nie wymaga zmian.
-Na hoście prawdziwy serwer działa też bez obrazu (`scripts/run-dev-host.sh` w `mcp-server-jira`).
+Instead of rebuilding the tag you can set `MCP_JIRA_IMAGE=mcp-jira:dev` in `.env`. The DNS alias `mcp-jira.internal`,
+the certificate `certs/mcp-jira`, the Redis user `mcp-jira` and the Jira address are the same as for the test server, so the gateway
+(`MCP_SERVER_JIRA_URL`) needs no changes.
+On the host the real server also runs without an image (`scripts/run-dev-host.sh` in `mcp-server-jira`).
 
-## Redis: użytkownicy i prefiksy (propozycja ws-01 dla ws-02, ws-05, ws-06)
+## Redis: users and prefixes (proposal for the gateway, registry and portal)
 
-Klucze nie są w kontraktach. Środowisko zakłada poniższe prefiksy i egzekwuje je ACL-ami
-(`redis/start.sh`); jeśli strumień potrzebuje innych, zmienia się `redis/start.sh` i ta tabela.
+The keys are not part of the contracts. The environment assumes the prefixes below and enforces them with ACLs
+(`redis/start.sh`); if a component needs others, change `redis/start.sh` and this table.
 
-| Użytkownik | Hasło (`.secrets/dev.env`) | Klucze | Kanały | Uwagi |
+| User | Password (`.secrets/dev.env`) | Keys | Channels | Notes |
 | --- | --- | --- | --- | --- |
-| `gateway` | `REDIS_GATEWAY_PASSWORD` | `gw:*` (potwierdzenia C11, cache poświadczeń, limity) | `credential.invalidated`: tylko `SUBSCRIBE` | bez `PUBLISH`; lista komend w `redis/gateway.rules` (zbiory, zbiory posortowane, `WATCH`, `EVAL`/`EVALSHA`), opis w [m3.md](m3.md) |
-| `broker` | `REDIS_BROKER_PASSWORD` | `broker:*`, `jti:mcp-credential-broker:*` | `credential.invalidated`: tylko `PUBLISH` | broker też odbiera C2, więc pilnuje `jti`; `EVAL`/`EVALSHA` dla atomowego zwolnienia blokady (Redis sprawdza klucze skryptu względem ACL) |
-| `portal-bff` | `REDIS_PORTAL_BFF_PASSWORD` | `portal:*` (Spring Session) | brak | lista komend w `redis/portal-bff.rules`: `HSET`/`HGETALL`/`HDEL`/`DEL`/`EXPIRE`/`RENAME` itd., bez `FLUSHALL`, `KEYS`, `SCAN`, `SCRIPT`, `FUNCTION`, `MIGRATE`; `RedisIndexedSessionRepository` wymagałby też `SADD`/`SREM`/`SMEMBERS` i kanałów keyevent |
-| `mcp-<system>` | `REDIS_MCP_<SYSTEM>_PASSWORD` | `jti:mcp-<system>:*` | brak | starter (ws-02): prefiks `jti:<serverId>:` |
-| `admin` | `REDIS_ADMIN_PASSWORD` | wszystkie | wszystkie | tylko narzędzia dev i healthcheck |
+| `gateway` | `REDIS_GATEWAY_PASSWORD` | `gw:*` (confirmations, credential cache, limits) | `credential.invalidated`: `SUBSCRIBE` only | no `PUBLISH`; command list in `redis/gateway.rules` (sets, sorted sets, `WATCH`, `EVAL`/`EVALSHA`), described in [m3.md](m3.md) |
+| `broker` | `REDIS_BROKER_PASSWORD` | `broker:*`, `jti:mcp-credential-broker:*` | `credential.invalidated`: `PUBLISH` only | the broker also receives the internal JWT, so it guards `jti`; `EVAL`/`EVALSHA` for atomic lock release (Redis checks script keys against the ACL) |
+| `portal-bff` | `REDIS_PORTAL_BFF_PASSWORD` | `portal:*` (Spring Session) | none | command list in `redis/portal-bff.rules`: `HSET`/`HGETALL`/`HDEL`/`DEL`/`EXPIRE`/`RENAME` and so on, without `FLUSHALL`, `KEYS`, `SCAN`, `SCRIPT`, `FUNCTION`, `MIGRATE`; `RedisIndexedSessionRepository` would also need `SADD`/`SREM`/`SMEMBERS` and keyevent channels |
+| `mcp-<system>` | `REDIS_MCP_<SYSTEM>_PASSWORD` | `jti:mcp-<system>:*` | none | starter: prefix `jti:<serverId>:` |
+| `admin` | `REDIS_ADMIN_PASSWORD` | all | all | dev tools and healthcheck only |
 
-Użytkownik `default` jest wyłączony. Użytkownicy komponentów mają jawną listę komend, bez kategorii:
+The user `default` is disabled. Component users have an explicit command list, not categories:
 `GET`, `SET`, `SETNX`, `GETDEL`, `GETEX`, `MGET`, `DEL`, `UNLINK`, `EXISTS`, `EXPIRE`, `PEXPIRE`, `TTL`, `PTTL`,
 `INCR`, `INCRBY`, `DECR`, `HSET`, `HGET`, `HDEL`, `HGETALL`, `HEXISTS`, `HINCRBY`, `MULTI`, `EXEC`, `DISCARD`,
-`PING`, `AUTH`, `HELLO`, `CLIENT SETNAME`, `CLIENT SETINFO`, `RESET`, `QUIT` oraz `SUBSCRIBE`/`UNSUBSCRIBE`
-(gateway) albo `PUBLISH` (broker). Nie ma `SCAN`, `KEYS`, `RANDOMKEY`, `SCRIPT`, `FUNCTION`, a `EVAL` ma tylko broker:
-wzorce `~prefiks` w ACL ich nie ograniczają i ujawniałyby nazwy kluczy innych komponentów (np. `sub` w
-kluczach potwierdzeń). Komponent, który potrzebuje innej komendy (np. Lua dla atomowego "sprawdź i zużyj"
-potwierdzenia), zgłasza to do ws-01; zmiana jest w `redis/start.sh` (reguły brokera i `portal-bff` w `redis/*.rules`) i w tej tabeli; na działającym Redisie stosuje ją `scripts/redis-sync-acl.sh` (`make m2-sync`).
+`PING`, `AUTH`, `HELLO`, `CLIENT SETNAME`, `CLIENT SETINFO`, `RESET`, `QUIT` and `SUBSCRIBE`/`UNSUBSCRIBE`
+(gateway) or `PUBLISH` (broker). There is no `SCAN`, `KEYS`, `RANDOMKEY`, `SCRIPT`, `FUNCTION`, and only the broker has `EVAL`:
+`~prefix` patterns in the ACL do not restrict them and they would reveal key names of other components (for example `sub` in
+confirmation keys). A component that needs another command (for example Lua for an atomic "check and consume"
+of a confirmation) reports it to the environment owners; the change goes into `redis/start.sh` (the broker and `portal-bff` rules are in `redis/*.rules`) and into this table; on a running Redis it is applied by `scripts/redis-sync-acl.sh` (`make m2-sync`).
 
-## Portal BFF (ws-07)
+## Portal BFF
 
-Klient `mcp-portal-bff` (sekret `KC_CLIENT_MCP_PORTAL_BFF_SECRET`), redirect
-`http://localhost:18090/api/v1/auth/callback` i `http://localhost:18740/api/v1/auth/callback` (dokładne adresy), wymiana na `mcp-credential-broker` i `mcp-gateway-admin`.
-Stub C5 (`https://localhost:18444`) i C4 (`https://localhost:18443`) wymagają certyfikatu
-`certs/mcp-portal-bff` (EKU tylko clientAuth). Nazwy TLS do weryfikacji: `MCP_BROKER_TLS_NAME`,
-`MCP_GATEWAY_INTERNAL_TLS_NAME`. Step-up (`acr`) jeszcze nie jest skonfigurowany (STATUS.md).
+Client `mcp-portal-bff` (secret `KC_CLIENT_MCP_PORTAL_BFF_SECRET`), redirect
+`http://localhost:18090/api/v1/auth/callback` and `http://localhost:18740/api/v1/auth/callback` (exact addresses), exchange for `mcp-credential-broker` and `mcp-gateway-admin`.
+The gateway-admin stub (`https://localhost:18444`) and the broker stub (`https://localhost:18443`) require the certificate
+`certs/mcp-portal-bff` (EKU clientAuth only). TLS names to verify: `MCP_BROKER_TLS_NAME`,
+`MCP_GATEWAY_INTERNAL_TLS_NAME`. Step-up (`acr`) is not configured yet (STATUS.md).
 
-## Wymagania wobec IdP produkcyjnego: czasy sesji (Entra, D4)
+## Requirements for the production IdP: session times (Entra)
 
-Dev ustawia w realmie `corp` token dostępu 15 min, bezczynność sesji SSO 8 h i maksymalny czas sesji 24 h. Produkcyjny IdP (Entra ID, decyzja D4)
-ma dawać użytkownikowi to samo: przerwa w ciągu dnia (spotkanie, lunch, kilka godzin bez pracy z klientem AI) nie może wymuszać ponownego
-logowania, a kolejne logowanie ma być wymagane najwyżej raz na dobę. Do uzgodnienia z administratorem Entra:
+Dev sets in the realm `corp` an access token of 15 min, SSO session idle time of 8 h and a maximum session time of 24 h. The production IdP (Entra ID)
+should give the user the same: a break during the day (a meeting, lunch, a few hours without working with the AI client) must not force a new
+login, and the next login should be required at most once a day. To agree with the Entra administrator:
 
-- sesja SSO / token odświeżania: okno bezczynności co najmniej 8 h i bezwzględny czas życia sesji co najmniej 24 h (w Entra to polityka sesji dostępu
-  warunkowego: częstotliwość logowania oraz trwałość sesji przeglądarki, nie czas życia samego tokenu);
-- token dostępu może pozostać krótki (15 min do 1 h); klient odnawia go tokenem odświeżania bez udziału użytkownika;
-- step-up (MFA przed operacjami wrażliwymi, np. rejestracja Authenticatora) musi wymuszać świeże uwierzytelnienie niezależnie od sesji
-  (`max_age=0` albo odpowiednik w kontekście uwierzytelnienia Entra), czyli długa sesja nie może go zastępować.
+- SSO session / refresh token: an idle window of at least 8 h and an absolute session lifetime of at least 24 h (in Entra this is the conditional access
+  session policy: sign-in frequency and persistent browser session, not the lifetime of the token itself);
+- the access token can stay short (15 min to 1 h); the client renews it with the refresh token without user involvement;
+- step-up (MFA before sensitive operations, for example registering the Authenticator) must force a fresh authentication regardless of the session
+  (`max_age=0` or the equivalent in the Entra authentication context), so a long session cannot replace it.
 
-## Audyt jednego żądania (kryterium M1)
+## Audit of a single request (M1 criterion)
 
 ```bash
 make audit RID=<requestId>
 ```
 
-Czyta logi `mcp-gateway`, `mcp-credential-broker` i `mcp-jira` (profil `full`), wybiera linie z obiektem JSON,
-którego `requestId` jest równy `RID` (prefiks logu przed `{` jest pomijany), i wypisuje je według `ts`.
-Kod wyjścia 0 tylko wtedy, gdy są zdarzenia od wszystkich trzech komponentów (`component` = `gateway`,
-`broker`, `server`) i każde ma wymagane pola C8 (`ts`, `requestId`, `component`, `componentId`, `event`).
-Komponenty uruchomione na hoście (np. gateway z IDE) zapisują stdout do pliku i dokłada się go do logów
-kontenerów: `make audit RID=<id> LOGS="gateway.log jira.log"`. Bezpośrednio: `scripts/mcpdev.py audit <id>
---logs a.log --logs b.log` (opcja powtarzalna, zdarzenia ze wszystkich plików są scalane; z `--compose`
-dochodzą logi kontenerów, bez `--logs` czytane są tylko one). Pełna walidacja schematem
-`audit-event.schema.json` nie jest robiona (brak walidatora JSON Schema w bibliotece standardowej).
+Reads the logs of `mcp-gateway`, `mcp-credential-broker` and `mcp-jira` (profile `full`), selects lines with a JSON object
+whose `requestId` equals `RID` (the log prefix before `{` is skipped), and prints them ordered by `ts`.
+The exit code is 0 only if there are events from all three components (`component` = `gateway`,
+`broker`, `server`) and each has the required audit fields (`ts`, `requestId`, `component`, `componentId`, `event`).
+Components running on the host (for example a gateway from the IDE) write stdout to a file, and that file is added to the container
+logs: `make audit RID=<id> LOGS="gateway.log jira.log"`. Directly: `scripts/mcpdev.py audit <id>
+--logs a.log --logs b.log` (a repeatable option, events from all files are merged; with `--compose`
+the container logs are added, without `--logs` only they are read). Full validation against the schema
+`audit-event.schema.json` is not done (the standard library has no JSON Schema validator).
 
-Do sprawdzenia, że do Jiry dotarł PAT, a nie token z IdP: `make jira-auth`.
+To check that Jira received a PAT and not an IdP token: `make jira-auth`.
 
-## Testy e2e (ws-10)
+## End-to-end tests
 
-- `scripts/mcpdev.py` jako biblioteka (`login`, `exchange`, `put_secret`, `audit_events`, `jira_auth`) albo przez `make`;
-- `scripts/smoke.py` jako wzór sprawdzeń środowiska;
-- certyfikat obcego CA: `certs/untrusted/mcp-gateway`;
-- użytkownik bez uprawnień: `mallory`; PAT cudzej tożsamości: dowolny `Bearer` inny niż `<login>-pat`;
-- dziennik żądań mocka Jiry (`http://localhost:18081/__admin/requests`) jest włączony, ale admin API wymaga
-  Basic auth `admin:$JIRA_MOCK_ADMIN_PASSWORD` (`.secrets/dev.env`, tylko dla narzędzi hosta; `mcpdev.jira_auth()`
-  bierze je stamtąd). Bez tego serwer MCP z sieci `servers` mógłby zmienić mapowania albo dodać stub proxy do
-  sieci `core`. Proxy jest dodatkowo zablokowane (`--allow-proxy-targets 192.0.2.1`, adres TEST-NET);
-- stuby C4/C5 nie mają dziennika (`--no-request-journal`), bo `PUT .../secret` niesie PAT.
+- `scripts/mcpdev.py` as a library (`login`, `exchange`, `put_secret`, `audit_events`, `jira_auth`) or through `make`;
+- `scripts/smoke.py` as a model of environment checks;
+- certificate from a foreign CA: `certs/untrusted/mcp-gateway`;
+- user without permissions: `mallory`; PAT of a foreign identity: any `Bearer` other than `<login>-pat`;
+- the request journal of the Jira mock (`http://localhost:18081/__admin/requests`) is on, but the admin API requires
+  Basic auth `admin:$JIRA_MOCK_ADMIN_PASSWORD` (`.secrets/dev.env`, for host tools only; `mcpdev.jira_auth()`
+  reads it from there). Without it an MCP server from the `servers` network could change the mappings or add a proxy stub to the
+  `core` network. The proxy is also blocked (`--allow-proxy-targets 192.0.2.1`, a TEST-NET address);
+- the broker and gateway-admin stubs have no journal (`--no-request-journal`), because `PUT .../secret` carries a PAT.

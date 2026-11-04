@@ -1,92 +1,92 @@
-# Porty i adresy
+# Ports and addresses
 
-Porty hosta są w `.env` i wiążą się tylko z `127.0.0.1`. W compose są dwie sieci:
+Host ports are set in `.env` and bind only to `127.0.0.1`. Compose has two networks:
 
-- `mcp-dev-core`: Keycloak, OpenBao, PostgreSQL, Redis, mock Jiry, stuby C4/C5, broker, gateway;
-- `mcp-dev-servers`: gateway, serwery MCP, Redis, mock Jiry. Serwer MCP nie widzi Keycloaka, OpenBao,
-  PostgreSQL ani brokera (sprawdza `make smoke`).
+- `mcp-dev-core`: Keycloak, OpenBao, PostgreSQL, Redis, the Jira mock, the broker and gateway-admin stubs, broker, gateway;
+- `mcp-dev-servers`: gateway, MCP servers, Redis, the Jira mock. An MCP server does not see Keycloak, OpenBao,
+  PostgreSQL or the broker (checked by `make smoke`).
 
-Usługi mają nazwy usług i aliasy `*.internal`.
+Services have service names and `*.internal` aliases.
 
-| Usługa | Z hosta | Z sieci compose | Uwagi |
+| Service | From the host | From the compose network | Notes |
 | --- | --- | --- | --- |
-| Keycloak (realm `corp`, adres publiczny) | `https://localhost:18746` (`KEYCLOAK_TLS_PORT`) | `https://keycloak:8443` (tylko dla nazwy `localhost`, praktycznie niepotrzebny) | `iss` zawsze `https://localhost:18746/realms/corp`; certyfikat CA "dev public"; przeglądarki i Claude Code |
-| Keycloak (http) | `http://localhost:18080` | `http://keycloak:8080` | backchannel kontenerów (JWKS, token) i skrypty (`make token`, admin API); formularze logowania stąd działają, ale `iss` i adresy w discovery są https |
-| Konsola admina Keycloak | `https://localhost:18746/admin` | | login z `make admin-password` |
-| OpenBao (dev) | `http://localhost:18200` | `http://openbao:8200` | token stosu: `BAO_ROOT_TOKEN` w `.secrets/dev.env`; klucz unseal i token z init w `.secrets/openbao/` (tylko dev); dane na wolumenie `openbao-data` (przeżywają Stop/Start); audyt na stdout kontenera |
-| Redis | `localhost:16379` | `redis:6379` | ACL per komponent, patrz [integracja.md](integracja.md#redis-użytkownicy-i-prefiksy-propozycja-ws-01-dla-ws-02-ws-05-ws-06) |
-| PostgreSQL | `localhost:15432` | `postgres:5432` | bazy `gateway` i `broker`, użytkownicy o tych samych nazwach |
-| Mock Jiry (HTTP) | `http://localhost:18081` | `http://jira.internal:8080` | PAT jako `Authorization: Bearer <pat>`; `/__admin` z Basic auth `admin:$JIRA_MOCK_ADMIN_PASSWORD` |
-| Stub brokera C4 (mTLS) | `https://localhost:18443` | `https://${MCP_BROKER_TLS_NAME}:8443` | `make up`; kontrakty z `MCP_CONTRACTS_REF` |
-| Stub admina gateway'a C5 (mTLS) | `https://localhost:18444` | `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443` | `make up` |
-| Gateway (listener publiczny) | `http://localhost:18000` | `http://mcp-gateway.internal:8080` | tylko dla `make m1` (mcp-e2e); klienci MCP i przeglądarka używają proxy (https `:18745`), a ogłaszany origin (`MCP_PUBLIC_URL`) to proxy |
-| Gateway (wewnętrzny, mTLS) | `https://localhost:18445` | `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443` | JWKS C2 i actuator; port hosta tylko dla testów, wymaga certyfikatu klienta |
-| Broker | `https://localhost:18100` | `https://${MCP_BROKER_TLS_NAME}:8443` | `make up-full` (stuby wtedy są usuwane) |
-| `mcp-jira` | `https://localhost:18446` | `https://mcp-jira.internal:8443` | profil `full`; port hosta tylko dla testów A1/A3, wymaga certyfikatu `mcp-gateway` i JWT |
-| Portal (zarezerwowany) | `http://localhost:18090` | | redirect URI klienta `mcp-portal-bff` (BFF uruchomiony na hoście) |
-| Proxy (jedna domena, M2) | `https://localhost:18745` (adres publiczny), `http://localhost:18740` (te same trasy, bez TLS) | `proxy.internal:8080` | `make up-m2`; certyfikat CA "dev public" (`make trust-ca`); `/` web, `/api` BFF, `/s/` `/mcp` (M5; do M4 `/v/`) `/.well-known/oauth-protected-resource*` gateway; patrz [m2.md](m2.md) |
-| Portal web (M2) | | `http://portal-web:8080` | statyczny serwer SPA za proxy |
-| Portal BFF (M2) | | `http://portal-bff.internal:8080` | za proxy, `PORTAL_PORT=8080`; sieć `core`, OIDC bez discovery (patrz [m3.md](m3.md)) |
-| Mock GitLaba (OAuth + REST) | `http://localhost:18741` | `http://gitlab.internal:8080` | authorize otwiera przeglądarka (port hosta), reszta z sieci compose |
-| Mock Confluence | `http://localhost:18742` | `http://confluence.internal:8080` | |
-| Mock Service Desku | `http://localhost:18743` | `http://servicedesk.internal:8080` | sieć `servers` |
-| Mock OpenSearch | `http://localhost:18744` | `http://opensearch.internal:8080` | sieć `servers` |
-| `mcp-confluence`, `mcp-gitlab`, `mcp-servicedesk`, `mcp-opensearch` | | `https://<nazwa>.internal:8443` | profil `m2`, bez portów hosta |
-| Serwer paczek polityk (M3) | `http://localhost:18747` (`POLICIES_PORT`) | `http://policies.internal:8080`, `https://policies.internal:8443` (serwery MCP; certyfikat CA wewnetrznego) | nginx, tylko odczyt; `/policies/{main,overrides}/`; sieci `core` i `servers`; patrz [m3.md](m3.md) |
-| Gateway, M5 (dwie instancje) | instancje `http://localhost:18752` i `:18753`; balancer `:18000` (`GATEWAY_PORT`), mTLS `:18445`, status `http://localhost:18750/__lb/status` | `gateway-backends.internal` (instancje), `mcp-gateway.internal` i `gateway-lb` (balancer) | po `make m5-switch`; [m5.md](m5.md) |
-| Broker, M5 (dwie instancje) | instancje `https://localhost:18754` i `:18755`; balancer `:18100` (`BROKER_PORT`), status `http://localhost:18751/__lb/status` | `broker-backends.internal` (instancje), `mcp-credential-broker.internal` (balancer) | j.w. |
-| Serwer paczek (D12) | `http://localhost:18756` | `packages.internal` (sieć `ci`) | tylko odczyt; `make m5-artifacts`; [m5.md](m5.md) |
-| Rejestr obrazów (D12) | `localhost:18757` | `registry.internal` (sieć `ci`) | http na loopbacku, bez uwierzytelniania; `make m5-artifacts` |
-| Profil `e2e-prod` (M6; [m6.md](m6.md)) | gateway `http://localhost:18760`, admin C5 mTLS `https://localhost:18761`, admin stand-inu brokera `http://localhost:18762` (`e2e-prod.env`, zarezerwowane 18760-18769) | sieć `mcp-e2e-prod-net` (własna), `idp-front` także w `mcp-dev-core` | tylko po `make e2e-prod-up`; osobny projekt `mcp-e2e-prod` |
-| Callback Claude Code | `http://localhost:33418/callback` | | redirect URI klienta `claude-code` |
+| Keycloak (realm `corp`, public address) | `https://localhost:18746` (`KEYCLOAK_TLS_PORT`) | `https://keycloak:8443` (only for the name `localhost`, practically unneeded) | `iss` is always `https://localhost:18746/realms/corp`; certificate from the CA "dev public"; browsers and Claude Code |
+| Keycloak (http) | `http://localhost:18080` | `http://keycloak:8080` | container backchannel (JWKS, token) and scripts (`make token`, admin API); login forms work from here, but `iss` and the addresses in discovery are https |
+| Keycloak admin console | `https://localhost:18746/admin` | | login from `make admin-password` |
+| OpenBao (dev) | `http://localhost:18200` | `http://openbao:8200` | stack token: `BAO_ROOT_TOKEN` in `.secrets/dev.env`; unseal key and init token in `.secrets/openbao/` (dev only); data on the volume `openbao-data` (survives Stop/Start); audit on the container stdout |
+| Redis | `localhost:16379` | `redis:6379` | ACL per component, see [integracja.md](integracja.md#redis-users-and-prefixes-proposal-for-the-gateway-registry-and-portal) |
+| PostgreSQL | `localhost:15432` | `postgres:5432` | databases `gateway` and `broker`, users with the same names |
+| Jira mock (HTTP) | `http://localhost:18081` | `http://jira.internal:8080` | PAT as `Authorization: Bearer <pat>`; `/__admin` with Basic auth `admin:$JIRA_MOCK_ADMIN_PASSWORD` |
+| Broker stub (mTLS) | `https://localhost:18443` | `https://${MCP_BROKER_TLS_NAME}:8443` | `make up`; contracts from `MCP_CONTRACTS_REF` |
+| Gateway admin stub (mTLS) | `https://localhost:18444` | `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443` | `make up` |
+| Gateway (public listener) | `http://localhost:18000` | `http://mcp-gateway.internal:8080` | only for `make m1` (mcp-e2e); MCP clients and the browser use the proxy (https `:18745`), and the advertised origin (`MCP_PUBLIC_URL`) is the proxy |
+| Gateway (internal, mTLS) | `https://localhost:18445` | `https://${MCP_GATEWAY_INTERNAL_TLS_NAME}:8443` | JWKS and actuator; host port for tests only, requires a client certificate |
+| Broker | `https://localhost:18100` | `https://${MCP_BROKER_TLS_NAME}:8443` | `make up-full` (the stubs are then removed) |
+| `mcp-jira` | `https://localhost:18446` | `https://mcp-jira.internal:8443` | profile `full`; host port for tests only, requires the `mcp-gateway` certificate and a JWT |
+| Portal (reserved) | `http://localhost:18090` | | redirect URI of the `mcp-portal-bff` client (BFF running on the host) |
+| Proxy (one domain, M2) | `https://localhost:18745` (public address), `http://localhost:18740` (same routes, no TLS) | `proxy.internal:8080` | `make up-m2`; certificate from the CA "dev public" (`make trust-ca`); `/` web, `/api` BFF, `/s/` `/mcp` (M5; `/v/` up to M4) `/.well-known/oauth-protected-resource*` gateway; see [m2.md](m2.md) |
+| Portal web (M2) | | `http://portal-web:8080` | static SPA server behind the proxy |
+| Portal BFF (M2) | | `http://portal-bff.internal:8080` | behind the proxy, `PORTAL_PORT=8080`; network `core`, OIDC without discovery (see [m3.md](m3.md)) |
+| GitLab mock (OAuth + REST) | `http://localhost:18741` | `http://gitlab.internal:8080` | the browser opens authorize (host port), the rest goes over the compose network |
+| Confluence mock | `http://localhost:18742` | `http://confluence.internal:8080` | |
+| Service Desk mock | `http://localhost:18743` | `http://servicedesk.internal:8080` | network `servers` |
+| OpenSearch mock | `http://localhost:18744` | `http://opensearch.internal:8080` | network `servers` |
+| `mcp-confluence`, `mcp-gitlab`, `mcp-servicedesk`, `mcp-opensearch` | | `https://<name>.internal:8443` | profile `m2`, no host ports |
+| Policy bundle server (M3) | `http://localhost:18747` (`POLICIES_PORT`) | `http://policies.internal:8080`, `https://policies.internal:8443` (MCP servers; certificate from the internal CA) | nginx, read only; `/policies/{main,overrides}/`; networks `core` and `servers`; see [m3.md](m3.md) |
+| Gateway, M5 (two instances) | instances `http://localhost:18752` and `:18753`; balancer `:18000` (`GATEWAY_PORT`), mTLS `:18445`, status `http://localhost:18750/__lb/status` | `gateway-backends.internal` (instances), `mcp-gateway.internal` and `gateway-lb` (balancer) | after `make m5-switch`; [m5.md](m5.md) |
+| Broker, M5 (two instances) | instances `https://localhost:18754` and `:18755`; balancer `:18100` (`BROKER_PORT`), status `http://localhost:18751/__lb/status` | `broker-backends.internal` (instances), `mcp-credential-broker.internal` (balancer) | as above |
+| Package server | `http://localhost:18756` | `packages.internal` (network `ci`) | read only; `make m5-artifacts`; [m5.md](m5.md) |
+| Image registry | `localhost:18757` | `registry.internal` (network `ci`) | http on loopback, no authentication; `make m5-artifacts` |
+| Profile `e2e-prod` (M6; [m6.md](m6.md)) | gateway `http://localhost:18760`, gateway admin mTLS `https://localhost:18761`, broker stand-in admin `http://localhost:18762` (`e2e-prod.env`, reserved 18760-18769) | network `mcp-e2e-prod-net` (its own), `idp-front` also in `mcp-dev-core` | only after `make e2e-prod-up`; separate project `mcp-e2e-prod` |
+| Claude Code callback | `http://localhost:33418/callback` | | redirect URI of the `claude-code` client |
 
-## Keycloak: issuer i backchannel
+## Keycloak: issuer and backchannel
 
-`KC_HOSTNAME=https://localhost:18746` z `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`; Keycloak sam obsługuje https na 8443
-(`KC_HTTPS_CERTIFICATE_FILE`, certyfikat `certs/keycloak` z CA "dev public", SAN `localhost`) i zostawia http na 8080. Skutek:
+`KC_HOSTNAME=https://localhost:18746` with `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`; Keycloak serves https on 8443 itself
+(`KC_HTTPS_CERTIFICATE_FILE`, certificate `certs/keycloak` from the CA "dev public", SAN `localhost`) and keeps http on 8080. Consequences:
 
-- `iss` w każdym tokenie to `https://localhost:18746/realms/corp`, także gdy token wydał kontener przez
-  `http://keycloak:8080` (sprawdza to `make smoke`);
-- discovery pobrane z sieci compose po http podaje `jwks_uri` i `token_endpoint` pod `http://keycloak:8080/...`;
-- kontenery Java (gateway, broker) nie łączą się z Keycloakiem po https, więc nie potrzebują CA w truststore:
-  JWKS i token endpoint idą po http aliasu sieci, a `iss` jest tylko porównywany jako napis;
-- komponent w kontenerze **nie może** używać `issuer-uri` z discovery (w kontenerze `localhost` to on sam).
-  Konfiguracja: JWKS `http://keycloak:8080/realms/corp/protocol/openid-connect/certs`, oczekiwany `iss`
-  `https://localhost:18746/realms/corp`. W Spring Boot: `spring.security.oauth2.resourceserver.jwt.jwk-set-uri`
-  plus `issuer-uri` (przy ustawionym `jwk-set-uri` Boot nie robi discovery, tylko sprawdza `iss`).
-- komponent uruchomiony na hoście może używać zwykłego `issuer-uri` (https, wymaga zaufania do `certs/public-ca/ca.crt`);
-- BFF portalu (M3) nie robi discovery: `PORTAL_OIDC_AUTHORIZATION_URI` to adres publiczny (dla przeglądarki), token, JWKS i
-  wylogowanie idą przez `http://keycloak:8080`, `PORTAL_OIDC_ISSUER_URI` jest tylko porównywany z `iss`.
+- `iss` in every token is `https://localhost:18746/realms/corp`, also when the token was issued to a container over
+  `http://keycloak:8080` (`make smoke` checks this);
+- discovery fetched from the compose network over http gives `jwks_uri` and `token_endpoint` under `http://keycloak:8080/...`;
+- Java containers (gateway, broker) do not connect to Keycloak over https, so they do not need the CA in a truststore:
+  JWKS and the token endpoint go over http to the network alias, and `iss` is only compared as a string;
+- a component in a container **cannot** use `issuer-uri` with discovery (inside a container `localhost` is the container itself).
+  Configuration: JWKS `http://keycloak:8080/realms/corp/protocol/openid-connect/certs`, expected `iss`
+  `https://localhost:18746/realms/corp`. In Spring Boot: `spring.security.oauth2.resourceserver.jwt.jwk-set-uri`
+  plus `issuer-uri` (when `jwk-set-uri` is set, Boot does not run discovery, it only checks `iss`).
+- a component running on the host can use a plain `issuer-uri` (https, requires trusting `certs/public-ca/ca.crt`);
+- the portal BFF (M3) does not run discovery: `PORTAL_OIDC_AUTHORIZATION_URI` is the public address (for the browser), the token, JWKS and
+  logout go through `http://keycloak:8080`, and `PORTAL_OIDC_ISSUER_URI` is only compared with `iss`.
 
-Metadane serwera autoryzacji (RFC 8414) są pod
-`https://localhost:18746/realms/corp/.well-known/oauth-authorization-server` i w wariancie z wstawioną ścieżką
+Authorization server metadata (RFC 8414) is at
+`https://localhost:18746/realms/corp/.well-known/oauth-authorization-server` and in the variant with the inserted path
 `https://localhost:18746/.well-known/oauth-authorization-server/realms/corp`.
 
-## Certyfikaty (`certs/`, generuje `make certs`)
+## Certificates (`certs/`, generated by `make certs`)
 
-| Plik | Zawartość |
+| File | Content |
 | --- | --- |
-| `certs/ca/ca.crt` | wewnętrzne CA (EC P-256) |
-| `certs/ca/truststore.p12` | CA jako PKCS12 dla Javy (wpis zaufany, `-jdktrust`); hasło `TLS_STORE_PASSWORD` |
-| `certs/<nazwa>/tls.crt`, `tls.key`, `chain.crt` | certyfikat, klucz PKCS#8, certyfikat + CA |
-| `certs/<nazwa>/keystore.p12` | klucz + łańcuch dla Javy; hasło `TLS_STORE_PASSWORD` |
-| `certs/untrusted/mcp-gateway/` | CN `mcp-gateway` podpisany innym CA, do testów negatywnych |
-| `certs/legacy/mcp-registry-ci/` | dawny wspólny CN potoku (M3); od gateway'a 4.0.0 daje 403, tylko do testu negatywnego, nigdzie niemontowany |
-| `certs/public-ca/ca.crt`, `ca.key` | osobne CA "dev public" dla adresu publicznego (`scripts/gen-public-cert.sh`); name constraints: tylko `localhost`, `127.0.0.1`, `::1`; klucz zostaje na hoście, nigdzie niemontowany |
-| `certs/proxy/tls.crt`, `tls.key`, `chain.crt` | certyfikat serwera proxy (SAN `localhost`, `127.0.0.1`, `::1`, 397 dni), montowany do kontenera `proxy` |
-| `certs/keycloak/tls.crt`, `tls.key`, `chain.crt` | certyfikat Keycloaka (to samo CA, te same SAN i czas życia), montowany do `keycloak` i `idp-relay` |
-| `certs/public-ca/truststore.p12` | tylko CA "dev public" jako PKCS12 dla Javy (BFF); hasło `TLS_STORE_PASSWORD` |
+| `certs/ca/ca.crt` | internal CA (EC P-256) |
+| `certs/ca/truststore.p12` | CA as PKCS12 for Java (trusted entry, `-jdktrust`); password `TLS_STORE_PASSWORD` |
+| `certs/<name>/tls.crt`, `tls.key`, `chain.crt` | certificate, PKCS#8 key, certificate + CA |
+| `certs/<name>/keystore.p12` | key + chain for Java; password `TLS_STORE_PASSWORD` |
+| `certs/untrusted/mcp-gateway/` | CN `mcp-gateway` signed by another CA, for negative tests |
+| `certs/legacy/mcp-registry-ci/` | the former shared pipeline CN (M3); since gateway 4.0.0 it gets 403, for the negative test only, mounted nowhere |
+| `certs/public-ca/ca.crt`, `ca.key` | separate CA "dev public" for the public address (`scripts/gen-public-cert.sh`); name constraints: only `localhost`, `127.0.0.1`, `::1`; the key stays on the host, mounted nowhere |
+| `certs/proxy/tls.crt`, `tls.key`, `chain.crt` | proxy server certificate (SAN `localhost`, `127.0.0.1`, `::1`, 397 days), mounted into the `proxy` container |
+| `certs/keycloak/tls.crt`, `tls.key`, `chain.crt` | Keycloak certificate (same CA, same SAN and lifetime), mounted into `keycloak` and `idp-relay` |
+| `certs/public-ca/truststore.p12` | only the CA "dev public" as PKCS12 for Java (BFF); password `TLS_STORE_PASSWORD` |
 
-| Nazwa | EKU | SAN |
+| Name | EKU | SAN |
 | --- | --- | --- |
 | `mcp-gateway` | serverAuth, clientAuth | `${MCP_GATEWAY_INTERNAL_TLS_NAME}`, `mcp-gateway`, `localhost`, `127.0.0.1` |
 | `mcp-credential-broker` | serverAuth | `${MCP_BROKER_TLS_NAME}`, `mcp-credential-broker`, `localhost`, `127.0.0.1` |
 | `mcp-jira`, `mcp-confluence`, `mcp-gitlab`, `mcp-servicedesk`, `mcp-opensearch` | serverAuth | `<serverId>.internal`, `<serverId>`, `localhost`, `127.0.0.1` |
-| `mcp-portal-bff`, `mcp-offboarding` | clientAuth | `<nazwa>` |
-| `mcp-registry-ci-mcp-jira`, `-mcp-confluence`, `-mcp-gitlab`, `-mcp-servicedesk`, `-mcp-opensearch` | clientAuth | `<nazwa>` (jeden certyfikat potoku na serwer, CC-161) |
+| `mcp-portal-bff`, `mcp-offboarding` | clientAuth | `<name>` |
+| `mcp-registry-ci-mcp-jira`, `-mcp-confluence`, `-mcp-gitlab`, `-mcp-servicedesk`, `-mcp-opensearch` | clientAuth | `<name>` (one pipeline certificate per server) |
 
-Wszystkie mają `CN=<nazwa>`. `localhost` w SAN dostają tylko certyfikaty serwerowe, dla komponentów
-uruchomionych na hoście; produkcyjne certyfikaty go nie mają. Klient i tak powinien weryfikować nazwę
-z konfiguracji (`MCP_BROKER_TLS_NAME`, `MCP_GATEWAY_INTERNAL_TLS_NAME`), nie adres, pod który się łączy.
-Kontenery stubów montują tylko swój keystore, CA (`ca.crt`, `truststore.p12`) i certyfikat klienta do
-healthchecku; klucz CA i klucze innych tożsamości zostają na hoście.
+All have `CN=<name>`. Only server certificates get `localhost` in the SAN, for components
+running on the host; production certificates do not have it. A client should still verify the name
+from configuration (`MCP_BROKER_TLS_NAME`, `MCP_GATEWAY_INTERNAL_TLS_NAME`), not the address it connects to.
+The stub containers mount only their own keystore, the CA (`ca.crt`, `truststore.p12`) and a client certificate for the
+healthcheck; the CA key and the keys of other identities stay on the host.

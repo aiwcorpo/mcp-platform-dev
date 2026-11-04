@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M2 scenario skeleton ("Polacz konto i portal") and helpers for the system mocks.
+"""M2 scenario skeleton ("Connect an account and the portal") and helpers for the system mocks.
 
   m2.py run              checks that can be made on the mocks and Keycloak today; the steps that need the real
                          BFF, web, broker OAuth and gateway M2 are listed as SKIP with the missing piece
@@ -197,7 +197,7 @@ def check_gitlab_oauth():
 
 
 def check_broker_oauth():
-    """"Polacz przez OAuth" as the BFF drives it, against the real broker (needs make up-full, broker M2 image)."""
+    """"Connect through OAuth" as the BFF drives it, against the real broker (needs make up-full, broker M2 image)."""
     status, body = mcpdev.broker_request("alice", "POST", "/v1/connections/gitlab/oauth/start", {"returnPath": "/catalog"})
     if status == 404 or (status == 400 and body.get("error") != "invalid_request"):
         skip("broker OAuth against the GitLab mock", f"broker without oauth/start for gitlab (HTTP {status})")
@@ -467,7 +467,7 @@ def check_portal():
         record("portal: create a link -> URL on the proxy origin", status == 201 and created.get("url") == link, f"HTTP {status} {raw[:120]!r}")
         status, _, raw = portal.request("POST", f"{PROXY}/api/v1/virtual-servers", {
             "slug": slug + "x", "displayName": "wide", "tools": ["jira__get_issue"], "resourceDefaults": {"projects": ["ABC"]}})
-        record("portal: non-empty resourceDefaults -> 400 (CC-085)", status == 400, f"HTTP {status}")
+        record("portal: non-empty resourceDefaults -> 400", status == 400, f"HTTP {status}")
 
     if status is not None:
         token_alice = mcpdev.login("alice", "claude-code")
@@ -545,7 +545,7 @@ def check_portal():
             portal.request("POST", f"{PROXY}/api/v1/connections/gitlab/oauth", {"returnPath": "/catalog"})
         if M5:
             status, headers, raw = http("POST", f"{PROXY}/v/{slug}/mcp", {**bearer(token_alice), "Content-Type": "application/json"}, b"{}")
-            record("proxy: /v/ answers 404 not_found_or_denied (CC-177), not the portal page",
+            record("proxy: /v/ answers 404 not_found_or_denied, not the portal page",
                    status == 404 and jbody(raw).get("error") == "not_found_or_denied", f"HTTP {status} {raw[:80]!r}")
         else:
             status, _, _ = portal.request("DELETE", f"{PROXY}/api/v1/virtual-servers/{slug}")

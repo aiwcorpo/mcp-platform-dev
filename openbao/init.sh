@@ -2,11 +2,11 @@
 # One-shot setup of the dev OpenBao (raft on the volume openbao-data, unsealed by openbao/unseal.sh; runs on every `make up`).
 # Idempotent and safe on data that survived a restart: it creates what is missing and never overwrites Transit keys, user
 # secrets (connections, authenticator ciphertext) or the Service Desk service account. Dev only.
-# Layout used by the credential broker (ws-06):
+# Layout used by the credential broker:
 #   KV v2  secret/        connections: secret/data/mcp/connections/<sub>/<system>
 #   KV v2  secret/data/mcp/oauth-clients/<system>: OAuth client of the broker at a provider (read only for the broker)
 #   KV v2  secret/data/mcp/service-accounts/<system>: key of the platform's service account (credential type
-#          service-account, CC-157); today only servicedesk, field `value` = SERVICEDESK_API_KEY of .secrets/dev.env (the key
+#          service-account); today only servicedesk, field `value` = SERVICEDESK_API_KEY of .secrets/dev.env (the key
 #          the Service Desk mock accepts; the broker reads `value` for Bearer, `username`+`password` for Basic, optional
 #          `expires_at`; the scheme comes from the broker's system configuration). Read only for the broker.
 #   KV v2  secret/data/mcp/oauth-clients/<system>: client of the broker at the provider (gitlab) or its token-exchange client at

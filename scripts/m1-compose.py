@@ -130,21 +130,21 @@ def patch_e2e():
 
 def leak_all_containers(ctx):
     """A9 extension: PAT names, the IdP token of alice and JWTs in the logs of every container of the project."""
-    s = h.Scenario("A9b", "Wyciek PAT i tokenu w logach wszystkich kontenerow compose",
-                   "zero alice-pat, tokenu alice i ciagow JWT poza oczekiwanymi")
+    s = h.Scenario("A9b", "PAT and token leak in the logs of all compose containers",
+                   "no alice-pat, alice token or JWT-shaped strings except the expected ones")
     token = ctx["alice_token"]
     listing = subprocess.run(["docker", "ps", "-a", "--filter", f"label=com.docker.compose.project={PROJECT}",
                               "--format", "{{.Names}}"], capture_output=True, text=True).stdout.split()
     needles = {name: name for name in m1.PAT_NAMES}
-    needles["token IdP alice"] = token
-    needles["podpis tokenu IdP alice"] = token.rsplit(".", 1)[-1]
+    needles["IdP token of alice"] = token
+    needles["IdP token signature of alice"] = token.rsplit(".", 1)[-1]
     for name in sorted(listing):
         text = subprocess.run(["docker", "logs", name], capture_output=True, text=True)
         text = text.stdout + text.stderr
         hits = [label for label, needle in needles.items() if needle in text]
-        s.check(f"{name}: brak PAT i tokenu alice ({len(text)} B logu)", not hits, ", ".join(hits))
+        s.check(f"{name}: no PAT or alice token ({len(text)} B of log)", not hits, ", ".join(hits))
         jwts = JWT_RE.findall(text)
-        s.check(f"{name}: brak ciagow w formacie JWT", not jwts, f"{len(jwts)} trafien")
+        s.check(f"{name}: no JWT-shaped strings", not jwts, f"{len(jwts)} hits")
     return s
 
 

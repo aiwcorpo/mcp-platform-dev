@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pushes the component images of the stack (the tags in force: .env, m4.env, m5.env) to the local registry of D12
+# Pushes the component images of the stack (the tags in force: .env, m4.env, m5.env) to the local registry
 # (make m5-artifacts), as localhost:REGISTRY_PORT/<repository>:<tag>. Plain http on loopback; no credentials.
 #   scripts/push-images.sh              all nine component images
 #   scripts/push-images.sh mcp-gateway:m5-abc1234 ...   only these

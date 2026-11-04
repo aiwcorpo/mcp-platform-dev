@@ -18,7 +18,7 @@
 Configuration comes from .env and .secrets/dev.env; environment variables override:
   KEYCLOAK_URL         default https://localhost:$KEYCLOAK_TLS_PORT (certificate of certs/public-ca)
   BROKER_URL           default https://localhost:$BROKER_MOCK_PORT (contract stub); real broker: https://localhost:$BROKER_PORT
-  MCP_BROKER_TLS_NAME  name verified in the broker certificate, whatever host BROKER_URL uses (CC-035)
+  MCP_BROKER_TLS_NAME  name verified in the broker certificate, whatever host BROKER_URL uses
   GATEWAY_ADMIN_URL    default https://localhost:$GATEWAY_INTERNAL_PORT (C5 listener of the gateway, mTLS)
   MCP_GATEWAY_INTERNAL_TLS_NAME  name verified in the gateway certificate
   KEYCLOAK_ADMIN_URL   default http://localhost:$KEYCLOAK_PORT (admin API; admin login from .secrets/dev.env)
@@ -282,7 +282,7 @@ def mtls_context(identity):
 
 class PinnedNameHTTPSConnection(http.client.HTTPSConnection):
     """Connects to host:port from the URL but verifies the certificate against tls_name, so a broker
-    reached as localhost from the host is still checked for its configured name (CC-035)."""
+    reached as localhost from the host is still checked for its configured name."""
 
     def __init__(self, host, port, tls_name, context):
         super().__init__(host, port, context=context, timeout=30)
@@ -294,7 +294,7 @@ class PinnedNameHTTPSConnection(http.client.HTTPSConnection):
 
 
 def put_secret(user, system, secret, expires_at=None, identity="mcp-portal-bff", tls_name=None):
-    """What the portal BFF does for "Dodaj PAT": its session token exchanged for aud=mcp-credential-broker,
+    """What the portal BFF does for "Add PAT": its session token exchanged for aud=mcp-credential-broker,
     sent over mTLS with the BFF certificate (C4). Returns (HTTP status, JSON body)."""
     bff_token = login(user, "mcp-portal-bff")
     broker_token = exchange(bff_token, "mcp-portal-bff", "mcp-credential-broker")
@@ -349,7 +349,7 @@ def broker_request(user, method, path, body=None, broker_url=None, tls_name=None
 
 def mtls_request(identity, method, base_url, path, tls_name, body=None):
     """A call over mTLS with the certificate certs/<identity> and no bearer token (C4 and C5 admin operations of CI and
-    offboarding). The name verified in the server certificate is tls_name, whatever host base_url uses (CC-035).
+    offboarding). The name verified in the server certificate is tls_name, whatever host base_url uses.
     Returns (HTTP status, JSON body or {})."""
     url = urllib.parse.urlparse(base_url.rstrip("/"))
     conn = PinnedNameHTTPSConnection(url.hostname, url.port or 443, tls_name, mtls_context(identity))
@@ -392,7 +392,7 @@ def gateway_request(identity, method, path, body=None):
 
 def registry_put(server_id, manifest_path, identity=None):
     """PUT /admin/v1/registry/servers/{serverId} with the manifest built from the reviewed commit (mcp-app/target/mcp-manifest.json).
-    The certificate is the one of that server: CN=mcp-registry-ci-<serverId> (CC-161); `identity` overrides it for tests
+    The certificate is the one of that server: CN=mcp-registry-ci-<serverId>; `identity` overrides it for tests
     that present another certificate on purpose."""
     return gateway_request(identity or f"mcp-registry-ci-{server_id}", "PUT",
                            f"/admin/v1/registry/servers/{urllib.parse.quote(server_id, safe='')}",

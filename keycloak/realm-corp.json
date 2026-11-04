@@ -660,7 +660,7 @@
     },
     {
       "name": "groups",
-      "description": "C9 group names without path (CC-007: full.path=false)",
+      "description": "C9 group names without path (full.path=false)",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "false",

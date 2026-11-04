@@ -8,7 +8,7 @@
 # Steps: remove the M5 services (balancers, second instances: they hold ports 18000, 18445, 18100 and the TLS aliases) -> stop the M5
 # gateway and broker -> restore the gateway and broker databases from the dumps (undoes V7, which dropped virtual_servers, and the
 # broker migrations; everything written to these two databases since the backup is lost, Redis and OpenBao are not touched) ->
-# remove M5_ACTIVE from .env -> wait for a 4.x policy bundle (a 4.x gateway and the servers refuse the 5.x one: ws-09 must publish the
+# remove M5_ACTIVE from .env -> wait for a 4.x policy bundle (a 4.x gateway and the servers refuse the 5.x one: the policies repo must publish the
 # 4.x bundle again, sign "M5-ROLLBACK") -> recreate broker, MCP servers, gateway, BFF, web and proxy from the images of m4.env.
 # Not undone: MCP sessions created by the M5 gateway in Redis (a 4.x gateway answers 404, clients initialize again), the policy
 # state volume gateway-state-2 (unused after the rollback, removed with `docker volume rm` when wanted), the restarted mocks.
@@ -58,10 +58,10 @@ import m5
 sys.exit(0 if m5.bundle_schema_version(m5.latest()).startswith("4.") else 1)' "$root/scripts" && return 0 || return 1
 }
 if [ "$mode" = "--dry-run" ]; then
-  echo "  would run: wait for a 4.x main bundle (SIGNAL to ws-09), unless the latest one already is 4.x"
+  echo "  would run: wait for a 4.x main bundle (SIGNAL to the policies repo), unless the latest one already is 4.x"
 elif ! bundle_ok; then
   latest="$(python3 "$root/scripts/m5.py" bundle-latest)"
-  echo "rollback-m5: SIGNAL to ws-09: the stack returns to 4.x components; publish the 4.x bundle again (latest revision now: $latest)"
+  echo "rollback-m5: SIGNAL to the policies repo: the stack returns to 4.x components; publish the 4.x bundle again (latest revision now: $latest)"
   python3 "$root/scripts/m5.py" bundle-wait "$latest" 900 4. || { echo "rollback-m5: no 4.x bundle within 15 minutes; publish it and run the rollback again with SKIP_DB=1" >&2; exit 1; }
 fi
 

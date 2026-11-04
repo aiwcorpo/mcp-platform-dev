@@ -79,10 +79,10 @@ def main():
         for wrong in ("service-account", "not-a-type"):
             script("broker-type", wrong)
             is_error, text = call_search(token, session)
-            check(f"XH CC-166: the broker returns {wrong!r}, the call is refused without reaching the server", is_error is True and "internal_error" in text, text[:120])
+            check(f"XH: the broker returns {wrong!r}, the call is refused without reaching the server", is_error is True and "internal_error" in text, text[:120])
         script("broker-type", "user-secret")
         is_error, text = call_search(token, session)
-        check("XH CC-166: after the type is set back the call works again", is_error is False, text[:120])
+        check("XH: after the type is set back the call works again", is_error is False, text[:120])
 
     mismatch = json.loads(script("register", "dev").stdout)
     check("XH environment_mismatch: a manifest of environment dev is refused with 422", mismatch.get("httpStatus") == 422

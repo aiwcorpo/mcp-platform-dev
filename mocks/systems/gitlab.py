@@ -1,6 +1,6 @@
 """GitLab mock: OAuth 2.0 provider (authorize, token, refresh, revoke), whoami and the REST API.
 
-The broker (ws-06) runs "Polacz przez OAuth" against this: authorization code + PKCE S256 + state. The
+The broker runs "Connect through OAuth" against this: authorization code + PKCE S256 + state. The
 authorize endpoint is opened by the browser, so MOCK_GITLAB_PUBLIC_URL (http://localhost:18741) is the
 address the broker puts into authorizeUrl; the token endpoint is called by the broker from the compose
 network (http://gitlab.internal:8080/oauth/token).

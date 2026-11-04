@@ -1,6 +1,6 @@
 """Credential broker stand-in for the e2e-prod profile (DEV ONLY, not a product). It answers the two calls a gateway makes outside
 a user's request, GET /v1/systems and POST /v1/credentials/resolve (C4), with a credential whose type is set from outside, so a test
-can make the broker return a type the system does not accept (CC-166). Authenticator and OAuth endpoints do not exist here.
+can make the broker return a type the system does not accept. Authenticator and OAuth endpoints do not exist here.
 
 The type is changed on a separate plain-http listener, protected by a bearer token (BROKER_STUB_ADMIN_TOKEN):
   GET  /type                      the type in force and the number of resolve calls

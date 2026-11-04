@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the images of profile "m2" from git refs of the sibling repositories (git archive into a temporary
 # directory; the working trees are not touched): the portal BFF and web (repo mcp-portal, subdirectories bff/ and
-# web/) and the MCP servers of ws-04 (confluence, gitlab, servicedesk, opensearch).
+# web/) and the MCP servers (confluence, gitlab, servicedesk, opensearch).
 # Usage: scripts/build-images-m2.sh [portal-ref] [server-ref]   (defaults: HEAD of each repository)
 # ONLY=bff,web,confluence,gitlab,servicedesk,opensearch builds a subset (default: all).
 # Needs a JDK 25 in JAVA_HOME and node/npm for the web build. Prints the image tags to put into .env.

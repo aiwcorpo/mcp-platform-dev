@@ -1,6 +1,6 @@
 # Profile e2e-prod (optional, own compose project mcp-e2e-prod; scripts/e2e-prod.sh starts and stops it). NOT FOR PRODUCTION.
 # A gateway WITHOUT the devstack profile, with a broker stand-in whose credential type is set from outside and an MCP server stand-in,
-# for the cases of mcp-e2e scenario XH that the shared stack cannot show: CC-166 (a credential type outside the system's set),
+# for the cases of mcp-e2e scenario XH that the shared stack cannot show: a credential type outside the system's set,
 # environment_mismatch, a stored manifest that fails the start checks, refusal of dev- keys in production mode.
 #   - nothing of the main stack is touched; the only link is the network mcp-dev-core, which the key-set front joins to reach Keycloak;
 #   - own PostgreSQL, own Redis with a replica (WAIT is required outside devstack), own policy bundle signed with a key that is

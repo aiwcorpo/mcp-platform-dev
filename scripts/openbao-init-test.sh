@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs openbao/init.sh against a throw-away dev OpenBao in an isolated network (the running stack is not touched) and
-# checks what the broker's AppRole may do with the service-account path (CC-157). Prints PASS/FAIL lines; exit 1 on FAIL.
+# checks what the broker's AppRole may do with the service-account path. Prints PASS/FAIL lines; exit 1 on FAIL.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 image="$(grep -m1 'image: openbao/openbao' "$root/docker-compose.yml" | sed 's/.*image: //')"

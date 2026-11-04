@@ -43,7 +43,7 @@ def definition_hash(definition, entry, system, credential):
     flat = {"name": definition["name"], "description": definition["description"],
             "inputSchema": json.loads(json.dumps(definition["inputSchema"])),
             "resourceRefs": entry.get("resourceRefs", []), "system": system, "credential": credential}
-    # The entry of an adapter tool has no risk and no action (CC-193): the flat object has no such keys.
+    # The entry of an adapter tool has no risk and no action: the flat object has no such keys.
     for key in ("risk", "action"):
         if key in entry:
             flat[key] = entry[key]

@@ -1,50 +1,50 @@
-# Claude Code a lokalny gateway
+# Claude Code and the local gateway
 
-Stan (2026-10-28): adres publiczny (M2) to `https://localhost:18745`, patrz sekcja "Przez proxy na https (M2)" na końcu; pierwsza część poniżej opisuje tryb M1 (`http://localhost:18000`, `make up-full`), który nadal przechodzi w `make m1`. Samego logowania
-w przeglądarce nie wykonano; sprawdzone są metadane RFC 9728 i RFC 8414, żądanie autoryzacji z PKCE i `resource`,
-redirect URI i odrzucenie obcego redirect URI. Pełna instrukcja dla człowieka: sekcja "Demo M1 z Claude Code" w README.
+State (2026-10-28): the public address (M2) is `https://localhost:18745`, see the section "Through the proxy on https (M2)" at the end. The first part below describes the M1 mode (`http://localhost:18000`, `make up-full`), which still passes in `make m1`. The browser login itself
+was not run; what was checked is the RFC 9728 and RFC 8414 metadata, the authorization request with PKCE and `resource`,
+the redirect URI, and the rejection of a foreign redirect URI. The full instructions for a human are in the README section "M1 demo with Claude Code".
 
-Anonimowa dynamiczna rejestracja klientów (DCR) jest zablokowana domyślną polityką Keycloaka "Trusted Hosts"
-(`403 Host not trusted`, sprawdzone), więc Claude Code dostaje zarejestrowany wcześniej klient publiczny
-`claude-code` i stały port callbacku (`CLAUDE_CODE_CALLBACK_PORT` w `.env`, domyślnie 33418):
+Anonymous dynamic client registration (DCR) is blocked by the default Keycloak "Trusted Hosts" policy
+(`403 Host not trusted`, verified), so Claude Code gets a pre-registered public client
+`claude-code` and a fixed callback port (`CLAUDE_CODE_CALLBACK_PORT` in `.env`, default 33418):
 
 ```bash
-make up-full      # albo gateway uruchomiony na hoście na porcie 18000
+make up-full      # or a gateway running on the host on port 18000
 claude mcp add --transport http --client-id claude-code --callback-port 33418 \
   jira http://localhost:18000/s/mcp-jira/mcp
 ```
 
-Przebieg:
+Flow:
 
-1. Claude Code wywołuje gateway bez tokenu i dostaje `401` z
+1. Claude Code calls the gateway without a token and gets `401` with
    `WWW-Authenticate: Bearer resource_metadata=".../.well-known/oauth-protected-resource/s/mcp-jira/mcp"`.
-2. Z metadanych zasobu bierze `authorization_servers = ["https://localhost:18746/realms/corp"]` i pobiera
-   `https://localhost:18746/.well-known/oauth-authorization-server/realms/corp` (w trybie M1 z `make up-full` Keycloak jest
-   od 2026-10-28 też po https; zaufanie do CA: `make trust-ca`).
-3. Otwiera przeglądarkę na logowanie Keycloak (login i hasło: `make users`), odbiera kod na
-   `http://localhost:33418/callback`, wymienia go z `code_verifier`.
-4. Token ma `aud=mcp-gateway`, `azp=claude-code`, `groups`; gateway go weryfikuje. Na stacji nie ma PAT:
-   poświadczenie do Jiry gateway pobiera z brokera (najpierw `make pat USER=alice SYSTEM=jira` na
-   prawdziwym brokerze).
+2. From the resource metadata it takes `authorization_servers = ["https://localhost:18746/realms/corp"]` and fetches
+   `https://localhost:18746/.well-known/oauth-authorization-server/realms/corp` (in M1 mode with `make up-full`, Keycloak has
+   also been served over https since 2026-10-28; CA trust: `make trust-ca`).
+3. It opens the browser on the Keycloak login (login and password: `make users`), receives the code on
+   `http://localhost:33418/callback`, and exchanges it with `code_verifier`.
+4. The token has `aud=mcp-gateway`, `azp=claude-code`, `groups`; the gateway verifies it. There is no PAT on the workstation:
+   the gateway fetches the Jira credential from the broker (first run `make pat USER=alice SYSTEM=jira` on a
+   real broker).
 
-Inny port callbacku: zmienić `CLAUDE_CODE_CALLBACK_PORT` w `.env` i zrestartować Keycloak (`make up`),
-bo redirect URI w realmie jest podstawiany przy imporcie.
+To use another callback port, change `CLAUDE_CODE_CALLBACK_PORT` in `.env` and restart Keycloak (`make up`),
+because the redirect URI in the realm is substituted at import time.
 
-## Przez proxy na https (M2)
+## Through the proxy on https (M2)
 
-Adres publiczny to `https://localhost:18745` (docs/m2.md). Zaufanie do CA i `NODE_EXTRA_CA_CERTS` dla Node: `make trust-ca`
-drukuje polecenia dla człowieka; bez nich `claude` odrzuci certyfikat. Serwer systemowy:
+The public address is `https://localhost:18745` (docs/m2.md). CA trust and `NODE_EXTRA_CA_CERTS` for Node: `make trust-ca`
+prints the commands for a human; without them `claude` rejects the certificate. System server:
 
 ```bash
-export NODE_EXTRA_CA_CERTS=<katalog repo>/certs/public-ca/ca.crt
+export NODE_EXTRA_CA_CERTS=<repo directory>/certs/public-ca/ca.crt
 claude mcp add --transport http --client-id claude-code --callback-port 33418 \
   jira https://localhost:18745/s/mcp-jira/mcp
 ```
 
-Od M5 jeden adres obejmuje całą platformę (`https://localhost:18745/mcp`), a filtr jest w query, np.
-`"https://localhost:18745/mcp?systems=jira&access=read"` (cudzysłów, bo adres ma `&`); kreator w portalu składa adres
-(`GET /api/v1/me/mcp-endpoint`), niczego nie zapisuje i pokazuje gotową komendę
-(BFF dostaje `PORTAL_CLIENT_CONFIGS_CLAUDE_CODE_CLIENT_ID=claude-code` i `..._CALLBACK_PORT=33418` z `docker-compose.yml`).
-Metadane zasobu i wyzwanie 401 wskazują adres https; serwer autoryzacji to Keycloak po https, `https://localhost:18746/realms/corp`
-(certyfikat tego samego CA "dev public", więc Safari zapisuje ciasteczka logowania; docs/m2.md, "Keycloak na https").
-Klient `claude-code` w realmie `corp` jest publiczny, z redirect URI `http://localhost:33418/callback`.
+Since M5 one address covers the whole platform (`https://localhost:18745/mcp`), and the filter is in the query, for example
+`"https://localhost:18745/mcp?systems=jira&access=read"` (quoted, because the address contains `&`). The wizard in the portal builds the address
+(`GET /api/v1/me/mcp-endpoint`), stores nothing, and shows a ready command
+(the BFF gets `PORTAL_CLIENT_CONFIGS_CLAUDE_CODE_CLIENT_ID=claude-code` and `..._CALLBACK_PORT=33418` from `docker-compose.yml`).
+The resource metadata and the 401 challenge point to the https address; the authorization server is Keycloak over https, `https://localhost:18746/realms/corp`
+(a certificate from the same "dev public" CA, so Safari stores the login cookies; docs/m2.md, "Keycloak over https").
+The `claude-code` client in the `corp` realm is public, with the redirect URI `http://localhost:33418/callback`.

@@ -7,18 +7,18 @@
 #
 # Preconditions (the script stops before touching anything when one is missing):
 #   - the images of .env exist locally: broker, gateway, five MCP servers, BFF, web;
-#   - the dev- public keys of ws-09 exist in mcp-policies/keys/dev (dev-policies-main, dev-policies-overrides);
+#   - the dev- public keys of the policies repo exist in mcp-policies/keys/dev (dev-policies-main, dev-policies-overrides);
 #   - the M4 layer: m4.env (images and policy key ids) and docker-compose.m4.yml (broker systems opensearch and servicedesk,
 #     devstack) apply only with M4_ACTIVE=1, which the script writes to .env after the checks, so an accidental `up` before the
 #     switch keeps the M3 configuration;
 #   - a manifest built from each server repository (mcp-app/target/mcp-manifest.json or MANIFEST_DIR/<serverId>.json): the registry
-#     entries are replaced through the CI certificates (CC-161), not through the bootstrap of the gateway.
-# The MCP servers do not start without a signed bundle they accept (30 s), so the publication of ws-09 comes before them; the M3
+#     entries are replaced through the CI certificates, not through the bootstrap of the gateway.
+# The MCP servers do not start without a signed bundle they accept (30 s), so the publication of the policies repo comes before them; the M3
 # gateway keeps running with its loaded bundle until it is recreated.
-# Order: OpenBao init (service account of Service Desk, broker policy) -> realm groups (Service Desk for alice and bob, additive) -> Redis ACL -> broker -> signal to ws-09 and wait for the 4.0.0 bundle -> MCP servers (they declare
+# Order: OpenBao init (service account of Service Desk, broker policy) -> realm groups (Service Desk for alice and bob, additive) -> Redis ACL -> broker -> signal to the policies repo and wait for the 4.0.0 bundle -> MCP servers (they declare
 # environment dev) -> drop of the bootstrap rows of the registry (dev only; the CI PUT recreates them with source ci) ->
 # gateway -> registration by CI -> BFF and web -> proxy-test and make m4.
-# Publication: ws-09 runs .ci/switch-stack.sh --confirm in mcp-policies on the signal; M4_PUBLISHED=1 skips the wait.
+# Publication: the policies repo runs .ci/switch-stack.sh --confirm in mcp-policies on the signal; M4_PUBLISHED=1 skips the wait.
 # Rollback is not automatic: the images that ran before are written to out/m4-previous-images.txt, but the gateway keeps the
 # accepted policy revision (rollback protection) and the registry rows are those of the CI PUT.
 set -euo pipefail
@@ -48,7 +48,7 @@ done <<<"$images"
 echo "apply-m4-switch: images ok"
 
 for key in dev-policies-main dev-policies-overrides; do
-  [ -f "$root/../mcp-policies/keys/dev/$key.public.pem" ] || fail "missing ../mcp-policies/keys/dev/$key.public.pem (ws-09)"
+  [ -f "$root/../mcp-policies/keys/dev/$key.public.pem" ] || fail "missing ../mcp-policies/keys/dev/$key.public.pem"
 done
 for server in mcp-jira mcp-confluence mcp-gitlab mcp-servicedesk mcp-opensearch; do
   manifest="${MANIFEST_DIR:+$MANIFEST_DIR/$server.json}"
@@ -69,14 +69,14 @@ echo "apply-m4-switch: M4_ACTIVE=1 in .env (broker image and settings, dev- poli
 python3 "$root/scripts/mcpdev.py" sync-groups | sed 's/^/apply-m4-switch: realm: /'
 "$root/scripts/redis-sync-acl.sh" >/dev/null
 "${c[@]}" up -d --no-deps --wait mcp-credential-broker
-echo "apply-m4-switch: SIGNAL to ws-09: components of 4.0.0 run with the dev- keys; publish the bundle (.ci/switch-stack.sh --confirm)"
+echo "apply-m4-switch: SIGNAL to the policies repo: components of 4.0.0 run with the dev- keys; publish the bundle (.ci/switch-stack.sh --confirm)"
 if [ "${M4_PUBLISHED:-0}" != 1 ]; then
   python3 "$root/scripts/m4.py" wait-bundle 600 || fail "the 4.0.0 bundle signed with the dev- key was not published within 10 minutes"
 fi
 "${c[@]}" up -d --no-deps --wait server-state-init mcp-jira mcp-confluence mcp-gitlab mcp-servicedesk mcp-opensearch
 "${c[@]}" exec -T postgres psql -U gateway -d gateway -At -c "delete from registry_servers where source = 'bootstrap'" \
   | sed 's/^/apply-m4-switch: dropped bootstrap rows: /'
-# MCP sessions of the M3 gateway have no entry in the per-user session index that purge reads (README of the gateway, "Przejście z M3 na M4");
+# MCP sessions of the M3 gateway have no entry in the per-user session index that purge reads (gateway README, section on the M3 to M4 migration);
 # clients get 404 and initialize again. gw:conf:* and gw:rl:* stay.
 set -a; . "$root/.secrets/dev.env"; set +a
 redis_container="$("${c[@]}" ps -q redis)"

@@ -139,7 +139,7 @@ def check_secrets_hygiene():
             problems.append(f"{name}: key file not from mcp-policies/keys/dev")
         if env.get("SPRING_PROFILES_ACTIVE") != "devstack" or "AIWCORPO_MCP_PLATFORM_INTERNAL_JWT_ALLOW_TEST_KEYS" in env:
             problems.append(f"{name}: profile or JWT test key flag")
-    record("compose (effective configuration): every MCP server runs devstack, with a test-* or dev-* (M4) id and a key file from the dev keys of ws-09, "
+    record("compose (effective configuration): every MCP server runs devstack, with a test-* or dev-* (M4) id and a key file from the dev keys of the policies repo, "
            "without the internal JWT test key flag", len(servers) >= 5 and not problems, "; ".join(problems)[:200])
 
 
@@ -227,9 +227,9 @@ def check_registry_tools():
 
 
 # Systems whose credential type the broker does not implement yet (token-exchange, service-account: moved out of broker M3,
-# ws-06) and that have no adapter; they are reported as SKIP with this reason instead of failing the suite.
-BROKER_GAPS = {"opensearch": "token-exchange is not implemented in the broker and there is no adapter (ws-06)",
-               "servicedesk": "service-account is not implemented in the broker and there is no adapter (ws-06)"}
+# the broker) and that have no adapter; they are reported as SKIP with this reason instead of failing the suite.
+BROKER_GAPS = {"opensearch": "token-exchange is not implemented in the broker and there is no adapter",
+               "servicedesk": "service-account is not implemented in the broker and there is no adapter"}
 
 
 def check_broker_knows_systems():

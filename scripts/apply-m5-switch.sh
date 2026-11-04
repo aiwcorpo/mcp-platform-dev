@@ -12,13 +12,13 @@
 #   - the M4 layer is active (.env has M4_ACTIVE=1) and no earlier switch is left half done (out/m5-switch.state);
 #   - m5.env sets the nine component images to tags starting with m5- and they exist locally;
 #   - the pinned nginx image of the balancers exists locally;
-#   - the dev- public keys of ws-09 and a manifest built from each server repository exist (as for m4-switch).
+#   - the dev- public keys of the policies repo and a manifest built from each server repository exist (as for m4-switch).
 # Before the first change: a timestamped backup in out/m5-backup-<time>/ (full dumps of the gateway and broker databases, the
 # table of saved links, flyway versions, running images, .env, the revision of the policy bundle, connection counts of the four
 # test accounts). A failure at any later step prints the step, the command and the way back:
 #   scripts/rollback-m5.sh out/m5-backup-<time>          (tested part: scripts/rollback-test.sh)
 # Order: backup -> OpenBao init (secret_id of the broker) -> C2 keys -> Redis ACL -> broker 1, broker 2, broker balancer -> signal
-# to ws-09 and wait for the 5.x bundle -> policy server (access log) -> MCP servers -> gateway 1, gateway 2 (state copied from 1), gateway balancer -> registration
+# to the policies repo and wait for the 5.x bundle -> policy server (access log) -> MCP servers -> gateway 1, gateway 2 (state copied from 1), gateway balancer -> registration
 # by CI -> BFF and web -> proxy -> mocks -> checks (proxy tests, make m4, /mcp through the public origin, connection counts).
 # Any failed check makes the script exit non-zero (the stack stays as it is; decide on the rollback).
 # RESTART_GITLAB_MOCK=1 also restarts the GitLab mock (it keeps OAuth tokens in memory: every GitLab connection must be made again).
@@ -61,7 +61,7 @@ done <<<"$images"
 echo "apply-m5-switch: images ok"
 
 for key in dev-policies-main dev-policies-overrides; do
-  [ -f "$root/../mcp-policies/keys/dev/$key.public.pem" ] || fail "missing ../mcp-policies/keys/dev/$key.public.pem (ws-09)"
+  [ -f "$root/../mcp-policies/keys/dev/$key.public.pem" ] || fail "missing ../mcp-policies/keys/dev/$key.public.pem"
 done
 for server in mcp-jira mcp-confluence mcp-gitlab mcp-servicedesk mcp-opensearch; do
   manifest="${MANIFEST_DIR:+$MANIFEST_DIR/$server.json}"
@@ -137,7 +137,7 @@ step="broker balancer"
 "${c[@]}" up -d --no-deps --wait broker-lb
 
 step="wait for the 5.x bundle"
-echo "apply-m5-switch: SIGNAL to ws-09: components of 5.1.0 run with the dev- keys; publish the 5.1.0 bundle (.ci/switch-stack.sh --confirm); latest revision now: $latest_before"
+echo "apply-m5-switch: SIGNAL to the policies repo: components of 5.1.0 run with the dev- keys; publish the 5.1.0 bundle (.ci/switch-stack.sh --confirm); latest revision now: $latest_before"
 if [ "${M5_PUBLISHED:-0}" != 1 ]; then
   python3 "$root/scripts/m5.py" bundle-wait "$latest_before" 600 || fail "no main bundle with schemaVersion 5.x within 10 minutes"
   python3 "$root/scripts/m4.py" wait-bundle 120 || fail "the new bundle does not verify with the dev- key"

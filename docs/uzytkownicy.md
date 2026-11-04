@@ -1,61 +1,61 @@
-# Użytkownicy, grupy i klienci (realm `corp`)
+# Users, groups and clients (realm `corp`)
 
-Źródło: `keycloak/realm-corp.json`, importowany przy każdym starcie kontenera (dane Keycloak nie są
-trwałe, więc realm zawsze odpowiada plikowi). Hasła są w `.secrets/dev.env`, `make users` je wypisuje.
+Source: `keycloak/realm-corp.json`, imported on every start of the container (Keycloak data is not
+persistent, so the realm always matches the file). Passwords are in `.secrets/dev.env`; `make users` prints them.
 
-## Użytkownicy
+## Users
 
-| Login | Grupy (C9) | Do czego |
+| Login | Groups | Purpose |
 | --- | --- | --- |
-| `alice` | `mcp-jira-read`, `mcp-jira-write`, `mcp-jira-destructive`, `mcp-jira-proj-ABC`, `mcp-confluence-read`, `mcp-confluence-space-ENG`, `mcp-gitlab-read`, `mcp-gitlab-write`, `mcp-gitlab-grp-team-a`, `mcp-opensearch-read`, `mcp-opensearch-idx-logs-team-a`, `mcp-servicedesk-read`, `mcp-servicedesk-write`, `mcp-servicedesk-queue-IT`, `mcp-client-claude-code` | główna ścieżka demo |
-| `bob` | `mcp-jira-read`, `mcp-jira-proj-ABC`, `mcp-opensearch-read`, `mcp-opensearch-idx-logs-team-a`, `mcp-servicedesk-read`, `mcp-servicedesk-queue-FIN`, `mcp-client-claude-code` | tylko odczyt |
-| `carol` | `mcp-platform-admin`, `mcp-client-claude-code` | admin platformy |
-| `mallory` | brak | brak uprawnień |
+| `alice` | `mcp-jira-read`, `mcp-jira-write`, `mcp-jira-destructive`, `mcp-jira-proj-ABC`, `mcp-confluence-read`, `mcp-confluence-space-ENG`, `mcp-gitlab-read`, `mcp-gitlab-write`, `mcp-gitlab-grp-team-a`, `mcp-opensearch-read`, `mcp-opensearch-idx-logs-team-a`, `mcp-servicedesk-read`, `mcp-servicedesk-write`, `mcp-servicedesk-queue-IT`, `mcp-client-claude-code` | main demo path |
+| `bob` | `mcp-jira-read`, `mcp-jira-proj-ABC`, `mcp-opensearch-read`, `mcp-opensearch-idx-logs-team-a`, `mcp-servicedesk-read`, `mcp-servicedesk-queue-FIN`, `mcp-client-claude-code` | read only |
+| `carol` | `mcp-platform-admin`, `mcp-client-claude-code` | platform admin |
+| `mallory` | none | no permissions |
 
-Adresy e-mail `<login>@corp.test`. Grupy bez użytkowników, przygotowane do testów zakresów:
+E-mail addresses are `<login>@corp.test`. Groups without users, prepared for scope tests:
 `mcp-jira-proj-DEF`, `mcp-jira-proj-HR`, `mcp-confluence-write`, `mcp-opensearch-idx-logs-team-b`.
 
-Czasy sesji realmu: token dostępu 15 min (`accessTokenLifespan` 900), sesja SSO wygasa po 8 h bezczynności
-(`ssoSessionIdleTimeout` 28800) i najpóźniej po 24 h od logowania (`ssoSessionMaxLifespan` 86400). Wcześniej było
-1 h i 10 h, więc przerwa w ciągu dnia wymuszała ponowne logowanie. Step-up (poziom `mfa`, kod OTP) nie zależy od tych
-wartości: poziom 2 ma `loa-max-age` 0, a BFF wysyła `max_age=0`, więc każdy step-up pyta o hasło i OTP od nowa.
-Poziom 1 (samo hasło) ma `loa-max-age` 86400 (24 h, było 36000), żeby nie skracał sesji poniżej `ssoSessionMaxLifespan`: patrz `docs/m5.md`, sekcja o sesjach.
+Realm session times: access token 15 min (`accessTokenLifespan` 900), SSO session expires after 8 h idle
+(`ssoSessionIdleTimeout` 28800) and at the latest 24 h after login (`ssoSessionMaxLifespan` 86400). Earlier the values were
+1 h and 10 h, so a break during the day forced a new login. Step-up (level `mfa`, OTP code) does not depend on these
+values: level 2 has `loa-max-age` 0 and the BFF sends `max_age=0`, so every step-up asks for the password and OTP again.
+Level 1 (password only) has `loa-max-age` 86400 (24 h, was 36000) so that it does not shorten the session below `ssoSessionMaxLifespan`; see the section on sessions in `docs/m5.md`.
 
-Claim `groups` zawiera nazwy bez ścieżki (`mcp-jira-read`, nie `/mcp-jira-read`): mapper
-`oidc-group-membership-mapper` z `full.path=false` (CC-007) w client scope `groups`.
+The `groups` claim contains names without a path (`mcp-jira-read`, not `/mcp-jira-read`): the mapper
+`oidc-group-membership-mapper` with `full.path=false` in the client scope `groups`.
 
-## Klienci OIDC
+## OIDC clients
 
-| Klient | Typ | Przepływy | Uwagi |
+| Client | Type | Flows | Notes |
 | --- | --- | --- | --- |
-| `claude-code` | public | authorization code + PKCE S256 (wymuszone) | redirect `http://localhost:33418/callback` i `http://127.0.0.1:33418/callback`; zawsze `aud=mcp-gateway`; bez ROPC |
-| `mcp-gateway` | confidential | tylko token exchange | wymienia token z `aud=mcp-gateway` wyłącznie na `mcp-credential-broker` (`subjectToken` dla `resolve`, C4) |
-| `mcp-portal-bff` | confidential | authorization code (+PKCE), token exchange | redirect `http://localhost:18090/api/v1/auth/callback` i `http://localhost:18740/api/v1/auth/callback` (dokładne adresy); wymiana na `mcp-credential-broker` albo `mcp-gateway-admin` |
-| `mcp-credential-broker` | confidential | tylko token exchange | `aud` tokenów C4; wymienia `subjectToken` (aud brokera) na `opensearch` dla systemów typu `token-exchange` |
-| `mcp-gateway-admin` | confidential | brak | tylko jako `aud` |
-| `opensearch` | confidential | brak | tylko jako `aud` (typ poświadczenia `token-exchange`) |
+| `claude-code` | public | authorization code + PKCE S256 (enforced) | redirect `http://localhost:33418/callback` and `http://127.0.0.1:33418/callback`; always `aud=mcp-gateway`; no ROPC |
+| `mcp-gateway` | confidential | token exchange only | exchanges a token with `aud=mcp-gateway` only for `mcp-credential-broker` (`subjectToken` for `resolve`, broker contract) |
+| `mcp-portal-bff` | confidential | authorization code (+PKCE), token exchange | redirect `http://localhost:18090/api/v1/auth/callback` and `http://localhost:18740/api/v1/auth/callback` (exact addresses); exchanges for `mcp-credential-broker` or `mcp-gateway-admin` |
+| `mcp-credential-broker` | confidential | token exchange only | `aud` of broker-contract tokens; exchanges `subjectToken` (broker aud) for `opensearch` for systems of type `token-exchange` |
+| `mcp-gateway-admin` | confidential | none | used only as `aud` |
+| `opensearch` | confidential | none | used only as `aud` (credential type `token-exchange`) |
 
-Sekrety klientów: `KC_CLIENT_*_SECRET` w `.secrets/dev.env`.
+Client secrets: `KC_CLIENT_*_SECRET` in `.secrets/dev.env`.
 
-Token `claude-code` zawiera `iss`, `sub`, `aud`, `exp`, `iat`, `azp`, `preferred_username`, `groups`,
-`acr`, `auth_time` (C1); czas życia 15 min. Client scope `roles` nie jest przypisany, więc w tokenie nie ma
-`realm_access` ani `aud=account`.
+The `claude-code` token contains `iss`, `sub`, `aud`, `exp`, `iat`, `azp`, `preferred_username`, `groups`,
+`acr`, `auth_time` (identity contract); lifetime 15 min. The client scope `roles` is not assigned, so the token has no
+`realm_access` and no `aud=account`.
 
 ## Token exchange (standard, RFC 8693)
 
-Łańcuch wymian zgodny z C4: gateway wymienia token klienta AI na `aud=mcp-credential-broker` i przekazuje go
-w `resolve` jako `subjectToken`; dopiero broker wymienia go na audience systemu docelowego (`opensearch`).
-BFF wymienia swój token sesji na `mcp-credential-broker` albo `mcp-gateway-admin`.
+The exchange chain follows the broker contract: the gateway exchanges the AI client token for `aud=mcp-credential-broker` and passes it
+in `resolve` as `subjectToken`; only the broker exchanges it for the audience of the target system (`opensearch`).
+The BFF exchanges its session token for `mcp-credential-broker` or `mcp-gateway-admin`.
 
-| Wymieniający | Token wejściowy | Dozwolone `audience` |
+| Exchanging client | Input token | Allowed `audience` |
 | --- | --- | --- |
 | `mcp-gateway` | `claude-code` (`aud=mcp-gateway`) | `mcp-credential-broker` |
-| `mcp-portal-bff` | własny token sesji | `mcp-credential-broker`, `mcp-gateway-admin` |
+| `mcp-portal-bff` | its own session token | `mcp-credential-broker`, `mcp-gateway-admin` |
 | `mcp-credential-broker` | `aud=mcp-credential-broker` | `opensearch` |
 
-Audience docelowe są w opcjonalnych client scope'ach (`mcp-credential-broker-audience`,
-`mcp-gateway-admin-audience`, `opensearch-audience`). Zwykły token logowania ich nie ma; wymiana musi podać
-i `audience`, i odpowiadający scope:
+Target audiences are in optional client scopes (`mcp-credential-broker-audience`,
+`mcp-gateway-admin-audience`, `opensearch-audience`). A regular login token does not have them; the exchange must pass
+both `audience` and the matching scope:
 
 ```bash
 curl -s http://localhost:18080/realms/corp/protocol/openid-connect/token \
@@ -66,34 +66,34 @@ curl -s http://localhost:18080/realms/corp/protocol/openid-connect/token \
   -d audience=mcp-credential-broker -d scope=mcp-credential-broker-audience
 ```
 
-Bez `scope` Keycloak 26.8 odpowiada `Requested audience not available`. Wynik: `aud=mcp-credential-broker`,
-ten sam `sub`, `azp` = klient wymieniający. Sprawdzane w `make smoke`:
+Without `scope`, Keycloak 26.8 answers `Requested audience not available`. Result: `aud=mcp-credential-broker`,
+the same `sub`, `azp` = the exchanging client. Checked in `make smoke`:
 
-- działa: gateway -> broker, BFF -> broker, broker (token od gateway'a) -> `opensearch`;
-- odmowa: gateway -> `opensearch`, gateway -> `mcp-gateway-admin`, gateway z tokenem brokera -> `opensearch`,
-  `claude-code` (klient publiczny) -> cokolwiek, BFF z tokenem `claude-code`, BFF z tokenem wydanym gateway'owi,
-  `claude-code` proszący o scope brokera przy logowaniu;
-- wymiana przez gateway bez `audience` daje token bez żadnego audience komponentu (bezużyteczny dla odbiorców).
+- works: gateway -> broker, BFF -> broker, broker (token from the gateway) -> `opensearch`;
+- denied: gateway -> `opensearch`, gateway -> `mcp-gateway-admin`, gateway with the broker token -> `opensearch`,
+  `claude-code` (public client) -> anything, BFF with a `claude-code` token, BFF with a token issued to the gateway,
+  `claude-code` asking for the broker scope at login;
+- an exchange by the gateway without `audience` gives a token without any component audience (useless for recipients).
 
-Anonimowa dynamiczna rejestracja klientów jest zablokowana jawnie: realm deklaruje politykę "Trusted Hosts"
-z pustą listą hostów (`components` w `realm-corp.json`).
+Anonymous dynamic client registration is blocked explicitly: the realm declares the "Trusted Hosts" policy
+with an empty host list (`components` in `realm-corp.json`).
 
-## Mock Jiry: PAT i tożsamości (C4.1)
+## Jira mock: PATs and identities
 
-| `Authorization` | `GET /rest/api/2/myself` zwraca `name` |
+| `Authorization` | `GET /rest/api/2/myself` returns `name` |
 | --- | --- |
 | `Bearer alice-pat` / `bob-pat` / `carol-pat` / `mallory-pat` | `alice` / `bob` / `carol` / `mallory` |
-| `Bearer test-only-jira-pat-0000000000000000` | `jkowalski` (wartość ze stuba `resolve` w `mcp-contracts`) |
-| inny `Bearer ...` | `someone-else` (do testu `identity_mismatch`) |
-| brak | `401` |
+| `Bearer test-only-jira-pat-0000000000000000` | `jkowalski` (value from the `resolve` stub in `mcp-contracts`) |
+| any other `Bearer ...` | `someone-else` (for the `identity_mismatch` test) |
+| none | `401` |
 
-Dane: projekty `ABC`, `DEF`, `HR` (kategoria `Restricted`); zgłoszenia `ABC-1` (linki do `HR-1` i `DEF-1`),
-`ABC-2`, `DEF-1`, `DEF-5`, `HR-1`; `ABC-3` przeniesione do `DEF` (odpowiedź z kluczem `DEF-5`);
-`/rest/api/2/search` (GET i POST) rozpoznaje `project = ABC|DEF|HR` w JQL. Endpointy danych wymagają
-jednego ze znanych PAT z tabeli. Każde inne poświadczenie, w tym token z Keycloaka (token passthrough,
-niezmiennik 2), cudzy PAT i `Basic`, dostaje `401`. `make jira-auth` pokazuje z dziennika żądań mocka (admin API z hasłem z `.secrets/dev.env`), jakie
-poświadczenie dotarło do Jiry (nazwa znanego PAT, oznaczony JWT z `iss`/`aud`, inne tylko długością).
-Mock nie sprawdza uprawnień per użytkownik.
+Data: projects `ABC`, `DEF`, `HR` (category `Restricted`); issues `ABC-1` (links to `HR-1` and `DEF-1`),
+`ABC-2`, `DEF-1`, `DEF-5`, `HR-1`; `ABC-3` moved to `DEF` (the response carries the key `DEF-5`);
+`/rest/api/2/search` (GET and POST) recognizes `project = ABC|DEF|HR` in JQL. Data endpoints require
+one of the known PATs from the table. Every other credential, including a Keycloak token (token passthrough,
+invariant 2), a foreign PAT and `Basic`, gets `401`. `make jira-auth` shows from the mock request log (admin API with the password from `.secrets/dev.env`) which
+credential reached Jira (the name of a known PAT, a marked JWT with `iss`/`aud`, others only by length).
+The mock does not check per-user permissions.
 
-M3: `alice`, `bob` i `carol` mają OTP logowania (poziom `acr` `mfa`, patrz [m3.md](m3.md)); `mallory` nie. `alice` ma `mcp-jira-destructive`
-(bez niej `delete_issue` kończy się odmową Cedar przed kodem TOTP), `bob` nie (scenariusz odmowy).
+M3: `alice`, `bob` and `carol` have a login OTP (`acr` level `mfa`, see [m3.md](m3.md)); `mallory` does not. `alice` has `mcp-jira-destructive`
+(without it `delete_issue` ends with a Cedar denial before the TOTP code), `bob` does not (the denial scenario).

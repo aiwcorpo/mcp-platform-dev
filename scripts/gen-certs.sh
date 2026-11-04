@@ -18,9 +18,9 @@ gateway_name="${MCP_GATEWAY_INTERNAL_TLS_NAME:-$(env_value MCP_GATEWAY_INTERNAL_
 mkdir -p "$certs"
 
 # <name>:<role>:<tls name>. CN=<name> is what the broker and gateway check on clients (C4: mcp-gateway,
-# mcp-portal-bff, mcp-offboarding; C5: mcp-registry-ci-<serverId>, one certificate per MCP server, CC-161).
+# mcp-portal-bff, mcp-offboarding; C5: mcp-registry-ci-<serverId>, one certificate per MCP server).
 # <tls name> is the server name clients verify:
-# <serverId>.internal for MCP servers (C5), configuration for the broker and gateway (CC-035).
+# <serverId>.internal for MCP servers (C5), configuration for the broker and gateway.
 # mcp-bulk is the stand-in of profile bulk (it answers to the name of mcp-confluence, whose identity it takes); mcp-e2e-stub, mcp-e2e-broker and e2e-prod-idp belong to profile e2e-prod and carry the
 # names of the components they stand in for (mcp-jira.internal, the broker name), in a network of their own.
 # Roles: server = serverAuth, client = clientAuth, both. Only server certificates get localhost in SAN,
@@ -101,7 +101,7 @@ for spec in "$@"; do
   [ -f "$name/tls.crt" ] || issue ca "$name" "$role" "$tls_name" "$name"
 done
 
-# The shared CN of M3 (C5 before 4.0.0): the gateway answers 403 to it since CC-161, which the M4 checks verify. Never
+# The shared CN of M3 (C5 before 4.0.0): the gateway answers 403 to it since contracts 4.0.0, which the M4 checks verify. Never
 # mounted into any container.
 [ -f legacy/mcp-registry-ci/tls.crt ] || issue ca mcp-registry-ci client "" legacy/mcp-registry-ci
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Profile adapter on the main stack: the Jira demo through the adapter of ws-13 in place of the native mcp-jira, READ ONLY (get_issue, search,
+# Profile adapter on the main stack: the Jira demo through the adapter in place of the native mcp-jira, READ ONLY (get_issue, search,
 # get_all_projects, get_transitions). Never part of `make up*`. Changes what every user of the stack sees while it lasts.
 #
 #   scripts/adapter.sh status          what runs now (nothing is changed)

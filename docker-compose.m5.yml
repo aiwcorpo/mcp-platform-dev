@@ -6,7 +6,7 @@
 #   - the gateway instances share the keys of the internal JWT (scripts/gen-c2-keys.sh) and have MCP_TOOLS_LIST_TIMEOUT;
 #   - the policy bundle server logs downloads on stdout (policies/nginx.m5.conf);
 #   - the proxy serves /mcp and routes to gateway-lb, without /v/ (proxy/m5/);
-#   - artifact services of D12 (package server, image registry) in the network "ci", started apart: make m5-artifacts.
+#   - artifact services (package server, image registry) in the network "ci", started apart: make m5-artifacts.
 # Redis (one instance) and PostgreSQL stay shared by both instances of each component. Ports of new services: m5.env.
 
 # A container limit plus a heap that fits in it: the JVM exits on its own out-of-memory error (ExitOnOutOfMemoryError, the
@@ -18,13 +18,13 @@ x-jvm-limit-environment: &jvm-limit-environment
 # The gateway image sets its own heap and exit flags on the command line of the entry point (-XX:MaxRAMPercentage=75 in the m5-b2e25ae image,
 # -XX:+ExitOnOutOfMemoryError), which win over JAVA_TOOL_OPTIONS, so nothing is set here for it.
 x-gateway-m5-environment: &gateway-m5-environment
-  # Keys (user, reason, target) kept by the audit throttle of repeated refusals, per user and reason (contracts 5.1.0, CC-191).
+  # Keys (user, reason, target) kept by the audit throttle of repeated refusals, per user and reason (contracts 5.1.0).
   MCP_AUDIT_THROTTLE_MAX_TARGETS_PER_USER: ${MCP_AUDIT_THROTTLE_MAX_TARGETS_PER_USER:-50}
-  # Time limit of one tools/list read per MCP server (milliseconds; contracts 5.1.0, CC-180).
+  # Time limit of one tools/list read per MCP server (milliseconds; contracts 5.1.0).
   MCP_TOOLS_LIST_TIMEOUT: ${MCP_TOOLS_LIST_TIMEOUT:-3000}
   MCP_INTERNAL_JWT_KEYS_FILE: /run/c2/jwks.json
   MCP_INTERNAL_JWT_ACTIVE_KID: stack-c2-1
-  # Key of the tools/list cursor (HMAC, CC-181): a cursor issued by one instance must be read by the other.
+  # Key of the tools/list cursor (HMAC): a cursor issued by one instance must be read by the other.
   MCP_LIST_CURSOR_KEY: ${MCP_LIST_CURSOR_KEY:?run make secrets}
 
 # Copy of docker-compose.m4.yml for the second broker (the M4 layer only knows the service mcp-credential-broker);
@@ -176,7 +176,7 @@ services:
       - ./proxy/m5/routes.conf:/etc/nginx/routes.conf:ro
       - ./proxy/m5/to-gateway.conf:/etc/nginx/to-gateway.conf:ro
 
-  # ---- D12: artifacts in dev. Start with `make m5-artifacts` (touches only these two services).
+  # ---- artifacts in dev. Start with `make m5-artifacts` (touches only these two services).
 
   packages:
     profiles: [ci]

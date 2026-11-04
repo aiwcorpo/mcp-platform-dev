@@ -2,7 +2,7 @@
 services:
   mcp-credential-broker:
     environment:
-      # Dev mode needs both consents (CC-137): the profile and MCP_ALLOW_TEST_KEYS. Never outside mcp-platform-dev.
+      # Dev mode needs both consents: the profile and MCP_ALLOW_TEST_KEYS. Never outside mcp-platform-dev.
       SPRING_PROFILES_ACTIVE: devstack
       MCP_ALLOW_TEST_KEYS: "true"
       # OpenSearch: token-exchange (RFC 8693) with the client of the broker; BASEURL is required by the schema, not called.

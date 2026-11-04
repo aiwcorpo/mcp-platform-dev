@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Plays the registry pipeline of each MCP server (C5, CC-133, CC-161): PUT /admin/v1/registry/servers/<serverId> with the manifest
+# Plays the registry pipeline of each MCP server (C5): PUT /admin/v1/registry/servers/<serverId> with the manifest
 # built from the commit of the server repository (mcp-app/target/mcp-manifest.json, an artifact of the build, never a manifest fetched
 # from the running server) and the certificate of THAT server, CN=mcp-registry-ci-<serverId>.
 #   make registry-register                       all five servers, manifests from ../mcp-server-<name>/mcp-app/target/mcp-manifest.json

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""M4 infrastructure checks (mcp-contracts 4.0.0, migration of ws-01).
+"""M4 infrastructure checks (mcp-contracts 4.0.0, migration of the environment).
 
   m4.py run
   m4.py wait-bundle SECONDS      wait until the latest main bundle verifies with the key the gateway is given
 
-Part 1 runs on any stack, M3 or M4, and changes nothing: per-server CI certificates and key permissions, dev- policy keys (ws-09),
+Part 1 runs on any stack, M3 or M4, and changes nothing: per-server CI certificates and key permissions, dev- policy keys,
 token exchange to aud=opensearch against the OpenSearch mock, the service-account key against the Service Desk mock, the OpenBao
 policy of the broker for secret/mcp/service-accounts.
-Part 2 needs the M4 components and is SKIP with the reason "przed przelaczeniem" while the running gateway is not an M4 image:
+Part 2 needs the M4 components and is SKIP with the reason "before the switch" while the running gateway is not an M4 image:
 a certificate of a foreign server at the registry (403), offboarding (IdP, broker purge, gateway purge, repeated), 429 with
 Retry-After, the service account reaching Service Desk through the gateway. Part 2 creates and deletes one throw-away user in
 the realm (never alice, bob, carol, mallory) and writes the registry entries of the servers it was given manifests for. It has
@@ -39,7 +39,7 @@ OPENSEARCH = f"http://localhost:{cfg('OPENSEARCH_MOCK_PORT')}"
 SERVICEDESK = f"http://localhost:{cfg('SERVICEDESK_MOCK_PORT')}"
 POLICIES = f"http://localhost:{cfg('POLICIES_PORT')}"
 SERVERS = ("mcp-jira", "mcp-confluence", "mcp-gitlab", "mcp-servicedesk", "mcp-opensearch")
-BEFORE_SWITCH = "przed przelaczeniem"
+BEFORE_SWITCH = "before the switch"
 
 
 def compose_config():
@@ -100,13 +100,13 @@ def check_dev_keys():
     for name in ("dev-policies-main", "dev-policies-overrides"):
         public = keys / f"{name}.public.pem"
         text = subprocess.run(["openssl", "pkey", "-pubin", "-in", str(public), "-noout", "-text"], capture_output=True, text=True).stdout
-        record(f"keys: {name} (ws-09) is an Ed25519 public key", public.exists() and "ED25519" in text.upper())
+        record(f"keys: {name} is an Ed25519 public key", public.exists() and "ED25519" in text.upper())
     env = compose_config()["services"]["mcp-gateway"]["environment"]
     ids = (env["MCP_POLICY_MAIN_KEY_ID"], env["MCP_POLICY_OVERRIDES_KEY_ID"])
     if all(i.startswith("dev-") for i in ids):
-        record("keys: the gateway of the compose file uses the dev- policy keys (CC-137)", all((keys / f"{i}.public.pem").exists() for i in ids), ", ".join(ids))
+        record("keys: the gateway of the compose file uses the dev- policy keys", all((keys / f"{i}.public.pem").exists() for i in ids), ", ".join(ids))
     else:
-        skip("keys: the gateway of the compose file uses the dev- policy keys (CC-137)", f"{BEFORE_SWITCH}: compose still has {', '.join(ids)}; make m4-switch sets POLICY_KEY_*_ID")
+        skip("keys: the gateway of the compose file uses the dev- policy keys", f"{BEFORE_SWITCH}: compose still has {', '.join(ids)}; make m4-switch sets POLICY_KEY_*_ID")
 
 
 def verify_signature(public_pem, data, signature):
@@ -133,7 +133,7 @@ def check_bundle_signature():
     _, _, sig = http("GET", f"{POLICIES}/policies/main/{latest['sigUrl']}")
     ok = verify_signature(mount, archive, sig)
     record(f"policies: the latest main bundle ({latest.get('revision')}) verifies with the key the gateway is given ({key_id})", ok,
-           "" if ok else "the bundle pipeline of ws-09 must sign with the key of that id")
+           "" if ok else "the bundle pipeline of the policies repo must sign with the key of that id")
 
 
 def bao(method, path, token, body=None):
@@ -192,7 +192,7 @@ def check_token_exchange():
     claims = mcpdev.decode_jwt(opensearch_token)
     audience = claims.get("aud")
     audiences = audience if isinstance(audience, list) else [audience]
-    record("token exchange: broker token -> aud=opensearch, same sub, exp in the future (expiresAt of resolve, CC-157)",
+    record("token exchange: broker token -> aud=opensearch, same sub, exp in the future (expiresAt of resolve)",
            "opensearch" in audiences and claims.get("sub") == sub and claims.get("exp", 0) > time.time() and claims.get("azp") == "mcp-credential-broker",
            f"aud={audience} azp={claims.get('azp')}")
     record("token exchange: lifetime of the opensearch token is at most 60 min (the token of the client C1 sets the window)",
@@ -324,7 +324,7 @@ def check_rate_limit():
                 seen = (headers.get("Retry-After"), raw.decode(errors="replace"))
                 break
         if seen is None:
-            skip(name, "no 429 in 400 requests: the limit of the gateway is not configured for this stack (ws-05)")
+            skip(name, "no 429 in 400 requests: the limit of the gateway is not configured for this stack")
         else:
             record(name, bool(seen[0]) and seen[0].isdigit() and "rate_limited" in seen[1], f"Retry-After {seen[0]}")
 

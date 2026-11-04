@@ -364,7 +364,7 @@ services:
       servers:
         aliases: [opensearch.internal]
 
-  # Policy bundle server (ws-09 publishes into POLICY_REPOSITORY_DIR, read-only here). In both networks: the
+  # Policy bundle server (the policies repo publishes into POLICY_REPOSITORY_DIR, read-only here). In both networks: the
   # gateway pulls from core, MCP servers (starter) from servers.
   policies:
     image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
@@ -459,7 +459,7 @@ services:
       timeout: 3s
       retries: 30
 
-  # ---- Platform components (profile "full"). Images are built by ws-05, ws-06, ws-04.
+  # ---- Platform components (profile "full"). Images are built in the component repositories.
   # Environment below is what this environment provides; each component maps it to its own config.
   # See docs/integracja.md.
 
@@ -499,7 +499,7 @@ services:
       MCP_TLS_STORE_PASSWORD: ${TLS_STORE_PASSWORD:?run make secrets}
       MCP_TLS_KEYSTORE: /certs/mcp-gateway/keystore.p12
       MCP_TLS_TRUSTSTORE: /certs/ca/truststore.p12
-      # Policy bundles (C7) pulled from the bundle server; dev keys of ws-09 (test-*) are accepted only with the flag.
+      # Policy bundles (C7) pulled from the bundle server; dev keys of the policies repo (test-*) are accepted only with the flag.
       MCP_POLICY_MAIN_URL: http://policies.internal:8080/policies/main/
       MCP_POLICY_OVERRIDES_URL: http://policies.internal:8080/policies/overrides/
       MCP_POLICY_MAIN_KEY_ID: ${POLICY_KEY_MAIN_ID}
@@ -566,7 +566,7 @@ services:
       MCP_PORTAL_URL: https://localhost:${PROXY_TLS_PORT}
       # Dev only: OpenBao and the Jira mock speak plain http here; the broker requires https otherwise.
       MCP_ALLOW_PLAIN_HTTP: "true"
-      # Systems beyond Jira (mocks of this stack, plain http). GitLab: "Polacz przez OAuth"; the browser opens the
+      # Systems beyond Jira (mocks of this stack, plain http). GitLab: "Connect through OAuth"; the browser opens the
       # authorize URL on the published port of the mock, the broker calls token and whoami inside the network.
       BROKER_SYSTEMS_CONFLUENCE_BASEURL: http://confluence.internal:8080
       BROKER_SYSTEMS_CONFLUENCE_ADAPTER: atlassian-dc
@@ -634,7 +634,7 @@ services:
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/${POLICY_KEY_MAIN_ID}.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
-      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) for
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of the policies repo (test-*) for
       # policy bundles and nothing else; it logs a warning at every start and sets the metric mcp_server_devstack_active
       # (the C6 manifest has no field for the environment). The gateway signs the internal JWT with ephemeral keys, so
       # INTERNAL_JWT_ALLOW_TEST_KEYS is not set. Never set outside mcp-platform-dev.
@@ -793,7 +793,7 @@ services:
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/${POLICY_KEY_MAIN_ID}.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
-      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) for
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of the policies repo (test-*) for
       # policy bundles and nothing else; it logs a warning at every start and sets the metric mcp_server_devstack_active
       # (the C6 manifest has no field for the environment). The gateway signs the internal JWT with ephemeral keys, so
       # INTERNAL_JWT_ALLOW_TEST_KEYS is not set. Never set outside mcp-platform-dev.
@@ -835,7 +835,7 @@ services:
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/${POLICY_KEY_MAIN_ID}.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
-      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) for
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of the policies repo (test-*) for
       # policy bundles and nothing else; it logs a warning at every start and sets the metric mcp_server_devstack_active
       # (the C6 manifest has no field for the environment). The gateway signs the internal JWT with ephemeral keys, so
       # INTERNAL_JWT_ALLOW_TEST_KEYS is not set. Never set outside mcp-platform-dev.
@@ -876,7 +876,7 @@ services:
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/${POLICY_KEY_MAIN_ID}.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
-      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) for
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of the policies repo (test-*) for
       # policy bundles and nothing else; it logs a warning at every start and sets the metric mcp_server_devstack_active
       # (the C6 manifest has no field for the environment). The gateway signs the internal JWT with ephemeral keys, so
       # INTERNAL_JWT_ALLOW_TEST_KEYS is not set. Never set outside mcp-platform-dev.
@@ -917,7 +917,7 @@ services:
       MCP_POLICY_PUBLIC_KEY_FILE: /keys/${POLICY_KEY_MAIN_ID}.public.pem
       MCP_POLICY_STATE_DIR: /app/state
       AIWCORPO_MCP_PLATFORM_POLICY_SSL_BUNDLE: mcp-internal-ca
-      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of ws-09 (test-*) for
+      # Starter profile for this stack only (not dev, which a container refuses): allows the dev key of the policies repo (test-*) for
       # policy bundles and nothing else; it logs a warning at every start and sets the metric mcp_server_devstack_active
       # (the C6 manifest has no field for the environment). The gateway signs the internal JWT with ephemeral keys, so
       # INTERNAL_JWT_ALLOW_TEST_KEYS is not set. Never set outside mcp-platform-dev.

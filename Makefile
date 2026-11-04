@@ -110,7 +110,7 @@ users: ## test users and their generated passwords (NOT FOR PRODUCTION)
 	@grep -E '^KC_USER_[A-Z]+_PASSWORD=' .secrets/dev.env | sed -E 's/^KC_USER_([A-Z]+)_PASSWORD=/\1 /' | tr 'A-Z' 'a-z' | awk '{printf "  %-8s %s\n", $$1, $$2}'
 	@echo '  (OTP of the test users: make otp USER=alice prints the current code, never the seed; admin console: make admin-password)'
 
-images-m2: ## build the images of profile m2 (portal BFF and web, MCP servers of ws-04) from HEAD of the sibling repos
+images-m2: ## build the images of profile m2 (portal BFF and web, MCP servers) from HEAD of the sibling repos
 	@./scripts/build-images-m2.sh
 
 # Compose recreates exactly the services whose configuration or image changed; m2-sync then applies what lives

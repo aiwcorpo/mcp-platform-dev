@@ -136,7 +136,7 @@ with mcpdev.TempUser(["mcp-client-claude-code", "mcp-jira-read", "mcp-jira-write
     check("probe user: required C1 claims present",
           all(k in claims for k in ("iss", "sub", "aud", "exp", "iat", "azp", "preferred_username", "groups")))
     groups = claims.get("groups", [])
-    check("probe user: groups without path (CC-007)", groups and not any(g.startswith("/") for g in groups), str(groups))
+    check("probe user: groups without path", groups and not any(g.startswith("/") for g in groups), str(groups))
     check("probe user: jira read/write + proj-ABC", {"mcp-jira-read", "mcp-jira-write", "mcp-jira-proj-ABC"} <= set(groups), str(groups))
     check("probe user: token lifetime <= 60 min", claims["exp"] - claims["iat"] <= 3600)
 
@@ -367,7 +367,7 @@ if WRITE:
         urllib.request.urlopen(urllib.request.Request(f"{JIRA}/__admin/mappings/{probe_id}", headers=admin, method="DELETE"))
     check("Jira mock refuses to proxy to the core network", status != 200 and "keycloak" not in body.lower(), f"{status} {body[:120]}")
 
-print("== certificates (C3, C4, C5, CC-035)")
+print("== certificates (C3, C4, C5)")
 certs = ROOT / "certs"
 expectations = {
     "mcp-jira": ("mcp-jira.internal", "TLS Web Server Authentication", "TLS Web Client Authentication"),
