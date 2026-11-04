@@ -11,8 +11,8 @@ tokens, do token exchange and store personal access tokens through the broker AP
 All passwords, client secrets and keys are generated on the first run into `.secrets/` and `certs/` (both git-ignored).
 They are test material only, **NOT FOR PRODUCTION**.
 
-Documentation of the platform lives in the `mcp-docs` repository. The notes in `docs/` and `STATUS.md` of this
-repository are working notes in Polish.
+Documentation of the platform lives in the `mcp-docs` repository. The notes in `docs/` are in English; `STATUS.md` of this
+repository is a working log in Polish.
 
 ## Requirements
 
@@ -130,9 +130,9 @@ credential from the broker. To switch the user in Claude Code: `/mcp`, `jira`, `
 - [docs/integracja.md](docs/integracja.md): how to connect the gateway, broker, MCP server, portal and the end-to-end tests
 - [docs/claude-code.md](docs/claude-code.md): connecting Claude Code to the local gateway
 - [docs/m4.md](docs/m4.md), [docs/m5.md](docs/m5.md), [docs/m6.md](docs/m6.md): per-layer setup and switches
-- [STATUS.md](STATUS.md): working status
+- [STATUS.md](STATUS.md): working log (in Polish)
 
-These files are in Polish. The platform documentation in English is in `mcp-docs`.
+The platform documentation is in `mcp-docs`.
 
 ## Layout
 
