@@ -1,4 +1,6 @@
-# Thin wrapper: all logic is in ci/run.sh. Image of ci/Dockerfile (build it on the runner or push it and change the name).
+# Thin wrapper: all logic is in ci/run.sh. The steps run on the hosted ubuntu-24.04 runner, which has the tools of ci/Dockerfile
+# (bash, git, make, jq, curl, openssl, shellcheck, Python 3.12, Docker with the compose plugin); the image of ci/Dockerfile is
+# for the GitLab and Jenkins wrappers and for a local run.
 # No secrets are referenced and the token is read-only. The Docker socket is given to pushes to main only; pull requests
 # run the static job alone.
 name: ci
@@ -11,33 +13,39 @@ permissions: {}
 
 jobs:
   static:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
-    container:
-      image: mcp-ci:local
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Tools of ci/Dockerfile are present
+        run: |
+          for tool in bash git make jq curl openssl shellcheck python3; do
+            command -v "$tool" >/dev/null || { echo "missing tool: $tool" >&2; exit 1; }
+          done
+          python3 --version
       - run: ci/run.sh lint mocks compose style
 
   docker-tests:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: ci-main
     timeout-minutes: 45
     permissions:
       contents: read
-    container:
-      image: mcp-ci:local
-      volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
     env:
       CI_REQUIRE_DOCKER: "1"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Tools of ci/Dockerfile are present
+        run: |
+          for tool in bash git make jq curl openssl shellcheck python3 docker; do
+            command -v "$tool" >/dev/null || { echo "missing tool: $tool" >&2; exit 1; }
+          done
+          docker compose version
       - run: ci/run.sh unit proxy lb start
