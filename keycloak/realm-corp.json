@@ -1036,6 +1036,39 @@
       ]
     },
     {
+      "clientId": "claude-ai",
+      "name": "Claude Desktop and claude.ai (AI client)",
+      "description": "Public client with a fixed client_id for the custom connector (\"Use your own OAuth client\"), authorization code + PKCE S256 only. Redirect URI is fixed by Anthropic.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": false,
+      "fullScopeAllowed": false,
+      "redirectUris": [
+        "https://claude.ai/api/mcp/auth_callback"
+      ],
+      "webOrigins": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "-"
+      },
+      "defaultClientScopes": [
+        "basic",
+        "profile",
+        "email",
+        "acr",
+        "groups",
+        "mcp-gateway-audience"
+      ],
+      "optionalClientScopes": [
+        "offline_access"
+      ]
+    },
+    {
       "clientId": "mcp-gateway",
       "name": "mcp-gateway",
       "enabled": true,
