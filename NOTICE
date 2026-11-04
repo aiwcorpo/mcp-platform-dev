@@ -1,0 +1,11 @@
+Copyright 2026 aiwcorpo
+
+This product includes software developed at aiwcorpo (https://github.com/aiwcorpo).
+
+mcp-platform-dev is a local development and test environment, not a product. Everything it generates (passwords,
+client secrets, keys, certificates, the internal CA, the OpenBao unseal key and root token) is for local runs only.
+The users alice, bob, carol and mallory, the mock systems and the stand-in services are worked examples.
+Never reuse any of this material outside a development machine.
+
+It pulls third-party container images (Keycloak, OpenBao, Redis, PostgreSQL, nginx, WireMock and others) that are not
+part of this repository and keep their own licenses.

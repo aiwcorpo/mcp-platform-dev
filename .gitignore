@@ -6,3 +6,11 @@
 __pycache__/
 .DS_Store
 __pycache__/
+*.log
+*.bak
+*.tar
+*.tgz
+*.tar.gz
+*.zip
+/reports/
+/results/

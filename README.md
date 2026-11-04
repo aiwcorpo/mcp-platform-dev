@@ -1,155 +1,151 @@
 # mcp-platform-dev
 
-Lokalne środowisko platformy MCP (strumień ws-01): Keycloak z realmem `corp`, OpenBao, Redis, PostgreSQL,
-mock Jiry, stuby kontraktowe brokera (C4) i API admina gateway'a (C5), wewnętrzne CA z certyfikatami mTLS
-oraz skrypty: token użytkownika, token exchange, zapis PAT przez API brokera.
+A local development and test environment for the MCP platform. It is a tool for people who work on or evaluate the
+platform on one machine, not a product and not a deployment recipe. License: Apache-2.0.
 
-Wszystkie hasła, sekrety klientów i klucze są generowane przy pierwszym uruchomieniu do `.secrets/` i
-`certs/` (oba w `.gitignore`). Są wyłącznie testowe, **NOT FOR PRODUCTION**.
+It runs Keycloak with the realm `corp`, OpenBao, Redis, PostgreSQL, a Jira mock and mocks of other systems, contract
+stand-ins for the credential broker and the gateway admin API, an internal CA with mTLS certificates, and optionally the
+real gateway, broker, portal and MCP servers from images you build from the sibling repositories. Scripts issue user
+tokens, do token exchange and store personal access tokens through the broker API.
 
-## Wymagania
+All passwords, client secrets and keys are generated on the first run into `.secrets/` and `certs/` (both git-ignored).
+They are test material only, **NOT FOR PRODUCTION**.
 
-- Docker z `docker compose` v2 (sprawdzone na Docker 28.3, Compose 2.39),
-- `make`, `bash`, `python3` >= 3.10 (tylko biblioteka standardowa), `openssl` (tylko `rand`),
-- `git` i repozytorium `mcp-contracts` obok tego (`../mcp-contracts`); stuby C4/C5 są wyciągane z tagu
-  `MCP_CONTRACTS_REF` (teraz `v1.1.0`) przez `git archive` do `out/contracts/`, kopia robocza nie jest używana.
-  Inna ścieżka: `MCP_CONTRACTS_DIR` w `.env`.
+Documentation of the platform lives in the `mcp-docs` repository. The notes in `docs/` and `STATUS.md` of this
+repository are working notes in Polish.
+
+## Requirements
+
+- Linux or macOS. Scripts need bash 3.2 or newer (the macOS default works). On Windows use WSL2 with a Linux
+  distribution and Docker integration, and run `make` and all scripts inside it.
+- Docker with `docker compose` v2 (tested with Docker 28.3 and Compose 2.39). About 2.1 GB of images after unpacking
+  (Keycloak 0.75 GB); the first pull depends on your connection.
+- `make`, `bash`, `python3` 3.10 or newer (standard library only), `openssl`, `git`.
+- Sibling repository `mcp-contracts` next to this one (`../mcp-contracts`). The contract stand-ins are extracted from
+  the tag `MCP_CONTRACTS_REF` with `git archive` into `out/contracts/`; the working copy is not used. Another location:
+  `MCP_CONTRACTS_DIR` in `.env`.
+- To build component images (`make images`): a JDK 25 with `JAVA_HOME` pointing to it, and node/npm for the web build.
+  The build scripts stop with an error when `JAVA_HOME` is unset or is not a JDK 25.
 
 ## Start
 
 ```bash
-make up        # sekrety + certyfikaty (raz), kontrakty z MCP_CONTRACTS_REF, profil infra; czeka na healthchecki
-make smoke     # testy dymne: tokeny, token exchange, mock Jiry, mTLS, OpenBao, Redis ACL, PostgreSQL, sieci
-make users     # loginy i wygenerowane hasła użytkowników testowych
+make up        # secrets and certificates (once), contracts, profile infra; waits for health checks
+make smoke     # smoke tests: tokens, token exchange, Jira mock, mTLS, OpenBao, Redis ACL, PostgreSQL, networks
+make users     # logins and generated passwords of the test users
 ```
 
-Pierwsze `make up` na maszynie z pobranymi obrazami trwa ok. 20 s; samo pobranie obrazów zależy od łącza
-(ok. 2,1 GB po rozpakowaniu, z czego Keycloak 0,75 GB).
+The first `make up` on a machine with the images already pulled takes about 20 s.
 
-Najczęstsze polecenia:
+Frequent commands:
 
 ```bash
-make claims USER=alice                         # zdekodowany token claude-code (PKCE) - aud, azp, groups
-make token USER=alice                          # sam token (np. do curl -H "Authorization: Bearer ...")
-make exchange USER=alice REQUESTER=mcp-gateway # token exchange do aud=mcp-credential-broker
-make pat USER=alice SYSTEM=jira                # zapis PAT alice-pat przez C4 PUT /v1/connections/jira/secret
-make pat USER=alice BROKER_URL=https://localhost:18100   # to samo na prawdziwym brokerze
-make audit RID=<requestId> [LOGS="a.log b.log"]  # zdarzenia C8 jednego żądania (kontenery + logi komponentów z hosta)
-make jira-auth                                 # jakie poświadczenia dotarły do mocka Jiry
-make m1                                        # scenariusze M1 (F1 A1 A2 A3 A9 A9b A15); A15 robi docker stop/start kontenera brokera (stos bez brokera, dopoki nie zdrowy)
-make images                                    # obrazy gateway, broker, mcp-jira z commitów repozytoriów obok
-make images-m2 | make up-m2                    # M2: proxy (jedna domena), BFF, web, serwery ws-04; docs/m2.md
-make proxy-test | make mocks-test | make m2    # testy proxy, mocków i scenariusz M2; m2 zmienia stan stosu (patrz docs/m2.md)
-make m3 | make otp USER=alice | make reset-authenticator USER=alice | make registry-refresh   # M3 (docs/m3.md): scenariusz Authenticatora (zmienia stan: kasuje Authenticator alice), kod OTP logowania, reset rejestracji, odswiezenie manifestow
-make start-test | make e2e-prod-test           # compose start po usunięciu zadań init (osobny projekt); XH i lista 250 narzędzi na gatewayu profilu e2e-prod (docs/m6.md)
-make openbao-persist-test                      # trwałość OpenBao (dev) na jednorazowej instancji; `make openbao-migrate` to jednorazowe przełączenie działającego stosu (docs/m5.md)
-make m4 | make m4-test | make openbao-test     # M4 (docs/m4.md): kontrole infrastruktury (czesc po przelaczeniu SKIP), testy jednostkowe offboardingu i rejestru, init OpenBao w izolacji
-make offboard USER=<login> [DRY=1]              # IdP (grupy, wylogowanie), purge brokera i gateway'a (CN mcp-offboarding), powtorzone; odmawia kont wspolnych
-make registry-register | make m4-switch         # PUT manifestow certyfikatem kazdego serwera (CC-161); przelaczenie stosu na M4 (CHECK=1: tylko warunki wstepne)
-make trust-ca                                   # drukuje polecenia zaufania do CA https proxy (https://localhost:18745)
-make down | make reset | make clean
+make claims USER=alice                         # decoded token of the claude-code client (PKCE): aud, azp, groups
+make token USER=alice                          # the token alone (for curl -H "Authorization: Bearer ...")
+make exchange USER=alice REQUESTER=mcp-gateway # token exchange to aud=mcp-credential-broker
+make pat USER=alice SYSTEM=jira                # store the PAT alice-pat through the broker API
+make audit RID=<requestId> [LOGS="a.log b.log"]  # audit events of one request (containers and component logs on the host)
+make jira-auth                                 # which credentials reached the Jira mock
+make images                                    # build gateway, broker and mcp-jira images from the sibling repositories
+make layers                                    # read-only: active image layers, schema version, expected vs. running images
+make ps                                        # project containers, also the exited ones
+make trust-ca                                  # print the commands that trust the CA of the https proxy
+make down | make reset | make clean            # stop; reset state; remove generated files
 ```
 
-`make help` wypisuje wszystkie cele.
+`make help` lists every target. Scenario and test targets (`make m1`, `m2`, `m3`, `m4`, `proxy-test`, `mocks-test`,
+`lb-test`, `openbao-persist-test`, `e2e-prod-test` and others) are described in `docs/`. Some of them change the state of
+the stack (restart a container, remove an authenticator); the description says which. Always run compose through `make`
+or `scripts/compose.sh`: the script passes `.env` and `.secrets/dev.env` as `--env-file`, so each service receives only
+its own secrets.
 
-`make ps` pokazuje kontenery projektu (także zakończone). `make smoke` jest TYLKO DO ODCZYTU: sprawdza zdrowie kontenerów, claimy i token exchange na jednorazowym koncie Keycloaka (tworzonym i usuwanym,
-konta alice, bob, carol i mallory tylko czytane przez API admina, nie logowane), mock Jiry, mTLS brokera (odmowy certyfikatów na działającym porcie), OpenBao (AppRole, klucz Transit, audyt),
-ACL Redisa, PostgreSQL, sieci, certyfikaty i narzędzie audytu. Poza kontem jednorazowym zostaje po przebiegu marker purge w Redisie (TTL 30 min) i dwa zdarzenia `admin_change` w audycie. Oczekiwany wynik to 78 linii `PASS` i na końcu `all checks passed` (kod 0); inaczej lista `FAIL` i kod 1.
-Kontrole, które zapisują (klucze Redisa z TTL, ścieżka KV w OpenBao, mapping mocka Jiry, złe hasło, anonimowa rejestracja klienta, POST-y do admin API mocka), są w `make smoke-write CONFIRM=1`.
+`make smoke` is read-only. It checks container health, claims and token exchange on a throw-away Keycloak account
+(created and removed; alice, bob, carol and mallory are only read through the admin API, never logged in), the Jira mock,
+mTLS of the broker (certificate refusals on a running port), OpenBao (AppRole, Transit key, audit), Redis ACLs,
+PostgreSQL, networks, certificates and the audit tool. It leaves a purge marker in Redis (TTL 30 min) and two
+`admin_change` audit events. Expected result: 78 `PASS` lines and `all checks passed` (exit 0); otherwise a list of
+`FAIL` and exit 1. Checks that write (Redis keys with TTL, an OpenBao KV path, a Jira mock mapping, a wrong password, an
+anonymous client registration, POSTs to the mock admin API) run only in `make smoke-write CONFIRM=1`.
 
-## Profile compose
+## Compose profiles
 
-| Profil | Polecenie | Co działa |
+| Profile | Command | What runs |
 | --- | --- | --- |
-| (bez profilu) | `make up-core` | Keycloak, OpenBao (trwały, wolumen `openbao-data`; `openbao-unseal`; jednorazowy `openbao-init`), Redis, PostgreSQL, mock Jiry |
-| `infra` | `make up` | powyższe + stuby WireMock brokera (C4) i API admina gateway'a (C5) z `mcp-contracts` `MCP_CONTRACTS_REF` |
-| `full` | `make up-full` | infrastruktura + `mcp-gateway`, `mcp-credential-broker`, `mcp-jira` z obrazów z `.env`, a gdy włączone są warstwy (niżej), z nadpisujących je plików `m4.env` ... `m6c.env` (`make images` buduje obrazy z commitów repozytoriów obok); stuby są usuwane |
+| (none) | `make up-core` | Keycloak, OpenBao (persistent volume `openbao-data`, `openbao-unseal`, one-shot `openbao-init`), Redis, PostgreSQL, Jira mock |
+| `infra` | `make up` | the above plus WireMock stand-ins of the broker and the gateway admin API from `mcp-contracts` |
+| `full` | `make up-full` | infrastructure plus `mcp-gateway`, `mcp-credential-broker` and `mcp-jira` from the images in `.env`, overridden by the layer files below when active; the stand-ins are removed |
 
-Trzy profile opcjonalne (M6, [docs/m6.md](docs/m6.md)) to osobne pliki compose, poza domyślnym stosem, niewłączane przez `make up*` i niezwiązane z warstwami obrazów niżej:
+`up-core` is for work that runs its own component on the host and does not want a stand-in at the same address.
 
-| Profil | Polecenie | Co daje |
+Optional profiles are separate compose files outside the default stack and are not enabled by `make up*`:
+
+| Profile | Command | What it gives |
 | --- | --- | --- |
-| `bulk` | `make bulk-on CONFIRM=1` / `make bulk-off CONFIRM=1` (bez `CONFIRM=1` kontrole i plan) | na czas testu G9 stand-in ze 250 narzędziami w miejsce `mcp-confluence` (na polecenie koordynatora, zmienia stos) |
-| `adapter` | `scripts/adapter.sh on|off --confirm` (nie przez `make`) | demo Jiry (tylko odczyt) przez adapter ws-13 w miejsce natywnego `mcp-jira`; wyłączony, opis w docs/m6.md punkt 9 |
-| `e2e-prod` | `make e2e-prod-up`, `make e2e-prod-test`, `make e2e-prod-down` | osobny projekt: gateway bez `devstack`, broker i serwer MCP stand-in, dla XH; głównego stosu nie rusza |
+| `bulk` | `make bulk-on CONFIRM=1` / `make bulk-off CONFIRM=1` (without `CONFIRM=1`: checks and a plan only) | a stand-in with 250 tools in place of `mcp-confluence`, for a tool-list size test; changes the stack |
+| `adapter` | `scripts/adapter.sh on\|off --confirm` | a read-only Jira demo through the server adapter in place of the native `mcp-jira` |
+| `e2e-prod` | `make e2e-prod-up`, `make e2e-prod-test`, `make e2e-prod-down` | a separate project: gateway without the dev profile, broker and a stand-in MCP server; does not touch the main stack |
 
-`up-core` jest dla strumienia, który uruchamia własny komponent na hoście i nie chce stuba pod tym samym adresem.
-Compose zawsze przez `make` albo `scripts/compose.sh`: skrypt podaje `.env` i `.secrets/dev.env` jako
-`--env-file`, dzięki czemu każda usługa dostaje tylko swoje sekrety.
+## Image layers
 
-## Warstwy obrazów (m4, m5, m6, m6b, m6c)
+The images in `.env` are the base state. Later layers override them with `m4.env`, `m5.env`, `m6.env`, `m6b.env` and
+`m6c.env` (the first two also with `docker-compose.m4.yml` and `docker-compose.m5.yml`). The flags `M4_ACTIVE`,
+`M5_ACTIVE`, `M6_ACTIVE`, `M6B_ACTIVE`, `M6C_ACTIVE` (value 1) are in `.env` and are set by `make m4-switch`,
+`make m5-switch` and `scripts/apply-m6*-switch.sh`; an environment variable of the same name wins. `scripts/compose.sh`
+adds the files in order and the last wins, so the images of the highest active layer apply. After the gateway database
+migration, `apply-m6c-switch.sh` writes the marker `out/m6c.applied` (outside git), and `compose.sh` then refuses `up`,
+`create` and `run` without `M6C_ACTIVE=1` (exit code 5). Details of each switch are in `docs/`.
 
-Obrazy w `.env` to stan z M3. Kolejne kamienie nakładają się na niego plikami `m4.env`, `m5.env`, `m6.env`, `m6b.env`, `m6c.env` (m4 i m5 także plikami `docker-compose.m4.yml` i `docker-compose.m5.yml`).
-Flagi `M4_ACTIVE`, `M5_ACTIVE`, `M6_ACTIVE`, `M6B_ACTIVE`, `M6C_ACTIVE` (wartość 1) są w `.env` i ustawiają je skrypty `make m4-switch`, `make m5-switch` i `scripts/apply-m6*-switch.sh`;
-zmienna środowiska o tej samej nazwie ma pierwszeństwo. `scripts/compose.sh` dokłada pliki po kolei i wygrywa ostatni, więc obowiązują obrazy najwyższej włączonej warstwy (dziś m6c: kontrakty 6.3.2).
-Po migracji V10 gatewaya `apply-m6c-switch.sh` zapisuje znacznik `out/m6c.applied` (poza gitem), a `compose.sh` odmawia wtedy `up`, `create` i `run` bez `M6C_ACTIVE=1` (kod 5), także gdy zmienna środowiska mówi 0.
-`make layers` (tylko odczyt) wypisuje flagi, najwyższą aktywną warstwę, znacznik, wersję schematu gatewaya i dla każdego serwisu `mcp-*` obraz oczekiwany i działający (`ok` albo `DIFFERENT`). Szczegóły wdrożeń: docs/m6.md.
+## Trying it with Claude Code
 
-## Demo M1 z Claude Code
+`make up-full` starts the real gateway, broker and `mcp-jira`. The browser login cannot be automated, so this part is
+manual. Anonymous dynamic client registration is blocked in the realm (403), so Claude Code uses the registered public
+client `claude-code` with the fixed callback port 33418 (it must be free on the host).
 
-Stan z M1 (dziś stos działa na obrazach z warstw wyżej, patrz `make layers`): `make up-full` uruchamia prawdziwy gateway, broker i `mcp-jira`; `make m1` przechodzi F1, A1, A2, A3, A9 i A15
-(patrz [STATUS.md](STATUS.md)). Logowania w przeglądarce nie da się zautomatyzować, więc ta część jest dla człowieka.
-Sprawdzone bez przeglądarki: nagłówek 401 z `resource_metadata`, metadane RFC 9728 gateway'a
-(`authorization_servers = https://localhost:18746/realms/corp`), metadane RFC 8414 Keycloaka, żądanie autoryzacji
-klienta `claude-code` z PKCE i `resource` (formularz logowania), odrzucenie obcego redirect URI (400).
+```bash
+make up-full
+make pat USER=alice SYSTEM=jira BROKER_URL=https://localhost:18100   # 200 connected
+make users                                                          # alice's password for the login screen
+claude mcp add --transport http --client-id claude-code --callback-port 33418 \
+  jira http://localhost:18000/s/mcp-jira/mcp
+```
 
-Anonimowa dynamiczna rejestracja klienta (DCR) jest w tym realmie zablokowana (`403`), więc Claude Code używa
-zarejestrowanego klienta publicznego `claude-code` ze stałym portem callbacku 33418.
+With the proxy in front (one public domain) the address is `https://localhost:18745` and the command from
+[docs/claude-code.md](docs/claude-code.md) applies, together with trusting the CA (`make trust-ca`). In Claude Code run
+`/mcp`, choose `jira`, `Authenticate`, and log in as `alice` in the Keycloak window. A test prompt: `fetch ABC-1`; the
+expected result is a call of `jira__get_issue` and the data of ABC-1 from the mock. On the platform side:
 
-1. Stos i PAT alice (PAT jest zapisany w OpenBao po `make m1`; po `make reset` zapisz go ponownie):
+```bash
+make jira-auth      # only "PAT alice-pat" reached the mock, never an IdP token
+RID=$(docker logs mcp-dev-mcp-gateway-1 2>&1 | grep '"event":"tool_call"' | tail -1 | sed -E 's/.*"requestId":"([^"]+)".*/\1/')
+make audit RID=$RID # gateway, broker and server events of one requestId, "missing: none"
+```
 
-   ```bash
-   make up-full
-   make pat USER=alice SYSTEM=jira BROKER_URL=https://localhost:18100   # 200 connected, backendUser alice
-   make users                                                          # hasło alice dla ekranu logowania
-   ```
+No PAT is stored on the workstation: the Keycloak token has `aud=mcp-gateway` and the gateway fetches the Jira
+credential from the broker. To switch the user in Claude Code: `/mcp`, `jira`, `Clear authentication`, log in again.
 
-2. Dodanie serwera w trybie M1, wprost do gateway'a na `:18000` (Claude Code 2.1.x; port 33418 musi być wolny na hoście).
-   Po M2 adresem publicznym jest `https://localhost:18745` i obowiązuje komenda z
-   [docs/claude-code.md](docs/claude-code.md) (ten sam `--client-id claude-code`, plus zaufanie do CA):
+## Documentation
 
-   ```bash
-   claude mcp add --transport http --client-id claude-code --callback-port 33418 \
-     jira http://localhost:18000/s/mcp-jira/mcp
-   ```
+- [docs/porty.md](docs/porty.md): addresses and ports of the services, from the host and from the compose networks
+- [docs/uzytkownicy.md](docs/uzytkownicy.md): users, groups, OIDC clients, token exchange
+- [docs/integracja.md](docs/integracja.md): how to connect the gateway, broker, MCP server, portal and the end-to-end tests
+- [docs/claude-code.md](docs/claude-code.md): connecting Claude Code to the local gateway
+- [docs/m4.md](docs/m4.md), [docs/m5.md](docs/m5.md), [docs/m6.md](docs/m6.md): per-layer setup and switches
+- [STATUS.md](STATUS.md): working status
 
-3. W Claude Code: `/mcp`, wybierz `jira`, `Authenticate`. Otworzy się przeglądarka z logowaniem Keycloaka
-   (realm `corp`); zaloguj się jako `alice` z hasłem z `make users`. Po powrocie na `localhost:33418/callback`
-   `/mcp` pokazuje `jira` jako connected.
+These files are in Polish. The platform documentation in English is in `mcp-docs`.
 
-4. Prompt testowy: `pobierz ABC-1`. Oczekiwany wynik: wywołanie narzędzia `jira__get_issue` i dane zgłoszenia ABC-1
-   z mocka ("Login page returns 500" w tytule).
-
-5. Kontrola po stronie platformy:
-
-   ```bash
-   make jira-auth      # do mocka dotarł wyłącznie "PAT alice-pat", nigdy token z IdP
-   RID=$(docker logs mcp-dev-mcp-gateway-1 2>&1 | grep '"event":"tool_call"' | tail -1 | sed -E 's/.*"requestId":"([^"]+)".*/\1/')
-   make audit RID=$RID # zdarzenia gateway, broker i server jednego requestId, "missing: none"
-   ```
-
-Na stacji nie ma żadnego PAT: token Keycloaka ma `aud=mcp-gateway`, a poświadczenie do Jiry gateway pobiera z brokera.
-Inny użytkownik w Claude Code: `/mcp`, `jira`, `Clear authentication`, ponowne logowanie.
-
-## Dokumentacja
-
-- [docs/porty.md](docs/porty.md): adresy i porty usług, z hosta i z sieci compose
-- [docs/uzytkownicy.md](docs/uzytkownicy.md): użytkownicy, grupy C9, klienci OIDC, token exchange
-- [docs/m4.md](docs/m4.md): certyfikaty CI per serwer, klucze `dev-`, token exchange, konto serwisowe, offboarding, przełączenie M4
-- [docs/integracja.md](docs/integracja.md): jak podpiąć gateway, broker, serwer MCP, portal i testy e2e
-- [docs/claude-code.md](docs/claude-code.md): podłączenie Claude Code do lokalnego gateway'a
-- [STATUS.md](STATUS.md): stan względem briefu ws-01
-
-## Układ repozytorium
+## Layout
 
 ```
-docker-compose.yml        usługi i profile
-.env                      porty i obrazy komponentów (bez sekretów)
-keycloak/realm-corp.json  realm corp (import przy starcie; hasła i sekrety jako ${ZMIENNE})
-mocks/jira/               mock Jiry (generowany: scripts/gen-jira-mock.py)
-openbao/                  init.sh (KV v2, Transit, AppRole brokera), server.hcl (raft na wolumenie), unseal.sh (init i unseal w dev), audit.hcl (audyt na stdout)
-redis/start.sh            użytkownicy i ACL Redis per komponent
-postgres/init/            bazy gateway i broker
-scripts/                  init-secrets.sh, gen-certs.sh, fetch-contracts.sh, compose.sh, mcpdev.py, smoke.py
-out/                      (generowane) kontrakty wyciągnięte z MCP_CONTRACTS_REF
+docker-compose.yml        services and profiles
+.env                      ports and component images (no secrets)
+keycloak/realm-corp.json  realm corp (imported at start; passwords and secrets as ${VARIABLES})
+mocks/                    Jira mock (generated by scripts/gen-jira-mock.py), mocks of other systems, MCP and broker stubs
+openbao/                  init.sh (KV v2, Transit, broker AppRole), server.hcl (raft on a volume), unseal.sh, audit.hcl
+redis/                    start.sh: users and ACLs per component
+postgres/init/            gateway and broker databases
+proxy/, lb/, policies/    nginx configuration of the proxy, the balancers and the policy store
+scripts/                  init-secrets.sh, gen-certs.sh, fetch-contracts.sh, compose.sh, mcpdev.py, smoke.py, ...
+ci/                       ci/run.sh is the single CI entry point (GitHub Actions, GitLab CI and Jenkins call it)
+.secrets/, certs/, out/   generated, git-ignored
 ```
