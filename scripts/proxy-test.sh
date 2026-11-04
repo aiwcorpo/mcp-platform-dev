@@ -55,6 +55,9 @@ for pair in gateway:$gateway_alias bff:portal-bff.internal web:portal-web; do
   docker run -d --name "$net-$name" --network "$net" --network-alias "$alias" -e ECHO_NAME="$name" \
     -v "$root/proxy/test/echo.py:/echo.py:ro" "$python_image" python3 -I /echo.py >/dev/null || exit 1
 done
+# The proxy runs as uid 101 and gen-certs.sh makes the key 600 for the uid that generated it. Docker Desktop hides that, a Linux
+# daemon does not. The CI checkout and its dev-only CA are throw-away, so loosening the key there is harmless; a developer machine keeps 600.
+[[ "${CI:-}" == true ]] && chmod 644 "$root/certs/proxy/tls.key"
 docker run -d --name "$net-proxy" --network "$net" --read-only --tmpfs /tmp --user 101:101 \
   -p "127.0.0.1:$port:8080" -p "127.0.0.1:$tls_port:8443" \
   -v "$conf/routes.conf:/etc/nginx/routes.conf:ro" \

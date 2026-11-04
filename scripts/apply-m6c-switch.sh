@@ -84,10 +84,9 @@ switch() {
 }
 
 roll() {
-  local service want
+  local service
   if [ "${SKIP_MOCKS:-0}" != 1 ]; then for service in "${mocks[@]}"; do restart_mock "$service"; done; fi
   for service in "${first[@]}"; do switch "$service"; done
-  want="$(expected_image mcp-gateway)"
   if [ "$(flyway_max)" -ge 10 ]; then
     echo "apply-m6c-switch: schema is already at $(flyway_max), no migration is pending: the gateways are replaced one by one without stopping instance 2 first"
   else

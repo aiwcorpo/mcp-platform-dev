@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by compose.sh and the switch scripts. Facts about the M6 layers that no script may get wrong:
 # once migration V10 of the gateway is in the database (marker out/m6c.applied, written by apply-m6c-switch.sh after V10 was checked, outside git),
 # an older gateway image must not be created again, whatever .env or the environment say.

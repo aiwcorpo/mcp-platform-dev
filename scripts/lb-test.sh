@@ -145,8 +145,13 @@ check "instances back in rotation without restarting the balancers" 1 "$back"
 
 # Both gone: the balancer answers itself.
 docker kill "$net-gw-a" "$net-gw-b" "$net-br-a" "$net-br-b" >/dev/null
-sleep 1.5
-curl -s -m 5 -D "$tmp/h" -o "$tmp/b" "$gw/mcp"
+# A Linux daemon keeps the dead addresses in its DNS for a moment: until they are gone nginx times out on them (504) instead of
+# finding nothing to connect to (502). The assertion below is on the settled state.
+for _ in $(seq 1 20); do
+  sleep 1.5
+  curl -s -m 8 -D "$tmp/h" -o "$tmp/b" "$gw/mcp"
+  [[ "$(sed -n '1s/[^ ]* \([0-9]*\).*/\1/p' "$tmp/h")" == 502 ]] && break
+done
 check "gateway http: no instance -> 502 BalancerError (bad_gateway, fixed text, JSON utf-8, nosniff)" \
   "502 bad_gateway application/json; charset=utf-8 nosniff The request may or may not have been processed. Check the result before repeating a write." \
   "$(sed -n '1s/[^ ]* \([0-9]*\).*/\1/p' "$tmp/h") $(jq -r .error "$tmp/b") $(tr -d '\r' < "$tmp/h" | tr 'A-Z' 'a-z' | sed -n 's/^content-type: //p') $(tr -d '\r' < "$tmp/h" | tr 'A-Z' 'a-z' | sed -n 's/^x-content-type-options: //p') $(jq -r .message "$tmp/b")"
