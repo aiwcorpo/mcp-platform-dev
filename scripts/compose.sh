@@ -28,6 +28,11 @@ if [ "${M6C_ACTIVE:-$(grep -s '^M6C_ACTIVE=' "$root/.env" | cut -d= -f2-)}" = 1 
   [ "${M6B_ACTIVE:-$(grep -s '^M6B_ACTIVE=' "$root/.env" | cut -d= -f2-)}" = 1 ] || { echo "compose.sh: M6C_ACTIVE=1 needs the M6B layer (M6B_ACTIVE=1)" >&2; exit 1; }
   envs+=(--env-file "$root/m6c.env")
 fi
+# Last env file, so it wins over every layer above. Source local adds nothing: the invocation is the same as before the switch existed.
+# shellcheck source=image-source.sh
+. "$root/scripts/image-source.sh"
+source_name="$(image_source)"
+if [ "$source_name" = ghcr ]; then envs+=(--env-file "$root/ghcr.env"); fi
 base=(docker compose --project-directory "$root" -f "$root/docker-compose.yml" ${files[@]+"${files[@]}"} \
   --env-file "$root/.env" --env-file "$root/.secrets/dev.env" ${envs[@]+"${envs[@]}"})
 

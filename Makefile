@@ -18,7 +18,7 @@ COMPONENTS := mcp-gateway mcp-credential-broker mcp-jira $(if $(filter 1,$(M5_AC
         smoke users audit jira-auth images m1 images-m2 up-m2 m2-sync proxy-test trust-ca mocks-test m2 mock-auth \
         m3 otp reset-authenticator registry-refresh admin-password m3-switch \
         m4 m4-test m4-switch offboard registry-register openbao-test \
-        m5-switch m5-rollback m5-artifacts ci ci-local lb-test rollback-test compose-check start-test mock-fault c2-keys openbao-init openbao-renew openbao-persist-test openbao-migrate openbao-guard bulk-guard smoke-write bulk-on bulk-off bulk-status e2e-prod-up e2e-prod-down e2e-prod-test
+        m5-switch m5-rollback m5-artifacts ci ci-local lb-test rollback-test compose-check start-test mock-fault c2-keys openbao-init openbao-renew openbao-persist-test openbao-migrate openbao-guard bulk-guard smoke-write bulk-on bulk-off bulk-status e2e-prod-up e2e-prod-down e2e-prod-test use-ghcr use-local manifests
 
 help: ## list targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -30,7 +30,16 @@ certs: secrets ## generate the dev CA, mTLS certificates (CI certificate per ser
 	@./scripts/gen-certs.sh
 	@./scripts/gen-public-cert.sh
 
-contracts: ## extract C4/C5 stubs and audit vectors of MCP_CONTRACTS_REF into out/contracts
+use-ghcr: ## image source ghcr: released 1.0.0 images, manifests from GitHub Releases, contracts from npm, committed dev policy bundle (no sibling repos, no JDK)
+	@./scripts/set-image-source.sh ghcr
+
+use-local: ## image source local (default): m6-<sha> images built from the sibling repositories (make images)
+	@./scripts/set-image-source.sh local
+
+manifests: ## download mcp-manifest.json of the released MCP servers into out/manifests (source ghcr; make registry-register does it itself)
+	@./scripts/fetch-manifests.sh
+
+contracts: ## extract C4/C5 stubs and audit vectors into out/contracts: from MCP_CONTRACTS_REF of ../mcp-contracts (local) or from the npm package (ghcr)
 	@./scripts/fetch-contracts.sh
 
 # Stubs and real components share network aliases; only one of each pair may run.
@@ -171,7 +180,7 @@ openbao-test: ## openbao/init.sh against a throw-away OpenBao: service account o
 offboard: ## offboarding of USER=<login>: IdP groups and logout, broker purge, gateway purge (CN mcp-offboarding), purges repeated; DRY=1 only prints the plan
 	@$(PY) scripts/mcpdev.py offboard $(USER) $(if $(DRY),--dry-run)
 
-registry-register: ## PUT the manifests built from the server repositories with the certificate of each server (CN mcp-registry-ci-<serverId>); SERVERS="mcp-jira ..." narrows
+registry-register: ## PUT the manifests (built from the server repositories; with source ghcr: from the GitHub Releases) with the certificate of each server (CN mcp-registry-ci-<serverId>); SERVERS="mcp-jira ..." narrows
 	@./scripts/registry-register.sh
 
 m4-switch: ## apply the prepared M4 switch to the running stack (broker, servers, registry by CI, gateway, BFF/web; state is kept); CHECK=1 only checks the preconditions

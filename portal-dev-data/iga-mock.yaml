@@ -1,0 +1,36 @@
+# Data of the C13 adapter "mock" for the dev stack (users from keycloak/realm-corp.json).
+# "user" is the value of the claim portal.iga.requester-id-claim (default preferred_username).
+entitlements:
+  jira: [mcp-jira-read, mcp-jira-write, mcp-jira-destructive, mcp-jira-proj-ABC, mcp-jira-proj-DEF, mcp-jira-proj-HR]
+  confluence: [mcp-confluence-read, mcp-confluence-write, mcp-confluence-space-ENG]
+  gitlab: [mcp-gitlab-read, mcp-gitlab-write, mcp-gitlab-grp-team-a]
+  servicedesk: [mcp-servicedesk-read, mcp-servicedesk-write, mcp-servicedesk-queue-IT]
+  opensearch: [mcp-opensearch-read, mcp-opensearch-ops, mcp-opensearch-idx-logs-team-a, mcp-opensearch-idx-logs-team-b]
+descriptions:
+  mcp-jira-read: Read access to Jira issues and projects
+  mcp-jira-write: Create and update Jira issues
+  mcp-jira-destructive: Delete Jira issues
+  mcp-confluence-read: Read access to Confluence spaces
+  mcp-confluence-write: Create and edit Confluence pages
+  mcp-gitlab-read: Read access to GitLab projects
+  mcp-gitlab-write: Push and merge request access to GitLab projects
+  mcp-servicedesk-read: Read access to Service Desk tickets
+  mcp-opensearch-read: Search access to OpenSearch indexes
+  mcp-opensearch-ops: Cluster health and backend version (get_cluster_health, get_backend_info) in OpenSearch
+requests:
+  - user: bob
+    requestId: REQ-2026-0042
+    entitlement: mcp-jira-write
+    status: pending
+    createdAt: "2026-10-25T09:00:00Z"
+  - user: mallory
+    requestId: REQ-2026-0043
+    entitlement: mcp-gitlab-read
+    status: pending
+    createdAt: "2026-10-25T10:00:00Z"
+  - user: alice
+    requestId: REQ-2026-0040
+    entitlement: mcp-jira-destructive
+    status: rejected
+    createdAt: "2026-10-20T08:00:00Z"
+    decidedAt: "2026-10-21T11:30:00Z"

@@ -4,13 +4,21 @@
 # from the running server) and the certificate of THAT server, CN=mcp-registry-ci-<serverId>.
 #   make registry-register                       all five servers, manifests from ../mcp-server-<name>/mcp-app/target/mcp-manifest.json
 #   make registry-register SERVERS="mcp-jira"    selected servers
-#   MANIFEST_DIR=<dir>                           manifests as <dir>/<serverId>.json instead
+#   MANIFEST_DIR=<dir>                           manifests as <dir>/<serverId>.json instead (default with MCP_IMAGE_SOURCE=ghcr: out/manifests,
+#                                                downloaded from the GitHub Releases)
 # What the gateway does with it: READ_ONLY tools of the reviewed manifest are approved, new or changed UPDATE/DESTRUCTIVE tools wait
 # in pending_approval for an administrator (portal), a manifest with environment dev is accepted only by a gateway in dev mode.
 # Exit code 1 when any server is not registered (HTTP 200). Dev only difference: the dev stack may also bootstrap (the gateway
 # takes the manifest from the server, see registry-refresh.sh); a row registered here has source ci and registry-refresh.sh leaves it alone.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=image-source.sh
+. "$root/scripts/image-source.sh"
+# Source ghcr: the manifests of the released servers (GitHub Releases) instead of the builds in the sibling repositories.
+if [ -z "${MANIFEST_DIR:-}" ] && [ "$(image_source)" = ghcr ]; then
+  "$root/scripts/fetch-manifests.sh"
+  MANIFEST_DIR="$root/out/manifests"
+fi
 servers="${SERVERS:-mcp-jira mcp-confluence mcp-gitlab mcp-servicedesk mcp-opensearch}"
 failed=0
 for server in $servers; do

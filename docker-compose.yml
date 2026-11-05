@@ -761,7 +761,7 @@ services:
     volumes:
       - ./certs/mcp-portal-bff/keystore.p12:/certs/mcp-portal-bff/keystore.p12:ro
       - ./certs/ca/truststore.p12:/certs/ca/truststore.p12:ro
-      - ../mcp-portal/bff/dev:/dev-data:ro
+      - ${PORTAL_DEV_DATA_DIR:-../mcp-portal/bff/dev}:/dev-data:ro
     networks:
       core:
         aliases: [portal-bff.internal]

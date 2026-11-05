@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# The layer checks compare the m*.env tags, which ghcr.env would replace; they run on the local source whatever .env says.
+os.environ["MCP_IMAGE_SOURCE"] = "local"
 RESULTS = []
 
 
