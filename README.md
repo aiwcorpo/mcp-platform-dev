@@ -21,11 +21,13 @@ repository is a working log in Polish.
 - Docker with `docker compose` v2 (tested with Docker 28.3 and Compose 2.39). About 2.1 GB of images after unpacking
   (Keycloak 0.75 GB); the first pull depends on your connection.
 - `make`, `bash`, `python3` 3.10 or newer (standard library only), `openssl`, `git`.
-- Sibling repository `mcp-contracts` next to this one (`../mcp-contracts`). The contract stand-ins are extracted from
-  the tag `MCP_CONTRACTS_REF` with `git archive` into `out/contracts/`; the working copy is not used. Another location:
-  `MCP_CONTRACTS_DIR` in `.env`.
+- Image source `local` (the default): sibling repository `mcp-contracts` next to this one (`../mcp-contracts`). The contract
+  stand-ins are extracted from the tag `MCP_CONTRACTS_REF` with `git archive` into `out/contracts/`; the working copy is not
+  used. Another location: `MCP_CONTRACTS_DIR` in `.env`. The other siblings (`mcp-policies`, `mcp-portal`, `mcp-server-*`) are
+  read by the policy server, the portal BFF and the registry scripts.
 - To build component images (`make images`): a JDK 25 with `JAVA_HOME` pointing to it, and node/npm for the web build.
   The build scripts stop with an error when `JAVA_HOME` is unset or is not a JDK 25.
+- Image source `ghcr`: none of the above, see "Run on another computer".
 
 ## Start
 
@@ -66,6 +68,45 @@ PostgreSQL, networks, certificates and the audit tool. It leaves a purge marker 
 `admin_change` audit events. Expected result: 78 `PASS` lines and `all checks passed` (exit 0); otherwise a list of
 `FAIL` and exit 1. Checks that write (Redis keys with TTL, an OpenBao KV path, a Jira mock mapping, a wrong password, an
 anonymous client registration, POSTs to the mock admin API) run only in `make smoke-write CONFIRM=1`.
+
+## Run on another computer
+
+`MCP_IMAGE_SOURCE=ghcr` starts the stack from the released 1.0.0 images, with no sibling checkouts, no JDK and no local build.
+`local` (the default, what `.env` says in the repository) keeps the `m6-<sha>` flow: `make images` and the `apply-m*-switch.sh`
+scripts are unchanged.
+
+Prerequisites: Docker with `docker compose` v2, `make`, `bash`, `python3` 3.10 or newer, `openssl`, `curl`, `git`, and `gh`
+logged in to an account that can read this private repository (`gh auth login`). The images, the release manifests and the
+npm package are public and need no login.
+
+```bash
+gh repo clone aiwcorpo/mcp-platform-dev && cd mcp-platform-dev
+make use-ghcr          # MCP_IMAGE_SOURCE=ghcr in .env
+make c2-keys           # shared internal-JWT keys of the two gateways; compose would mount a missing file as a directory
+make up-m2             # secrets, certificates, infrastructure and all components; pulls ghcr.io/aiwcorpo/*:1.0.0
+make registry-register # PUT the mcp-manifest.json of each server (downloaded from its v1.0.0 release) to the gateway
+make smoke && make users && make trust-ca
+```
+
+What the `ghcr` source replaces:
+
+| Local source | With `ghcr` |
+| --- | --- |
+| `m6c.env` image tags built by `make images` | `ghcr.env`: `ghcr.io/aiwcorpo/<component>:1.0.0` (loaded last by `scripts/compose.sh`) |
+| `out/contracts` from `../mcp-contracts` at `MCP_CONTRACTS_REF` | the npm package `@aiwcorpo/mcp-contracts` 6.3.2 (integrity checked), only used by `make up` stand-ins |
+| `../mcp-server-*/mcp-app/target/mcp-manifest.json` | `mcp-manifest.json` of the GitHub Release `v1.0.0` of each server, into `out/manifests/` |
+| `../mcp-policies/out/repository` and `keys/dev` | `policies-dev/`: a policy bundle signed with the dev key and its public keys, committed |
+| `../mcp-portal/bff/dev` | `portal-dev-data/iga-mock.yaml`, a copy |
+
+Everything starts empty: PostgreSQL (gateway registry, broker connections), OpenBao (new unseal key in `.secrets/`, no PATs),
+Redis, and a Keycloak realm imported from `keycloak/realm-corp.json` with newly generated passwords of the test users (`make users`).
+The CA and every certificate are new (`make trust-ca`). No Authenticator is registered and no user has stored a PAT. The registry has
+only what `make registry-register` put there: READ_ONLY tools are approved, UPDATE and DESTRUCTIVE tools wait for approval in the portal.
+
+`make use-local` switches back. `scripts/policies-snapshot.sh` refreshes `policies-dev/` and needs the policies repository with its
+dev keys (the private keys never leave that machine), so it is run where `../mcp-policies` and JDK 25 exist. The bundle is signed with
+a `dev-` key: the components accept it only in dev mode (`MCP_POLICY_ALLOW_TEST_KEYS`), as in the existing stack. The adapter image
+(`profile adapter`) is not part of this path.
 
 ## Compose profiles
 
